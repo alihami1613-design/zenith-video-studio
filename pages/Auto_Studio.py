@@ -7,11 +7,11 @@ import requests
 import streamlit as st
 import imageio_ffmpeg
 
-st.title("🌙 LUNAVERA — 30-Minute Sleep Video")
+st.title("🌙 LUNAVERA — 15-Minute Sleep Video")
 st.caption("تولید خودکار ویدئوی افقی خواب عمیق | Full HD 1080p | بدون تدوین دستی")
 st.info("این ابزار مستقل از ZENITH Documentary Editor است و به پروژه‌های مستند دست نمی‌زند.")
 
-DURATION = 1800
+DURATION = 900
 SCENES = [
     ("آسمان شب آرام", ["starry night sky video", "stars over dark sky video", "night sky stars video"],
      ["star", "stars", "night", "sky"], ["circled", "diagram", "map", "animation", "logo", "text"]),
@@ -104,7 +104,7 @@ if not music:
     st.warning("فقط فایل موسیقی یک‌ساعته را انتخاب کن؛ بقیه مراحل خودکار انجام می‌شود.")
 else:
     st.success(f"فایل انتخاب شد: {music.name}")
-    if st.button("✨ ساخت خودکار ویدئوی کامل یک‌ساعته", type="primary", use_container_width=True):
+    if st.button("✨ ساخت خودکار ویدئوی ۱۵ دقیقه‌ای", type="primary", use_container_width=True):
         ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
         progress = st.progress(0)
         status = st.empty()
@@ -162,9 +162,8 @@ else:
                     sources.append(source)
                     progress.progress(24 + (i + 1) * 8)
 
-                # Encode only a short 3-minute visual loop, then repeat its already-encoded
-                # video stream for one hour. This avoids encoding 60 minutes of video on
-                # Streamlit Cloud's limited CPU.
+                # Encode a short 3-minute visual loop, then repeat it to create a 15-minute video.
+                # This avoids encoding the full duration on Streamlit Cloud's limited CPU.
                 status.write("مرحله ۱ از ۲: ساخت حلقه تصویری کوتاه ۳ دقیقه‌ای با کیفیت Full HD 1080p...")
                 loop_video = work / "LUNAVERA_visual_loop.mp4"
                 filter_parts = []
@@ -186,7 +185,7 @@ else:
                 subprocess.run(loop_cmd, check=True, capture_output=True, text=True, timeout=1800)
 
                 status.write("مرحله ۲ از ۲: تکرار حلقه تصویری و افزودن موسیقی؛ بدون رندر مجدد ویدئو...")
-                final = work / "LUNAVERA_Deep_Sleep_1_Hour.mp4"
+                final = work / "LUNAVERA_Deep_Sleep_15_Minutes.mp4"
                 final_cmd = [
                     ffmpeg, "-y", "-stream_loop", "-1", "-i", str(loop_video),
                     "-i", str(music_path), "-map", "0:v:0", "-map", "1:a:0",
@@ -196,12 +195,12 @@ else:
                 ]
                 subprocess.run(final_cmd, check=True, capture_output=True, text=True, timeout=1800)
                 progress.progress(100)
-                status.success("ویدئوی یک‌ساعته LUNAVERA آماده شد.")
+                status.success("ویدئوی ۱۵ دقیقه‌ای LUNAVERA آماده شد.")
                 # Avoid loading a huge one-hour MP4 twice into server memory.
-                st.info("پیش‌نمایش داخل صفحه غیرفعال است تا حافظه سرور حفظ شود. خروجی نهایی Full HD 1080p و ۳۰ دقیقه است.")
+                st.info("پیش‌نمایش داخل صفحه غیرفعال است تا حافظه سرور حفظ شود. خروجی نهایی Full HD 1080p و دقیقاً ۱۵ دقیقه است.")
                 with final.open("rb") as video_file:
                     st.download_button("⬇️ دریافت ویدئوی کامل LUNAVERA", data=video_file,
-                                       file_name="LUNAVERA_Deep_Sleep_30_Minutes.mp4",
+                                       file_name="LUNAVERA_Deep_Sleep_15_Minutes.mp4",
                                        mime="video/mp4", use_container_width=True)
         except subprocess.CalledProcessError as e:
             st.error("رندر در سرور متوقف شد؛ جزئیات فنی:")
