@@ -162,26 +162,39 @@ else:
                     sources.append(source)
                     progress.progress(24 + (i + 1) * 8)
 
-                status.write("رندر یک‌مرحله‌ای ویدئوی یک‌ساعته با کیفیت 720p؛ بدون فایل‌های میانی حجیم...")
-                final = work / "LUNAVERA_Deep_Sleep_1_Hour.mp4"
+                # Encode only a short 3-minute visual loop, then repeat its already-encoded
+                # video stream for one hour. This avoids encoding 60 minutes of video on
+                # Streamlit Cloud's limited CPU.
+                status.write("مرحله ۱ از ۲: ساخت حلقه تصویری کوتاه ۳ دقیقه‌ای با کیفیت 720p...")
+                loop_video = work / "LUNAVERA_visual_loop.mp4"
                 filter_parts = []
                 for i in range(3):
                     filter_parts.append(
                         f"[{i}:v]scale=1280:720:force_original_aspect_ratio=increase,"
                         f"crop=1280:720,setsar=1,fps=24,format=yuv420p,"
-                        f"trim=duration=1200,setpts=PTS-STARTPTS[v{i}]"
+                        f"trim=duration=60,setpts=PTS-STARTPTS[v{i}]"
                     )
                 filter_parts.append("[v0][v1][v2]concat=n=3:v=1:a=0[v]")
-                cmd = [ffmpeg, "-y"]
+                loop_cmd = [ffmpeg, "-y"]
                 for source in sources:
-                    cmd += ["-stream_loop", "-1", "-i", str(source)]
-                cmd += ["-i", str(music_path), "-filter_complex", ";".join(filter_parts),
-                        "-map", "[v]", "-map", "3:a:0", "-t", str(DURATION),
-                        "-c:v", "libx264", "-preset", "ultrafast",
-                        "-b:v", "650k", "-maxrate", "750k", "-bufsize", "1300k",
-                        "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "96k",
-                        "-af", "volume=0.85", "-movflags", "+faststart", str(final)]
-                subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=7200)
+                    loop_cmd += ["-stream_loop", "-1", "-i", str(source)]
+                loop_cmd += ["-filter_complex", ";".join(filter_parts),
+                             "-map", "[v]", "-an", "-c:v", "libx264",
+                             "-preset", "ultrafast", "-crf", "30",
+                             "-pix_fmt", "yuv420p", "-movflags", "+faststart",
+                             str(loop_video)]
+                subprocess.run(loop_cmd, check=True, capture_output=True, text=True, timeout=1800)
+
+                status.write("مرحله ۲ از ۲: تکرار حلقه تصویری و افزودن موسیقی؛ بدون رندر مجدد ویدئو...")
+                final = work / "LUNAVERA_Deep_Sleep_1_Hour.mp4"
+                final_cmd = [
+                    ffmpeg, "-y", "-stream_loop", "-1", "-i", str(loop_video),
+                    "-i", str(music_path), "-map", "0:v:0", "-map", "1:a:0",
+                    "-t", str(DURATION), "-c:v", "copy",
+                    "-c:a", "aac", "-b:a", "96k", "-af", "volume=0.85",
+                    "-movflags", "+faststart", str(final)
+                ]
+                subprocess.run(final_cmd, check=True, capture_output=True, text=True, timeout=1800)
                 progress.progress(100)
                 status.success("ویدئوی یک‌ساعته LUNAVERA آماده شد.")
                 # Avoid loading a huge one-hour MP4 twice into server memory.
