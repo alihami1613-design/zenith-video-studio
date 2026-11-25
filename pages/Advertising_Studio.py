@@ -27,13 +27,22 @@ videos = st.file_uploader(
 )
 st.caption("حداکثر ۱۲ کلیپ؛ هر فایل تا سقف ۲۰۰ مگابایت. از فوتیج‌هایی استفاده کن که مجوز استفاده تجاری‌شان را داری.")
 
+st.markdown("### ۲. تصاویر تبلیغاتی")
+photos = st.file_uploader(
+    "عکس‌های محصول یا محیط را انتخاب کن",
+    type=["jpg", "jpeg", "png", "webp"],
+    accept_multiple_files=True,
+    key="ad_photo_assets",
+)
+st.caption("می‌توانی عکس مبل را هم کنار ویدئوها اضافه کنی؛ تصاویر به صحنه‌های کوتاه با حرکت آرام دوربین تبدیل می‌شوند. مجموع عکس‌ها و کلیپ‌ها حداکثر ۱۲ فایل باشد.")
+
 c1, c2 = st.columns(2)
 with c1:
     music = st.file_uploader("موسیقی تبلیغاتی (اختیاری)", type=["mp3", "wav", "m4a", "aac", "ogg"], key="ad_music")
 with c2:
     narration = st.file_uploader("گویندگی (اختیاری)", type=["mp3", "wav", "m4a", "aac", "ogg"], key="ad_voice")
 
-st.markdown("### ۲. تنظیمات تدوین")
+st.markdown("### ۳. تنظیمات تدوین")
 a, b, c = st.columns(3)
 with a:
     duration = st.selectbox("مدت خروجی", [30, 45, 50, 60], index=2, format_func=lambda x: f"{x} ثانیه")
@@ -63,11 +72,12 @@ def media_duration(ffmpeg, path):
     return int(hours) * 3600 + int(minutes) * 60 + float(seconds)
 
 if st.button("✨ ساخت تیزر تبلیغاتی", type="primary", use_container_width=True):
-    if not videos:
-        st.error("ابتدا حداقل یک کلیپ ویدئویی انتخاب کن.")
+    assets_count = len(videos or []) + len(photos or [])
+    if assets_count == 0:
+        st.error("ابتدا حداقل یک کلیپ ویدئویی یا یک عکس انتخاب کن.")
         st.stop()
-    if len(videos) > 12:
-        st.error("برای پایداری رندر، حداکثر ۱۲ کلیپ انتخاب کن.")
+    if assets_count > 12:
+        st.error("برای پایداری رندر، مجموع عکس‌ها و کلیپ‌ها حداکثر ۱۲ فایل باشد.")
         st.stop()
 
     ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
@@ -77,37 +87,46 @@ if st.button("✨ ساخت تیزر تبلیغاتی", type="primary", use_conta
         with tempfile.TemporaryDirectory() as td:
             work = Path(td)
             normalized = []
-            per_clip = duration / len(videos)
+            assets = [(item, "video") for item in (videos or [])] + [(item, "photo") for item in (photos or [])]
+            per_clip = duration / len(assets)
 
-            for i, uploaded in enumerate(videos):
-                status.write(f"بررسی و آماده‌سازی کلیپ {i+1} از {len(videos)} ...")
-                suffix = Path(uploaded.name).suffix.lower() or ".mp4"
+            for i, (uploaded, asset_type) in enumerate(assets):
+                kind_label = "عکس" if asset_type == "photo" else "کلیپ"
+                status.write(f"بررسی و آماده‌سازی {kind_label} {i+1} از {len(assets)} ...")
+                suffix = Path(uploaded.name).suffix.lower() or (".jpg" if asset_type == "photo" else ".mp4")
                 src = work / f"input_{i}{suffix}"
                 dst = work / f"clip_{i:02d}.mp4"
                 src.write_bytes(uploaded.getbuffer())
-                source_duration = media_duration(ffmpeg, src)
-                if source_duration + 0.15 < per_clip:
-                    raise ValueError(
-                        f"مدت کلیپ «{uploaded.name}» فقط {source_duration:.1f} ثانیه است؛ "
-                        f"برای تقسیم مساوی زمان‌بندی فعلی حداقل {per_clip:.1f} ثانیه لازم است. "
-                        "کلیپ طولانی‌تری انتخاب کن یا تعداد کلیپ‌ها را کمتر کن."
-                    )
 
                 vf = "scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,setsar=1,fps=24,eq=contrast=1.06:saturation=1.10:brightness=0.005,format=yuv420p"
                 if style == "لوکس مشکی و طلایی":
                     vf += ",curves=all='0/0 0.20/0.15 0.75/0.82 1/1'"
                 elif style == "پرکنتراست و پرانرژی":
                     vf += ",eq=contrast=1.12:saturation=1.18"
-                vf += f",trim=duration={per_clip:.3f},setpts=PTS-STARTPTS"
+
+                if asset_type == "video":
+                    source_duration = media_duration(ffmpeg, src)
+                    if source_duration + 0.15 < per_clip:
+                        raise ValueError(
+                            f"مدت کلیپ «{uploaded.name}» فقط {source_duration:.1f} ثانیه است؛ "
+                            f"برای زمان‌بندی فعلی حداقل {per_clip:.1f} ثانیه لازم است. "
+                            "کلیپ طولانی‌تری انتخاب کن یا تعداد فایل‌ها را کمتر کن."
+                        )
+                    vf += f",trim=duration={per_clip:.3f},setpts=PTS-STARTPTS"
+                    input_args = ["-i", str(src)]
+                else:
+                    frames = max(1, round(per_clip * 24))
+                    vf += f",zoompan=z='min(zoom+0.0005,1.08)':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1920x1080:fps=24,trim=duration={per_clip:.3f},setpts=PTS-STARTPTS"
+                    input_args = ["-loop", "1", "-framerate", "24", "-i", str(src), "-t", f"{per_clip:.3f}"]
 
                 run_ffmpeg([
-                    ffmpeg, "-y", "-i", str(src), "-vf", vf,
+                    ffmpeg, "-y", *input_args, "-vf", vf,
                     "-an", "-c:v", "libx264", "-preset", "veryfast",
                     "-crf", "23" if quality == "1080p متعادل" else "26",
                     "-pix_fmt", "yuv420p", "-movflags", "+faststart", str(dst)
                 ])
                 normalized.append(dst)
-                progress.progress(int((i + 1) / (len(videos) + 2) * 65))
+                progress.progress(int((i + 1) / (len(assets) + 2) * 65))
 
             status.write("اتصال سکانس‌ها و آماده‌سازی صدا ...")
             concat = work / "concat.txt"
@@ -176,4 +195,4 @@ if st.button("✨ ساخت تیزر تبلیغاتی", type="primary", use_conta
         st.code(str(e)[-3500:])
 
 st.divider()
-st.caption("نکته: این نسخه تدوین خودکار کلیپ‌های بارگذاری‌شده را انجام می‌دهد؛ جست‌وجو و دریافت خودکار فوتیج استوک و موشن‌گرافیک اختصاصی هنوز به آن متصل نشده است.")
+st.caption("نکته: عکس‌ها به صحنه‌های ویدئویی کوتاه با حرکت آرام زوم تبدیل می‌شوند. این نسخه تدوین خودکار عکس‌ها و کلیپ‌های بارگذاری‌شده را انجام می‌دهد؛ جست‌وجو و دریافت خودکار فوتیج استوک و موشن‌گرافیک اختصاصی هنوز به آن متصل نشده است.")
