@@ -259,7 +259,7 @@ if st.button("✨ ساخت تیزر تبلیغاتی", type="primary", use_conta
                 music_input_index = 2 if narration else 1
 
             video_filters = [f"fade=t=in:st=0:d=0.7", f"fade=t=out:st={max(0, duration-0.8):.3f}:d=0.8"]
-            # Robust, simple motion graphics: avoid nested expression commas in FFmpeg.
+            # Simplified text overlay: avoid complex expressions and commas inside filter arguments.
             if motion_graphics and (mg_title.strip() or mg_subtitle.strip() or mg_cta.strip()):
                 font_candidates = [
                     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
@@ -275,26 +275,24 @@ if st.button("✨ ساخت تیزر تبلیغاتی", type="primary", use_conta
                     subtitle_file.write_text(mg_subtitle.strip(), encoding="utf-8")
                     cta_file.write_text(mg_cta.strip(), encoding="utf-8")
                     font_arg = font_file.replace("\\", "/").replace(":", "\\:")
-                    safe_common = f":fontfile='{font_arg}':expansion=none:shadowcolor=black@0.65:shadowx=2:shadowy=2"
-                    # Constant positions and fade-in/out alpha avoid fragile nested expressions.
-                    fade_alpha = "0.95"
+                    common = f":fontfile='{font_arg}':expansion=none"
                     if mg_style.startswith("لوکس"):
-                        tx, ty, sy, bx, bw = "(w-text_w)/2", "h*0.70", "h*0.70+text_h+18", "w*0.24", "w*0.52"
-                        cy = "h*0.70+text_h+72"
+                        title_y, subtitle_y, cta_y = "h*0.70", "h*0.76", "h*0.84"
+                        title_x = "(w-text_w)/2"
                     elif mg_style.startswith("مدرن"):
-                        tx, ty, sy, bx, bw = "(w-text_w)/2", "(h-text_h)/2", "(h-text_h)/2+text_h+22", "w*0.30", "w*0.40"
-                        cy = "(h-text_h)/2+text_h+76"
+                        title_y, subtitle_y, cta_y = "h*0.42", "h*0.49", "h*0.58"
+                        title_x = "(w-text_w)/2"
                     else:
-                        tx, ty, sy, bx, bw = "w*0.09", "h*0.78", "h*0.78+text_h+14", "w*0.09", "w*0.34"
-                        cy = "h*0.78+text_h+58"
+                        title_y, subtitle_y, cta_y = "h*0.78", "h*0.84", "h*0.91"
+                        title_x = "w*0.09"
                     if mg_title.strip():
-                        video_filters.append(f"drawtext=textfile='{title_file.as_posix()}':x={tx}:y={ty}:fontsize=52:fontcolor=white:alpha={fade_alpha}{safe_common}")
+                        video_filters.append(f"drawtext=textfile='{title_file.as_posix()}':x={title_x}:y={title_y}:fontsize=52:fontcolor=white{common}")
                     if mg_subtitle.strip():
-                        video_filters.append(f"drawtext=textfile='{subtitle_file.as_posix()}':x=(w-text_w)/2:y={sy}:fontsize=28:fontcolor=0xE8D8B8:alpha={fade_alpha}{safe_common}")
-                    video_filters.append(f"drawbox=x={bx}:y=h*0.68:w={bw}:h=3:color=0xD6B46A@0.95:t=fill")
+                        video_filters.append(f"drawtext=textfile='{subtitle_file.as_posix()}':x=(w-text_w)/2:y={subtitle_y}:fontsize=28:fontcolor=0xE8D8B8{common}")
+                    video_filters.append("drawbox=x=200:y=1300:w=680:h=3:color=0xD6B46A@0.95:t=fill")
                     if mg_cta.strip():
-                        video_filters.append(f"drawbox=x=(w-min(w*0.34,360))/2:y={cy}:w=min(w*0.34,360):h=48:color=0xD6B46A@0.92:t=fill")
-                        video_filters.append(f"drawtext=textfile='{cta_file.as_posix()}':x=(w-text_w)/2:y={cy}+14:fontsize=24:fontcolor=black:alpha={fade_alpha}{safe_common}")
+                        video_filters.append("drawbox=x=300:y=1550:w=480:h=48:color=0xD6B46A@0.92:t=fill")
+                        video_filters.append(f"drawtext=textfile='{cta_file.as_posix()}':x=(w-text_w)/2:y=1562:fontsize=24:fontcolor=black{common}")
                 else:
                     st.warning("فونت مناسب برای موشن‌گرافیک پیدا نشد؛ تیزر بدون نوشته ساخته می‌شود.")
             cmd += ["-vf", ",".join(video_filters), "-map", "0:v:0"]
