@@ -152,6 +152,17 @@ else:
                     candidates = [x for x in candidates
                                   if not x.get("size") or x["size"] <= MAX_VIDEO_BYTES]
                     candidates.sort(key=lambda x: (-x.get("score", 0), x["size"] or 10**12))
+                    if not candidates and i == 2 and selected and sources:
+                        # A calm, already-downloaded scene is safer than failing the whole render
+                        # when Commons has no small, clearly relevant fog-forest clip.
+                        fallback_index = 1 if len(selected) > 1 else 0
+                        chosen = dict(selected[fallback_index])
+                        chosen["title"] = chosen["title"] + " (استفاده مجدد برای تداوم فضای آرام)"
+                        selected.append(chosen)
+                        sources.append(sources[fallback_index])
+                        st.warning("کلیپ جنگل مه‌آلودِ مناسب زیر ۱۰۰ مگابایت پیدا نشد؛ برای تکمیل ویدئو از صحنه آرامِ بارانِ دریافت‌شده استفاده می‌شود.")
+                        progress.progress((i + 1) * 12)
+                        continue
                     if not candidates:
                         raise ValueError(
                             f"برای «{label}» کلیپ مرتبطِ زیر ۱۰۰ مگابایت پیدا نشد. "
@@ -171,6 +182,15 @@ else:
                         except OversizeVideoError:
                             source.unlink(missing_ok=True)
                             continue
+                    if chosen is None and i == 2 and selected and sources:
+                        fallback_index = 1 if len(selected) > 1 else 0
+                        chosen = dict(selected[fallback_index])
+                        chosen["title"] = chosen["title"] + " (استفاده مجدد برای تداوم فضای آرام)"
+                        selected.append(chosen)
+                        sources.append(sources[fallback_index])
+                        st.warning("کلیپ جنگل مه‌آلود از محدودیت حجم عبور کرد؛ از صحنه آرامِ بارانِ دریافت‌شده استفاده می‌شود.")
+                        progress.progress((i + 1) * 12)
+                        continue
                     if chosen is None:
                         raise ValueError(
                             f"برای «{label}» همه کلیپ‌های مرتبط از محدودیت ۱۰۰ مگابایت بزرگ‌تر بودند. "
