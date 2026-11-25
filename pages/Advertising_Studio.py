@@ -40,7 +40,7 @@ st.caption("می‌توانی عکس مبل را هم کنار ویدئوها ا
 
 c1, c2 = st.columns(2)
 with c1:
-    music = st.file_uploader("موسیقی تبلیغاتی (برای خروجی صدادار الزامی)", type=["mp3", "wav", "m4a", "aac", "ogg"], key="ad_music")
+    music = st.file_uploader("موسیقی تبلیغاتی (اختیاری؛ موسیقی پیش‌فرض موجود است)", type=["mp3", "wav", "m4a", "aac", "ogg"], key="ad_music")
 with c2:
     narration = st.file_uploader("گویندگی (اختیاری)", type=["mp3", "wav", "m4a", "aac", "ogg"], key="ad_voice")
 
@@ -84,7 +84,7 @@ if st.button("✨ ساخت تیزر تبلیغاتی", type="primary", use_conta
     if assets_count == 0:
         st.error("ابتدا حداقل یک کلیپ ویدئویی یا یک عکس انتخاب کن.")
         st.stop()
-        if assets_count > 12:
+    if assets_count > 12:
         st.error("برای پایداری رندر، مجموع عکس‌ها و کلیپ‌ها حداکثر ۱۲ فایل باشد.")
         st.stop()
 
