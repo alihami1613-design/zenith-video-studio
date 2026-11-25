@@ -60,18 +60,43 @@ def get_duration(ffmpeg, path):
     return int(h) * 3600 + int(mm) * 60 + float(ss)
 
 def download_video(url, path):
-    r = requests.get(url, stream=True, timeout=(30, 120),
-                     headers={"User-Agent": "LUNAVERA-Auto-Studio/1.0"})
-    r.raise_for_status()
-    total = 0
-    with path.open("wb") as f:
-        for chunk in r.iter_content(1024 * 1024):
-            if chunk:
-                total += len(chunk)
-                if total > 250 * 1024 * 1024:
-                    raise ValueError("یکی از ویدئوهای آرشیو بیش از ۲۵۰ مگابایت است.")
-                f.write(chunk)
-
+    # Wikimedia may temporarily throttle cloud-hosted apps (HTTP 429).
+    headers = {
+        "User-Agent": "LUNAVERA-Auto-Studio/1.1 (video downloader; respectful retry)",
+        "Referer": "https://commons.wikimedia.org/",
+        "Accept": "*/*",
+    }
+    last_error = None
+    for attempt in range(6):
+        try:
+            with requests.get(url, stream=True, timeout=(45, 180),
+                              headers=headers) as r:
+                if r.status_code == 429 or r.status_code in (500, 502, 503, 504):
+                    retry = r.headers.get("Retry-After")
+                    wait = min(90, int(retry)) if retry and retry.isdigit() else min(60, 5 * (2 ** attempt))
+                    last_error = requests.HTTPError(f"HTTP {r.status_code}; retrying after {wait}s")
+                    if attempt < 5:
+                        import time
+                        time.sleep(wait)
+                        continue
+                r.raise_for_status()
+                total = 0
+                with path.open("wb") as f:
+                    for chunk in r.iter_content(512 * 1024):
+                        if chunk:
+                            total += len(chunk)
+                            if total > 250 * 1024 * 1024:
+                                raise ValueError("یکی از ویدئوهای آرشیو بیش از ۲۵۰ مگابایت است.")
+                            f.write(chunk)
+                if total == 0:
+                    raise ValueError("فایل ویدئو خالی دریافت شد.")
+                return
+        except requests.RequestException as e:
+            last_error = e
+            if attempt < 5:
+                import time
+                time.sleep(min(60, 5 * (2 ** attempt)))
+    raise RuntimeError(f"سرور Wikimedia چند بار درخواست دانلود را محدود کرد (429). آخرین خطا: {last_error}")
 if not music:
     st.warning("فقط فایل موسیقی یک‌ساعته را انتخاب کن؛ بقیه مراحل خودکار انجام می‌شود.")
 else:
