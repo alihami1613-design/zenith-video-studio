@@ -7,7 +7,6 @@ import requests
 import streamlit as st
 import imageio_ffmpeg
 
-st.set_page_config(page_title="LUNAVERA Auto Studio", page_icon="🌙", layout="wide")
 st.title("🌙 LUNAVERA — 1-Hour Sleep Video")
 st.caption("تولید خودکار ویدئوی افقی خواب عمیق | 1920×1080 | بدون تدوین دستی")
 st.info("این ابزار مستقل از ZENITH Documentary Editor است و به پروژه‌های مستند دست نمی‌زند.")
