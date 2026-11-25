@@ -13,9 +13,12 @@ st.info("این ابزار مستقل از ZENITH Documentary Editor است و �
 
 DURATION = 3600
 SCENES = [
-    ("آسمان شب پرستاره", ["starry night sky", "stars night sky", "night sky"]),
-    ("باران آرام شبانه", ["rain at night", "rain window", "falling rain"]),
-    ("جنگل مه‌آلود آرام", ["misty forest", "fog forest", "forest fog"]),
+    ("آسمان شب آرام", ["starry night sky video", "stars over dark sky video", "night sky stars video"],
+     ["star", "stars", "night", "sky"], ["circled", "diagram", "map", "animation", "logo", "text"]),
+    ("باران روی شیشه پنجره", ["rain drops on window video", "rain on window at night video", "raindrops glass video"],
+     ["rain", "drop", "window", "glass"], ["satellite", "weather", "front", "forecast", "radar", "map", "label", "cira", "storm chase"]),
+    ("جنگل مه‌آلود بدون جاده", ["misty forest video", "fog in forest video", "mist trees video"],
+     ["forest", "fog", "mist"], ["driving", "motorway", "road", "car", "vehicle", "traffic", "dashcam", "gully", "highway"]),
 ]
 
 music = st.file_uploader("فایل موسیقی یک‌ساعته LUNAVERA را بارگذاری کن", type=["mp3", "wav", "m4a", "aac", "ogg"])
@@ -45,6 +48,7 @@ def commons_search(query):
                 "url": url,
                 "page": info.get("descriptionurl", ""),
                 "license": license_name,
+                "description": re.sub(r"<[^>]+>", " ", (meta.get("ImageDescription") or meta.get("ObjectName") or {}).get("value", "")),
                 "size": info.get("size", 0),
             })
     return out
@@ -116,13 +120,24 @@ else:
                 for i, (label, queries) in enumerate(SCENES):
                     status.write(f"جست‌وجوی خودکار صحنه {i+1}/3: {label}")
                     candidates = []
+                    positive = SCENES[i][2]
+                    negative = SCENES[i][3]
                     for q in queries:
-                        candidates = commons_search(q)
-                        if candidates:
-                            break
+                        found = commons_search(q)
+                        for item in found:
+                            haystack = (item["title"] + " " + item.get("description", "")).lower()
+                            if any(word in haystack for word in negative):
+                                continue
+                            if all(word in haystack for word in positive):
+                                item["score"] = sum(2 for word in positive if word in haystack)
+                                candidates.append(item)
                     if not candidates:
-                        raise ValueError(f"برای «{label}» ویدئوی دارای مجوز در Wikimedia Commons پیدا نشد. این بار دوباره اجرا کن.")
-                    candidates.sort(key=lambda x: (x["size"] or 10**12))
+                        raise ValueError(
+                            f"برای «{label}» کلیپِ واقعاً مرتبط و امن پیدا نشد. "
+                            "برای جلوگیری از انتخاب تصویر نامربوط، رندر متوقف شد؛ هیچ ویدئوی تصادفی جایگزین نمی‌شود."
+                        )
+                    # Relevance first; file size only breaks ties. Never select the smallest clip blindly.
+                    candidates.sort(key=lambda x: (-x.get("score", 0), x["size"] or 10**12))
                     selected.append(candidates[0])
                     progress.progress((i + 1) * 8)
                 st.write("ویدئوهای خودکار انتخاب‌شده:")
