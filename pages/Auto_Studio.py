@@ -62,6 +62,11 @@ def get_duration(ffmpeg, path):
     h, mm, ss = m.groups()
     return int(h) * 3600 + int(mm) * 60 + float(ss)
 
+class OversizeVideoError(Exception):
+    pass
+
+MAX_VIDEO_BYTES = 100 * 1024 * 1024
+
 def download_video(url, path):
     # Wikimedia may temporarily throttle cloud-hosted apps (HTTP 429).
     headers = {
@@ -88,8 +93,10 @@ def download_video(url, path):
                     for chunk in r.iter_content(512 * 1024):
                         if chunk:
                             total += len(chunk)
-                            if total > 100 * 1024 * 1024:
-                                raise ValueError("یکی از ویدئوهای آرشیو بیش از ۱۰۰ مگابایت است؛ برای جلوگیری از پر شدن فضای سرور انتخاب نشد.")
+                            if total > MAX_VIDEO_BYTES:
+                                f.close()
+                                path.unlink(missing_ok=True)
+                                raise OversizeVideoError("حجم کلیپ از سقف ۱۰۰ مگابایت بیشتر است.")
                             f.write(chunk)
                 if total == 0:
                     raise ValueError("فایل ویدئو خالی دریافت شد.")
@@ -117,6 +124,7 @@ else:
                 if audio_duration < 3500:
                     raise ValueError(f"مدت موسیقی فقط {audio_duration/60:.1f} دقیقه است؛ فایل باید نزدیک به ۶۰ دقیقه باشد.")
                 selected = []
+                sources = []
                 for i, (label, queries, _, _) in enumerate(SCENES):
                     status.write(f"جست‌وجوی خودکار صحنه {i+1}/3: {label}")
                     candidates = []
@@ -125,8 +133,6 @@ else:
                     for q in queries:
                         found = commons_search(q)
                         for item in found:
-                            # Use the actual file title only. Descriptions often contain unrelated
-                            # generic terms and caused tutorials/satellite footage to pass before.
                             title = item["title"].lower()
                             if any(word in title for word in negative):
                                 continue
@@ -142,25 +148,41 @@ else:
                             if relevant:
                                 item["score"] = sum(1 for word in positive if word in title)
                                 candidates.append(item)
+                    # Skip files whose archive metadata already shows they exceed the server limit.
+                    candidates = [x for x in candidates
+                                  if not x.get("size") or x["size"] <= MAX_VIDEO_BYTES]
+                    candidates.sort(key=lambda x: (-x.get("score", 0), x["size"] or 10**12))
                     if not candidates:
                         raise ValueError(
-                            f"برای «{label}» کلیپِ واقعاً مرتبط و امن پیدا نشد. "
-                            "برای جلوگیری از انتخاب تصویر نامربوط، رندر متوقف شد؛ هیچ ویدئوی تصادفی جایگزین نمی‌شود."
+                            f"برای «{label}» کلیپ مرتبطِ زیر ۱۰۰ مگابایت پیدا نشد. "
+                            "جست‌وجو انجام شد اما فایل سنگین انتخاب نشد."
                         )
-                    # Relevance first; file size only breaks ties. Never select the smallest clip blindly.
-                    candidates.sort(key=lambda x: (-x.get("score", 0), x["size"] or 10**12))
-                    selected.append(candidates[0])
-                    progress.progress((i + 1) * 8)
+
+                    # Try candidates one by one. If a file has no size metadata and proves too large
+                    # during download, discard it and automatically try the next relevant clip.
+                    source = work / f"source_{i}.video"
+                    chosen = None
+                    for candidate in candidates:
+                        try:
+                            status.write(f"دریافت صحنه {i+1}/3: {label} — بررسی حجم کلیپ")
+                            download_video(candidate["url"], source)
+                            chosen = candidate
+                            break
+                        except OversizeVideoError:
+                            source.unlink(missing_ok=True)
+                            continue
+                    if chosen is None:
+                        raise ValueError(
+                            f"برای «{label}» همه کلیپ‌های مرتبط از محدودیت ۱۰۰ مگابایت بزرگ‌تر بودند. "
+                            "هیچ فایل سنگینی روی سرور نگه داشته نشد."
+                        )
+                    selected.append(chosen)
+                    sources.append(source)
+                    progress.progress((i + 1) * 12)
+
                 st.write("ویدئوهای خودکار انتخاب‌شده:")
                 for label, item in zip([x[0] for x in SCENES], selected):
                     st.markdown(f"- **{label}:** [{item['title']}]({item['page']}) — {item['license']}")
-                sources = []
-                for i, (label, _, _, _) in enumerate(SCENES):
-                    status.write(f"دریافت صحنه {i+1}/3: {label}")
-                    source = work / f"source_{i}.video"
-                    download_video(selected[i]["url"], source)
-                    sources.append(source)
-                    progress.progress(24 + (i + 1) * 8)
 
                 # Encode a short 3-minute visual loop, then repeat it to create a 15-minute video.
                 # This avoids encoding the full duration on Streamlit Cloud's limited CPU.
