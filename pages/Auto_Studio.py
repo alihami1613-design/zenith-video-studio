@@ -10,6 +10,7 @@ import imageio_ffmpeg
 st.title("🌙 LUNAVERA — 15-Minute Sleep Video")
 st.caption("تولید خودکار ویدئوی افقی خواب عمیق | Full HD 1080p | بدون تدوین دستی")
 st.info("این ابزار مستقل از ZENITH Documentary Editor است و به پروژه‌های مستند دست نمی‌زند.")
+st.caption("نسخه اصلاح‌شده: در نبود کلیپ جنگل، صحنه آرام جایگزین می‌شود.")
 
 DURATION = 900
 SCENES = [
