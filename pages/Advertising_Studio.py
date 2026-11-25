@@ -105,7 +105,7 @@ if st.button("✨ ساخت تیزر تبلیغاتی", type="primary", use_conta
                 page = requests.get(page_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=25)
                 page.raise_for_status()
                 page_text = html.unescape(page.text).replace("\\/", "/")
-                audio_urls = re.findall(r'https?://cdn\\.pixabay\\.com/(?:download/)?audio/[^"\\s<>]+?\\.mp3(?:\\?[^"\\s<>]*)?', page_text)
+                audio_urls = re.findall(r'https?://cdn\.pixabay\.com/(?:download/)?audio/[^"\s<>]+?\.mp3(?:\?[^"\s<>]*)?', page_text)
                 if not audio_urls:
                     raise RuntimeError("موسیقی پیش‌فرض از Pixabay دریافت نشد. اتصال سرور یا ساختار صفحهٔ منبع را بررسی کن؛ می‌توانی یک فایل موسیقی هم بارگذاری کنی.")
                 audio_response = requests.get(audio_urls[0], headers={"User-Agent": "Mozilla/5.0"}, timeout=60)
@@ -180,7 +180,7 @@ if st.button("✨ ساخت تیزر تبلیغاتی", type="primary", use_conta
             cmd += ["-vf", video_fade, "-map", "0:v:0"]
 
             audio_fade = f"afade=t=in:st=0:d=0.35,afade=t=out:st={max(0, duration-0.8):.3f}:d=0.8"
-            if narration and music:
+            if narration:
                 graph = (
                     f"[1:a]volume={voice_level/100:.2f}[v];"
                     f"[{music_input_index}:a]volume={music_level/100:.2f}[m];"
@@ -194,8 +194,6 @@ if st.button("✨ ساخت تیزر تبلیغاتی", type="primary", use_conta
             else:
                 cmd += ["-map", f"{music_input_index}:a:0", "-af",
                         f"aresample=48000,apad,atrim=duration={duration},volume={music_level/100:.2f},lowpass=f=15000,alimiter=limit=0.92,{audio_fade}"]
-            else:
-                cmd += ["-an"]
 
             cmd += ["-t", str(duration), "-c:v", "libx264", "-preset", "veryfast",
                     "-crf", "23" if quality == "1080p متعادل" else "26",
