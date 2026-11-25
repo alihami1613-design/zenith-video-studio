@@ -58,11 +58,12 @@ voice_level = st.slider("بلندی گویندگی", 0, 150, 100)
 if music:
     st.audio(music)
 else:
-    st.caption("اگر موسیقی بارگذاری نکنی، برنامه موسیقی تبلیغاتی پیش‌فرض را از Pixabay دریافت می‌کند.")
+    st.caption("اگر موسیقی بارگذاری نکنی، برنامه موسیقی تبلیغاتی پیش‌فرض را از Wikimedia Commons دریافت می‌کند.")
 if narration:
     st.audio(narration)
 
 st.caption("خروجی: MP4 / H.264 / Full HD 1920×1080 / 24fps. شامل یکسان‌سازی قاب و فریم‌ریت، اصلاح رنگ، محو ورود و خروج و میکس صداست.")
+st.caption("موسیقی پیش‌فرض: Soft Corporate — MusicLFiles | مجوز CC BY 4.0؛ در انتشار ویدئو نام سازنده و پیوند منبع را ذکر کن: https://commons.wikimedia.org/wiki/File:Soft_Corporate_by_MusicLFiles.ogg")
 
 def run_ffmpeg(cmd, timeout=900):
     p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
@@ -95,23 +96,23 @@ if st.button("✨ ساخت تیزر تبلیغاتی", type="primary", use_conta
         with tempfile.TemporaryDirectory() as td:
             work = Path(td)
             normalized = []
-            music_path = work / "default_or_uploaded_music.mp3"
+            music_path = work / "default_or_uploaded_music.ogg"
             if music:
                 music_path = work / ("uploaded_music" + (Path(music.name).suffix or ".mp3"))
                 music_path.write_bytes(music.getbuffer())
             else:
-                status.write("دریافت موسیقی تبلیغاتی پیش‌فرض ...")
-                page_url = "https://pixabay.com/music/corporate-corporate-and-inspirational-cinematic-background-music-171255/"
-                page = requests.get(page_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=25)
-                page.raise_for_status()
-                page_text = html.unescape(page.text).replace("\\/", "/")
-                audio_urls = re.findall(r'https?://cdn\.pixabay\.com/(?:download/)?audio/[^"\s<>]+?\.mp3(?:\?[^"\s<>]*)?', page_text)
-                if not audio_urls:
-                    raise RuntimeError("موسیقی پیش‌فرض از Pixabay دریافت نشد. اتصال سرور یا ساختار صفحهٔ منبع را بررسی کن؛ می‌توانی یک فایل موسیقی هم بارگذاری کنی.")
-                audio_response = requests.get(audio_urls[0], headers={"User-Agent": "Mozilla/5.0"}, timeout=60)
+                status.write("دریافت موسیقی تبلیغاتی پیش‌فرض از Wikimedia Commons ...")
+                # Direct original audio file; the source page lists it under CC BY 4.0.
+                audio_url = "https://upload.wikimedia.org/wikipedia/commons/5/5f/Soft_Corporate_by_MusicLFiles.ogg"
+                audio_response = requests.get(
+                    audio_url,
+                    headers={"User-Agent": "ZENITH-Advertising-Studio/1.0 (video editor)"},
+                    timeout=90,
+                )
                 audio_response.raise_for_status()
-                if len(audio_response.content) < 10000:
-                    raise RuntimeError("فایل موسیقی پیش‌فرض معتبر یا کامل دریافت نشد.")
+                content_type = audio_response.headers.get("Content-Type", "").lower()
+                if len(audio_response.content) < 100000 or "audio" not in content_type:
+                    raise RuntimeError("فایل موسیقی پیش‌فرض از Wikimedia Commons به‌صورت کامل دریافت نشد. لطفاً دوباره تلاش کن یا موسیقی خودت را بارگذاری کن.")
                 music_path.write_bytes(audio_response.content)
             assets = [(item, "video") for item in (videos or [])] + [(item, "photo") for item in (photos or [])]
             per_clip = duration / len(assets)
@@ -214,4 +215,4 @@ if st.button("✨ ساخت تیزر تبلیغاتی", type="primary", use_conta
         st.code(str(e)[-3500:])
 
 st.divider()
-st.caption("نکته: عکس‌ها با حرکت آرام دوربین به صحنه تبدیل می‌شوند. در صورت نداشتن موسیقی بارگذاری‌شده، موسیقی پیش‌فرض تبلیغاتی از Pixabay دریافت می‌شود. این نسخه هنوز سرویس تولید خودکار موسیقی/گویندگی، فوتیج استوک و موشن‌گرافیک اختصاصی ندارد.")
+st.caption("نکته: عکس‌ها با حرکت آرام دوربین به صحنه تبدیل می‌شوند. در صورت نداشتن موسیقی بارگذاری‌شده، موسیقی پیش‌فرض از Wikimedia Commons دریافت می‌شود. موسیقی Soft Corporate از MusicLFiles با مجوز CC BY 4.0 است؛ برای انتشار، نام سازنده و پیوند منبع را ذکر کن. این نسخه هنوز سرویس تولید خودکار موسیقی/گویندگی، فوتیج استوک و موشن‌گرافیک اختصاصی ندارد.")
