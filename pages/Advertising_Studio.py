@@ -55,6 +55,23 @@ with c:
 with d:
     quality = st.selectbox("کیفیت خروجی", ["1080p متعادل", "1080p با حجم کمتر"], index=0)
 
+st.markdown("#### ۴. کارگردانی و جلوه‌های تصویری")
+e1, e2, e3 = st.columns(3)
+with e1:
+    edit_preset = st.selectbox(
+        "سبک تدوین",
+        ["LUXURY — لوکس و شیک", "CINEMATIC — سینمایی", "DYNAMIC — پرانرژی"],
+        index=0,
+    )
+with e2:
+    transition = st.selectbox(
+        "اتصال صحنه‌ها",
+        ["برش حرفه‌ای", "محو شدن از سیاهی"],
+        index=0,
+    )
+with e3:
+    vfx_strength = st.slider("شدت جلوه تصویری", 0, 100, 45)
+
 if orientation.startswith("عمودی"):
     output_w, output_h = 1080, 1920
 else:
@@ -139,11 +156,22 @@ if st.button("✨ ساخت تیزر تبلیغاتی", type="primary", use_conta
                 dst = work / f"clip_{i:02d}.mp4"
                 src.write_bytes(uploaded.getbuffer())
 
-                vf = f"scale={output_w}:{output_h}:force_original_aspect_ratio=increase,crop={output_w}:{output_h},setsar=1,fps=24,eq=contrast=1.06:saturation=1.10:brightness=0.005,format=yuv420p"
+                vf = f"scale={output_w}:{output_h}:force_original_aspect_ratio=increase,crop={output_w}:{output_h},setsar=1,fps=24,eq=contrast=1.06:saturation=1.10:brightness=0.005"
+                strength = vfx_strength / 100.0
                 if style == "لوکس مشکی و طلایی":
                     vf += ",curves=all='0/0 0.20/0.15 0.75/0.82 1/1'"
                 elif style == "پرکنتراست و پرانرژی":
                     vf += ",eq=contrast=1.12:saturation=1.18"
+
+                # Practical FFmpeg finishing effects: vignette, sharpening and restrained grade.
+                if edit_preset.startswith("LUXURY"):
+                    vf += f",vignette=PI/{5.0 - 1.2 * strength},eq=contrast={1.04 + 0.10 * strength:.3f}:saturation={1.02 + 0.12 * strength:.3f}"
+                    if vfx_strength >= 20:
+                        vf += f",unsharp=5:5:{0.25 + 0.45 * strength:.2f}:5:5:0"
+                elif edit_preset.startswith("CINEMATIC"):
+                    vf += f",vignette=PI/{4.5 - 1.0 * strength},eq=contrast={1.06 + 0.12 * strength:.3f}:saturation={0.94 + 0.08 * strength:.3f},unsharp=5:5:{0.20 + 0.35 * strength:.2f}:5:5:0"
+                else:
+                    vf += f",eq=contrast={1.10 + 0.16 * strength:.3f}:saturation={1.12 + 0.20 * strength:.3f},unsharp=5:5:{0.35 + 0.55 * strength:.2f}:5:5:0"
 
                 if asset_type == "video":
                     # Loop short source clips to fill their assigned segment instead of
@@ -164,6 +192,12 @@ if st.button("✨ ساخت تیزر تبلیغاتی", type="primary", use_conta
                         x_expr = "iw/2-(iw/zoom/2)-4*sin(on/100)"
                     vf += f",zoompan=z='{zoom_expr}':d=1:x='{x_expr}':y='ih/2-(ih/zoom/2)':s={output_w}x{output_h}:fps=24,trim=duration={per_clip:.3f},setpts=PTS-STARTPTS"
                     input_args = ["-loop", "1", "-framerate", "24", "-i", str(src), "-t", f"{per_clip:.3f}"]
+
+                # Optional dip-to-black transition on every shot; clean cuts remain the default.
+                if transition == "محو شدن از سیاهی":
+                    fade_len = min(0.35, per_clip / 4)
+                    vf += f",fade=t=in:st=0:d={fade_len:.3f},fade=t=out:st={max(0, per_clip-fade_len):.3f}:d={fade_len:.3f}"
+                vf += ",format=yuv420p"
 
                 run_ffmpeg([
                     ffmpeg, "-y", *input_args, "-vf", vf,
@@ -241,4 +275,4 @@ if st.button("✨ ساخت تیزر تبلیغاتی", type="primary", use_conta
         st.code(str(e)[-3500:])
 
 st.divider()
-st.caption("نکته: عکس‌ها با حرکت آرام دوربین به صحنه تبدیل می‌شوند. در صورت نداشتن موسیقی بارگذاری‌شده، موسیقی پیش‌فرض از Wikimedia Commons دریافت می‌شود. موسیقی Soft Corporate از MusicLFiles با مجوز CC BY 4.0 است؛ برای انتشار، نام سازنده و پیوند منبع را ذکر کن. این نسخه هنوز سرویس تولید خودکار موسیقی/گویندگی، فوتیج استوک و موشن‌گرافیک اختصاصی ندارد.")
+st.caption("نکته: نسخه فعلی ابزارهای تدوین و فینیشینگ FFmpeg شامل درجه‌بندی رنگ، وینیت، شارپ‌سازی، حرکت آرام عکس و محوشدن اختیاری بین نماها را دارد. این‌ها جلوه‌های پس‌تولید هستند، نه تولید صحنه با هوش مصنوعی یا موشن‌گرافیک سه‌بعدی. موسیقی پیش‌فرض Wikimedia در صورت محدودیت سرور ممکن است در دسترس نباشد.")
