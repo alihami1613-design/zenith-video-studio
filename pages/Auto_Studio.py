@@ -144,7 +144,7 @@ else:
                 for label, item in zip([x[0] for x in SCENES], selected):
                     st.markdown(f"- **{label}:** [{item['title']}]({item['page']}) — {item['license']}")
                 sources = []
-                for i, (label, _) in enumerate(SCENES):
+                for i, (label, _, _, _) in enumerate(SCENES):
                     status.write(f"دریافت صحنه {i+1}/3: {label}")
                     source = work / f"source_{i}.video"
                     download_video(selected[i]["url"], source)
