@@ -8,7 +8,7 @@ import streamlit as st
 import imageio_ffmpeg
 
 st.title("🌙 LUNAVERA — 1-Hour Sleep Video")
-st.caption("تولید خودکار ویدئوی افقی خواب عمیق | 1920×1080 | بدون تدوین دستی")
+st.caption("تولید خودکار ویدئوی افقی خواب عمیق | 720p سبک و مناسب سرور رایگان | بدون تدوین دستی")
 st.info("این ابزار مستقل از ZENITH Documentary Editor است و به پروژه‌های مستند دست نمی‌زند.")
 
 DURATION = 3600
@@ -84,8 +84,8 @@ def download_video(url, path):
                     for chunk in r.iter_content(512 * 1024):
                         if chunk:
                             total += len(chunk)
-                            if total > 250 * 1024 * 1024:
-                                raise ValueError("یکی از ویدئوهای آرشیو بیش از ۲۵۰ مگابایت است.")
+                            if total > 100 * 1024 * 1024:
+                                raise ValueError("یکی از ویدئوهای آرشیو بیش از ۱۰۰ مگابایت است؛ برای جلوگیری از پر شدن فضای سرور انتخاب نشد.")
                             f.write(chunk)
                 if total == 0:
                     raise ValueError("فایل ویدئو خالی دریافت شد.")
@@ -128,38 +128,38 @@ else:
                 st.write("ویدئوهای خودکار انتخاب‌شده:")
                 for label, item in zip([x[0] for x in SCENES], selected):
                     st.markdown(f"- **{label}:** [{item['title']}]({item['page']}) — {item['license']}")
-                rendered = []
+                sources = []
                 for i, (label, _) in enumerate(SCENES):
-                    status.write(f"آماده‌سازی صحنه {i+1}/3: {label}")
+                    status.write(f"دریافت صحنه {i+1}/3: {label}")
                     source = work / f"source_{i}.video"
                     download_video(selected[i]["url"], source)
-                    out = work / f"scene_{i}.mp4"
-                    subprocess.run([
-                        ffmpeg, "-y", "-stream_loop", "-1", "-i", str(source),
-                        "-t", "1200",
-                        "-vf", "scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,setsar=1,fps=24,format=yuv420p",
-                        "-an", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "27",
-                        "-pix_fmt", "yuv420p", str(out)
-                    ], check=True, capture_output=True, text=True, timeout=1800)
-                    rendered.append(out)
-                    progress.progress(8 + (i + 1) * 25)
-                concat = work / "concat.txt"
-                concat.write_text("".join(f"file '{p.as_posix()}'\n" for p in rendered), encoding="utf-8")
-                silent = work / "visuals.mp4"
-                subprocess.run([ffmpeg, "-y", "-f", "concat", "-safe", "0", "-i", str(concat),
-                                "-c", "copy", str(silent)], check=True, capture_output=True, text=True, timeout=300)
+                    sources.append(source)
+                    progress.progress(24 + (i + 1) * 8)
+
+                status.write("رندر یک‌مرحله‌ای ویدئوی یک‌ساعته با کیفیت 720p؛ بدون فایل‌های میانی حجیم...")
                 final = work / "LUNAVERA_Deep_Sleep_1_Hour.mp4"
-                status.write("ترکیب موسیقی و آماده‌سازی خروجی نهایی یک‌ساعته...")
-                subprocess.run([
-                    ffmpeg, "-y", "-i", str(silent), "-i", str(music_path),
-                    "-t", str(DURATION), "-map", "0:v:0", "-map", "1:a:0",
-                    "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
-                    "-af", "volume=0.85", "-movflags", "+faststart", str(final)
-                ], check=True, capture_output=True, text=True, timeout=1200)
+                filter_parts = []
+                for i in range(3):
+                    filter_parts.append(
+                        f"[{i}:v]scale=1280:720:force_original_aspect_ratio=increase,"
+                        f"crop=1280:720,setsar=1,fps=24,format=yuv420p,"
+                        f"trim=duration=1200,setpts=PTS-STARTPTS[v{i}]"
+                    )
+                filter_parts.append("[v0][v1][v2]concat=n=3:v=1:a=0[v]")
+                cmd = [ffmpeg, "-y"]
+                for source in sources:
+                    cmd += ["-stream_loop", "-1", "-i", str(source)]
+                cmd += ["-i", str(music_path), "-filter_complex", ";".join(filter_parts),
+                        "-map", "[v]", "-map", "3:a:0", "-t", str(DURATION),
+                        "-c:v", "libx264", "-preset", "ultrafast",
+                        "-b:v", "650k", "-maxrate", "750k", "-bufsize", "1300k",
+                        "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "96k",
+                        "-af", "volume=0.85", "-movflags", "+faststart", str(final)]
+                subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=7200)
                 progress.progress(100)
                 status.success("ویدئوی یک‌ساعته LUNAVERA آماده شد.")
                 # Avoid loading a huge one-hour MP4 twice into server memory.
-                st.info("پیش‌نمایش داخل صفحه غیرفعال است تا سرور هنگام بارگذاری ویدئوی حجیم از کار نیفتد.")
+                st.info("پیش‌نمایش داخل صفحه غیرفعال است تا حافظه سرور حفظ شود. خروجی نهایی 720p است.")
                 with final.open("rb") as video_file:
                     st.download_button("⬇️ دریافت ویدئوی کامل LUNAVERA", data=video_file,
                                        file_name="LUNAVERA_Deep_Sleep_1_Hour.mp4",
