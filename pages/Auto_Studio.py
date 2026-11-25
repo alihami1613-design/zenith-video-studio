@@ -9,9 +9,9 @@ import imageio_ffmpeg
 
 st.set_page_config(page_title="ZENITH Auto Studio", page_icon="🎬", layout="wide")
 st.title("🎬 ZENITH AUTO STUDIO")
-st.caption("ZENITH BEYOND | جست‌وجو و تدوین خودکار ویدئوهای علمی و فضایی")
+st.caption("ZENITH BEYOND | جست‌وجو و تدوین خودکار ویدئوهای علمی، فناوری و موضوعات عمومی")
 st.info("این صفحه مستقل از Documentary Editor است؛ پروژه‌ها و مراحل تأییدشده قبلی را تغییر نمی‌دهد.")
-st.warning("منبع فعلی آرشیو NASA است؛ برای موضوعات علمی، فضایی، زمین و فناوری مناسب است و جایگزین عمومی Pexels برای همه موضوعات نیست.")
+st.warning("منبع ویدئو Wikimedia Commons است؛ جست‌وجو بدون API Key یا ثبت‌نام. فقط فایل‌های دارای اطلاعات مجوز نمایش داده می‌شوند.")
 
 script = st.text_area(
     "متن سناریو را وارد کن؛ هر صحنه را با یک خط خالی جدا کن.",
@@ -22,34 +22,35 @@ narration = st.file_uploader("صدای گوینده (اختیاری؛ برای �
 music = st.file_uploader("موسیقی پس‌زمینه (اختیاری)", type=["mp3", "wav", "m4a", "aac", "ogg"])
 scenes = [p.strip() for p in re.split(r"\n\s*\n", script) if p.strip()]
 
-def nasa_search(query):
-    response = requests.get(
-        "https://images-api.nasa.gov/search",
-        params={"q": query[:100], "media_type": "video", "page_size": 8},
-        timeout=30,
-    )
+def commons_search(query):
+    params = {
+        'action': 'query', 'format': 'json', 'generator': 'search',
+        'gsrnamespace': 6, 'gsrsearch': query[:90] + ' filetype:video',
+        'gsrlimit': 8, 'prop': 'imageinfo', 'iiprop': 'url|extmetadata|mime',
+    }
+    response = requests.get('https://commons.wikimedia.org/w/api.php', params=params, headers={'User-Agent': 'ZENITH-Auto-Studio/1.0'}, timeout=30)
     response.raise_for_status()
-    items = response.json().get("collection", {}).get("items", [])
+    pages = response.json().get('query', {}).get('pages', {})
     videos = []
-    for item in items:
-        data = (item.get("data") or [{}])[0]
-        nasa_id = data.get("nasa_id")
-        if not nasa_id:
+    for page in pages.values():
+        info = (page.get('imageinfo') or [{}])[0]
+        meta = info.get('extmetadata', {})
+        url = info.get('url', '')
+        mime = info.get('mime', '')
+        license_name = (meta.get('LicenseShortName') or {}).get('value', '')
+        if not url or not mime.startswith('video/') or not license_name:
             continue
-        manifest_response = requests.get(f"https://images-api.nasa.gov/asset/{nasa_id}", timeout=30)
-        if not manifest_response.ok:
+        if not url.lower().split('?')[0].endswith(('.webm', '.ogv', '.ogg', '.mp4', '.mpeg', '.mpg')):
             continue
-        manifest = manifest_response.json()
-        files = manifest.get("collection", {}).get("items", [])
-        mp4s = [x.get("href", "") for x in files if x.get("href", "").lower().split("?")[0].endswith(".mp4")]
-        if mp4s:
-            videos.append({
-                "id": nasa_id,
-                "title": data.get("title", nasa_id),
-                "description": data.get("description", ""),
-                "url": mp4s[0],
-                "date": data.get("date_created", ""),
-            })
+        videos.append({
+            'id': page.get('title', ''),
+            'title': page.get('title', '').replace('File:', ''),
+            'url': url,
+            'page_url': info.get('descriptionurl', ''),
+            'license': license_name,
+            'license_url': (meta.get('LicenseUrl') or {}).get('value', ''),
+            'artist': (meta.get('Artist') or {}).get('value', ''),
+        })
     return videos
 
 def get_duration(ffmpeg, path):
@@ -60,8 +61,8 @@ def get_duration(ffmpeg, path):
     h, m, s = match.groups()
     return int(h) * 3600 + int(m) * 60 + float(s)
 
-if "nasa_results" not in st.session_state:
-    st.session_state.nasa_results = {}
+if "commons_results" not in st.session_state:
+    st.session_state.commons_results = {}
 
 if st.button("🔎 جست‌وجوی ویدئوهای هر صحنه", type="primary", use_container_width=True):
     if not scenes:
@@ -73,18 +74,18 @@ if st.button("🔎 جست‌وجوی ویدئوهای هر صحنه", type="prim
         try:
             for i, scene in enumerate(scenes):
                 query = re.sub(r"[^\w\s-]", " ", scene, flags=re.UNICODE)
-                query = " ".join(query.split()[:9]) or "NASA science space"
+                query = " ".join(query.split()[:9]) or "technology science"
                 status.write(f"جست‌وجوی صحنه {i + 1} از {len(scenes)}: {query}")
-                found[i] = {"query": query, "videos": nasa_search(query)}
+                found[i] = {"query": query, "videos": commons_search(query)}
                 bar.progress((i + 1) / len(scenes))
-            st.session_state.nasa_results = found
-            st.session_state.nasa_scene_count = len(scenes)
+            st.session_state.commons_results = found
+            st.session_state.commons_scene_count = len(scenes)
             st.success("جست‌وجو تمام شد. ویدئوی هر صحنه را بازبینی و انتخاب کن.")
         except Exception as e:
             st.error(f"جست‌وجو انجام نشد: {e}")
 
-results = st.session_state.nasa_results
-if results and st.session_state.get("nasa_scene_count") == len(scenes):
+results = st.session_state.commons_results
+if results and st.session_state.get("commons_scene_count") == len(scenes):
     st.subheader("انتخاب و تأیید ویدئوی هر صحنه")
     selections = {}
     for i, scene in enumerate(scenes):
@@ -93,16 +94,20 @@ if results and st.session_state.get("nasa_scene_count") == len(scenes):
         with st.expander(f"صحنه {i + 1}: {scene[:90]}", expanded=(i == 0)):
             st.caption(f"عبارت جست‌وجو: {data.get('query', '')}")
             if not videos:
-                st.warning("برای این صحنه ویدئوی مناسبی در آرشیو NASA پیدا نشد. عبارت را علمی‌تر یا کوتاه‌تر کن.")
+                st.warning("برای این صحنه ویدئوی مناسبی در آرشیو Wikimedia Commons پیدا نشد. عبارت را علمی‌تر یا کوتاه‌تر کن.")
                 continue
             labels = [f"{v['title']} | {v.get('date', '')[:10]}" for v in videos]
-            chosen = st.selectbox("ویدئوی این صحنه", range(len(videos)), format_func=lambda n: labels[n], key=f"nasa_pick_{i}")
+            chosen = st.selectbox("ویدئوی این صحنه", range(len(videos)), format_func=lambda n: labels[n], key=f"commons_pick_{i}")
             v = videos[chosen]
             st.video(v["url"])
-            st.caption(f"منبع: NASA Image and Video Library | شناسه: {v['id']}")
+            st.caption(f"مجوز: {v['license']} | سازنده: {v['artist'] or 'در صفحه منبع بررسی شود'}")
+            if v.get('page_url'):
+                st.markdown(f"[مشاهده صفحه اصلی و جزئیات مجوز]({v['page_url']})")
+            if v.get('license_url'):
+                st.markdown(f"[متن مجوز]({v['license_url']})")
             selections[i] = v
 
-    st.warning("پیش از رندر، همه انتخاب‌ها را بازبینی کن. پوشش آرشیو NASA محدود به محتوای موجود در مجموعه خودش است.")
+    st.warning("پیش از رندر، همه انتخاب‌ها را بازبینی کن. پوشش آرشیو Wikimedia Commons محدود به محتوای موجود در مجموعه خودش است.")
     if st.button("✅ تأیید انتخاب‌ها و ساخت ویدئوی 1080p", type="primary", use_container_width=True):
         if len(selections) != len(scenes):
             st.error("برای همه صحنه‌ها باید یک ویدئو انتخاب شود.")
@@ -200,4 +205,4 @@ if results and st.session_state.get("nasa_scene_count") == len(scenes):
             st.error(f"ساخت ویدئو انجام نشد: {e}")
 
 st.divider()
-st.caption("خروجی افقی 1920×1080 و 30fps است. جست‌وجو از NASA Image and Video Library انجام می‌شود؛ انتخاب نهایی صحنه‌ها با تأیید توست. پیش از انتشار، اطلاعات حقوق استفاده و اعتبار هر فایل را بررسی کن.")
+st.caption("خروجی افقی 1920×1080 و 30fps است. جست‌وجو از Wikimedia Commons انجام می‌شود؛ صفحه منبع و مجوز هر فایل را پیش از انتشار بررسی کن و اعتبار لازم را درج کن.")
