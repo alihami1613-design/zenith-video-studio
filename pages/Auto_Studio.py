@@ -125,11 +125,22 @@ else:
                     for q in queries:
                         found = commons_search(q)
                         for item in found:
-                            haystack = (item["title"] + " " + item.get("description", "")).lower()
-                            if any(word in haystack for word in negative):
+                            # Use the actual file title only. Descriptions often contain unrelated
+                            # generic terms and caused tutorials/satellite footage to pass before.
+                            title = item["title"].lower()
+                            if any(word in title for word in negative):
                                 continue
-                            if sum(1 for word in positive if word in haystack) >= 2:
-                                item["score"] = sum(2 for word in positive if word in haystack)
+                            if i == 0:
+                                relevant = (("star" in title or "stars" in title) and
+                                            ("night" in title or "sky" in title))
+                            elif i == 1:
+                                relevant = ("rain" in title and
+                                            ("window" in title or "glass" in title or "raindrop" in title))
+                            else:
+                                relevant = ("forest" in title and
+                                            ("fog" in title or "mist" in title))
+                            if relevant:
+                                item["score"] = sum(1 for word in positive if word in title)
                                 candidates.append(item)
                     if not candidates:
                         raise ValueError(
