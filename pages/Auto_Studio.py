@@ -244,7 +244,7 @@ else:
                 with final.open("rb") as video_file:
                     st.download_button("⬇️ دریافت ویدئوی کامل LUNAVERA", data=video_file,
                                        file_name="LUNAVERA_Deep_Sleep_15_Minutes.mp4",
-                                       mime="video/mp4", use_container_width=True)
+                                       mime="video/mp4", use_container_width=True, on_click="ignore")
         except subprocess.CalledProcessError as e:
             st.error("رندر در سرور متوقف شد؛ جزئیات فنی:")
             st.code((e.stderr or str(e))[-3000:])
