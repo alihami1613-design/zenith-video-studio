@@ -1,4 +1,6 @@
 import re
+import html
+import requests
 import subprocess
 import tempfile
 from pathlib import Path
@@ -55,6 +57,8 @@ music_level = st.slider("بلندی موسیقی", 0, 100, 28)
 voice_level = st.slider("بلندی گویندگی", 0, 150, 100)
 if music:
     st.audio(music)
+else:
+    st.caption("اگر موسیقی بارگذاری نکنی، برنامه موسیقی تبلیغاتی پیش‌فرض را از Pixabay دریافت می‌کند.")
 if narration:
     st.audio(narration)
 
@@ -80,10 +84,7 @@ if st.button("✨ ساخت تیزر تبلیغاتی", type="primary", use_conta
     if assets_count == 0:
         st.error("ابتدا حداقل یک کلیپ ویدئویی یا یک عکس انتخاب کن.")
         st.stop()
-    if not music and not narration:
-        st.error("برای جلوگیری از خروجی بی‌صدا، ابتدا موسیقی تبلیغاتی یا گویندگی بارگذاری کن.")
-        st.stop()
-    if assets_count > 12:
+        if assets_count > 12:
         st.error("برای پایداری رندر، مجموع عکس‌ها و کلیپ‌ها حداکثر ۱۲ فایل باشد.")
         st.stop()
 
@@ -94,6 +95,24 @@ if st.button("✨ ساخت تیزر تبلیغاتی", type="primary", use_conta
         with tempfile.TemporaryDirectory() as td:
             work = Path(td)
             normalized = []
+            music_path = work / "default_or_uploaded_music.mp3"
+            if music:
+                music_path = work / ("uploaded_music" + (Path(music.name).suffix or ".mp3"))
+                music_path.write_bytes(music.getbuffer())
+            else:
+                status.write("دریافت موسیقی تبلیغاتی پیش‌فرض ...")
+                page_url = "https://pixabay.com/music/corporate-corporate-and-inspirational-cinematic-background-music-171255/"
+                page = requests.get(page_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=25)
+                page.raise_for_status()
+                page_text = html.unescape(page.text).replace("\\/", "/")
+                audio_urls = re.findall(r'https?://cdn\\.pixabay\\.com/(?:download/)?audio/[^"\\s<>]+?\\.mp3(?:\\?[^"\\s<>]*)?', page_text)
+                if not audio_urls:
+                    raise RuntimeError("موسیقی پیش‌فرض از Pixabay دریافت نشد. اتصال سرور یا ساختار صفحهٔ منبع را بررسی کن؛ می‌توانی یک فایل موسیقی هم بارگذاری کنی.")
+                audio_response = requests.get(audio_urls[0], headers={"User-Agent": "Mozilla/5.0"}, timeout=60)
+                audio_response.raise_for_status()
+                if len(audio_response.content) < 10000:
+                    raise RuntimeError("فایل موسیقی پیش‌فرض معتبر یا کامل دریافت نشد.")
+                music_path.write_bytes(audio_response.content)
             assets = [(item, "video") for item in (videos or [])] + [(item, "photo") for item in (photos or [])]
             per_clip = duration / len(assets)
 
@@ -154,10 +173,8 @@ if st.button("✨ ساخت تیزر تبلیغاتی", type="primary", use_conta
                 vp = work / ("voice" + (Path(narration.name).suffix or ".mp3"))
                 vp.write_bytes(narration.getbuffer())
                 cmd += ["-i", str(vp)]
-            if music:
-                mp = work / ("music" + (Path(music.name).suffix or ".mp3"))
-                mp.write_bytes(music.getbuffer())
-                cmd += ["-stream_loop", "-1", "-i", str(mp)]
+            cmd += ["-stream_loop", "-1", "-i", str(music_path)]
+            music_input_index = 2 if narration else 1
 
             video_fade = f"fade=t=in:st=0:d=0.7,fade=t=out:st={max(0, duration-0.8):.3f}:d=0.8"
             cmd += ["-vf", video_fade, "-map", "0:v:0"]
@@ -166,7 +183,7 @@ if st.button("✨ ساخت تیزر تبلیغاتی", type="primary", use_conta
             if narration and music:
                 graph = (
                     f"[1:a]volume={voice_level/100:.2f}[v];"
-                    f"[2:a]volume={music_level/100:.2f}[m];"
+                    f"[{music_input_index}:a]volume={music_level/100:.2f}[m];"
                     f"[v][m]amix=inputs=2:duration=longest:dropout_transition=2,"
                     f"atrim=duration={duration},{audio_fade}[a]"
                 )
@@ -174,8 +191,8 @@ if st.button("✨ ساخت تیزر تبلیغاتی", type="primary", use_conta
             elif narration:
                 cmd += ["-map", "1:a:0", "-af",
                         f"aresample=48000,apad,atrim=duration={duration},volume={voice_level/100:.2f},acompressor=threshold=0.12:ratio=3:attack=15:release=180,{audio_fade}"]
-            elif music:
-                cmd += ["-map", "2:a:0", "-af",
+            else:
+                cmd += ["-map", f"{music_input_index}:a:0", "-af",
                         f"aresample=48000,apad,atrim=duration={duration},volume={music_level/100:.2f},lowpass=f=15000,alimiter=limit=0.92,{audio_fade}"]
             else:
                 cmd += ["-an"]
@@ -183,8 +200,7 @@ if st.button("✨ ساخت تیزر تبلیغاتی", type="primary", use_conta
             cmd += ["-t", str(duration), "-c:v", "libx264", "-preset", "veryfast",
                     "-crf", "23" if quality == "1080p متعادل" else "26",
                     "-pix_fmt", "yuv420p"]
-            if narration or music:
-                cmd += ["-c:a", "aac", "-b:a", "160k"]
+            cmd += ["-c:a", "aac", "-b:a", "160k"]
             cmd += ["-movflags", "+faststart", str(final)]
 
             status.write("رندر نهایی تیزر در حال انجام است ...")
@@ -203,4 +219,4 @@ if st.button("✨ ساخت تیزر تبلیغاتی", type="primary", use_conta
         st.code(str(e)[-3500:])
 
 st.divider()
-st.caption("نکته: عکس‌ها با حرکت آرام دوربین به صحنه تبدیل می‌شوند. برای خروجی صدادار، موسیقی یا گویندگی لازم است. این نسخه هنوز سرویس تولید خودکار موسیقی/گویندگی، فوتیج استوک و موشن‌گرافیک اختصاصی ندارد.")
+st.caption("نکته: عکس‌ها با حرکت آرام دوربین به صحنه تبدیل می‌شوند. در صورت نداشتن موسیقی بارگذاری‌شده، موسیقی پیش‌فرض تبلیغاتی از Pixabay دریافت می‌شود. این نسخه هنوز سرویس تولید خودکار موسیقی/گویندگی، فوتیج استوک و موشن‌گرافیک اختصاصی ندارد.")
