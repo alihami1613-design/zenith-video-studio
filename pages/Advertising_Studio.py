@@ -259,8 +259,8 @@ if st.button("✨ ساخت تیزر تبلیغاتی", type="primary", use_conta
                 music_input_index = 2 if narration else 1
 
             video_filters = [f"fade=t=in:st=0:d=0.7", f"fade=t=out:st={max(0, duration-0.8):.3f}:d=0.8"]
+            # Robust, simple motion graphics: avoid nested expression commas in FFmpeg.
             if motion_graphics and (mg_title.strip() or mg_subtitle.strip() or mg_cta.strip()):
-                # Use text files to avoid fragile FFmpeg escaping for user-entered text.
                 font_candidates = [
                     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
                     "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf",
@@ -275,41 +275,28 @@ if st.button("✨ ساخت تیزر تبلیغاتی", type="primary", use_conta
                     subtitle_file.write_text(mg_subtitle.strip(), encoding="utf-8")
                     cta_file.write_text(mg_cta.strip(), encoding="utf-8")
                     font_arg = font_file.replace("\\", "/").replace(":", "\\:")
-                    # Animated title card: gentle upward entrance, opacity fade, accent rule and CTA pill.
+                    safe_common = f":fontfile='{font_arg}':expansion=none:shadowcolor=black@0.65:shadowx=2:shadowy=2"
+                    # Constant positions and fade-in/out alpha avoid fragile nested expressions.
+                    fade_alpha = "0.95"
                     if mg_style.startswith("لوکس"):
-                        title_y = "h*0.70"
-                        subtitle_y = "h*0.70+text_h+18"
-                        cta_y = "h*0.70+text_h+72"
-                        x_expr = "(w-text_w)/2"
-                        box_x = "w*0.24"
-                        box_w = "w*0.52"
+                        tx, ty, sy, bx, bw = "(w-text_w)/2", "h*0.70", "h*0.70+text_h+18", "w*0.24", "w*0.52"
+                        cy = "h*0.70+text_h+72"
                     elif mg_style.startswith("مدرن"):
-                        title_y = "(h-text_h)/2"
-                        subtitle_y = "(h-text_h)/2+text_h+22"
-                        cta_y = "(h-text_h)/2+text_h+76"
-                        x_expr = "(w-text_w)/2"
-                        box_x = "w*0.30"
-                        box_w = "w*0.40"
+                        tx, ty, sy, bx, bw = "(w-text_w)/2", "(h-text_h)/2", "(h-text_h)/2+text_h+22", "w*0.30", "w*0.40"
+                        cy = "(h-text_h)/2+text_h+76"
                     else:
-                        title_y = "h*0.78"
-                        subtitle_y = "h*0.78+text_h+14"
-                        cta_y = "h*0.78+text_h+58"
-                        x_expr = "w*0.09"
-                        box_x = "w*0.09"
-                        box_w = "w*0.34"
-                    alpha_expr = "if(lt(t\\,0.7)\\,t/0.7\\,if(gt(t\\," + str(max(0, duration-0.7)) + ")\\,(" + str(duration) + "-t)/0.7\\,1))"
-                    rise_expr = "12*(1-min(t/0.7,1))"
-                    common = f":fontfile='{font_arg}':expansion=none:shadowcolor=black@0.65:shadowx=2:shadowy=2"
-                    video_filters.append(f"drawbox=x={box_x}:y=h*0.68:w={box_w}:h=3:color=0xD6B46A@0.95:t=fill:enable='between(t,0.15,{duration-0.15})'")
+                        tx, ty, sy, bx, bw = "w*0.09", "h*0.78", "h*0.78+text_h+14", "w*0.09", "w*0.34"
+                        cy = "h*0.78+text_h+58"
                     if mg_title.strip():
-                        video_filters.append(f"drawtext=textfile='{title_file.as_posix()}':x={x_expr}:y={title_y}-{rise_expr}:fontsize=h*0.034:fontcolor=white:alpha='{alpha_expr}'{common}")
+                        video_filters.append(f"drawtext=textfile='{title_file.as_posix()}':x={tx}:y={ty}:fontsize=52:fontcolor=white:alpha={fade_alpha}{safe_common}")
                     if mg_subtitle.strip():
-                        video_filters.append(f"drawtext=textfile='{subtitle_file.as_posix()}':x=(w-text_w)/2:y={subtitle_y}:fontsize=h*0.018:fontcolor=0xE8D8B8:alpha='{alpha_expr}'{common}")
+                        video_filters.append(f"drawtext=textfile='{subtitle_file.as_posix()}':x=(w-text_w)/2:y={sy}:fontsize=28:fontcolor=0xE8D8B8:alpha={fade_alpha}{safe_common}")
+                    video_filters.append(f"drawbox=x={bx}:y=h*0.68:w={bw}:h=3:color=0xD6B46A@0.95:t=fill")
                     if mg_cta.strip():
-                        video_filters.append(f"drawbox=x=(w-min(w*0.34,360))/2:y={cta_y}:w=min(w*0.34,360):h=48:color=0xD6B46A@0.92:t=fill:enable='between(t,0.5,{duration-0.2})'")
-                        video_filters.append(f"drawtext=textfile='{cta_file.as_posix()}':x=(w-text_w)/2:y={cta_y}+14:fontsize=h*0.015:fontcolor=black:alpha='{alpha_expr}'{common}")
+                        video_filters.append(f"drawbox=x=(w-min(w*0.34,360))/2:y={cy}:w=min(w*0.34,360):h=48:color=0xD6B46A@0.92:t=fill")
+                        video_filters.append(f"drawtext=textfile='{cta_file.as_posix()}':x=(w-text_w)/2:y={cy}+14:fontsize=24:fontcolor=black:alpha={fade_alpha}{safe_common}")
                 else:
-                    st.warning("فونت مناسب برای موشن‌گرافیک در محیط رندر پیدا نشد؛ تیزر بدون نوشته‌های متحرک ساخته می‌شود.")
+                    st.warning("فونت مناسب برای موشن‌گرافیک پیدا نشد؛ تیزر بدون نوشته ساخته می‌شود.")
             cmd += ["-vf", ",".join(video_filters), "-map", "0:v:0"]
 
             audio_fade = f"afade=t=in:st=0:d=0.35,afade=t=out:st={max(0, duration-0.8):.3f}:d=0.8"
