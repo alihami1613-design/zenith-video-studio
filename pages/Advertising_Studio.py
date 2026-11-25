@@ -259,7 +259,7 @@ if st.button("✨ ساخت تیزر تبلیغاتی", type="primary", use_conta
                 music_input_index = 2 if narration else 1
 
             video_filters = [f"fade=t=in:st=0:d=0.7", f"fade=t=out:st={max(0, duration-0.8):.3f}:d=0.8"]
-            # Simplified text overlay: avoid complex expressions and commas inside filter arguments.
+            # Simple overlays using pixel coordinates calculated in Python, avoiding FFmpeg commas.
             if motion_graphics and (mg_title.strip() or mg_subtitle.strip() or mg_cta.strip()):
                 font_candidates = [
                     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
@@ -277,22 +277,27 @@ if st.button("✨ ساخت تیزر تبلیغاتی", type="primary", use_conta
                     font_arg = font_file.replace("\\", "/").replace(":", "\\:")
                     common = f":fontfile='{font_arg}':expansion=none"
                     if mg_style.startswith("لوکس"):
-                        title_y, subtitle_y, cta_y = "h*0.70", "h*0.76", "h*0.84"
+                        title_y, subtitle_y, cta_y = int(output_h*0.70), int(output_h*0.76), int(output_h*0.84)
                         title_x = "(w-text_w)/2"
                     elif mg_style.startswith("مدرن"):
-                        title_y, subtitle_y, cta_y = "h*0.42", "h*0.49", "h*0.58"
+                        title_y, subtitle_y, cta_y = int(output_h*0.42), int(output_h*0.49), int(output_h*0.58)
                         title_x = "(w-text_w)/2"
                     else:
-                        title_y, subtitle_y, cta_y = "h*0.78", "h*0.84", "h*0.91"
+                        title_y, subtitle_y, cta_y = int(output_h*0.78), int(output_h*0.84), int(output_h*0.91)
                         title_x = "w*0.09"
                     if mg_title.strip():
                         video_filters.append(f"drawtext=textfile='{title_file.as_posix()}':x={title_x}:y={title_y}:fontsize=52:fontcolor=white{common}")
                     if mg_subtitle.strip():
                         video_filters.append(f"drawtext=textfile='{subtitle_file.as_posix()}':x=(w-text_w)/2:y={subtitle_y}:fontsize=28:fontcolor=0xE8D8B8{common}")
-                    video_filters.append("drawbox=x=200:y=1300:w=680:h=3:color=0xD6B46A@0.95:t=fill")
+                    line_y = int(output_h*0.68)
+                    line_x = int(output_w*0.24)
+                    line_width = int(output_w*0.52)
+                    video_filters.append(f"drawbox=x={line_x}:y={line_y}:w={line_width}:h=3:color=0xD6B46A@0.95:t=fill")
                     if mg_cta.strip():
-                        video_filters.append("drawbox=x=300:y=1550:w=480:h=48:color=0xD6B46A@0.92:t=fill")
-                        video_filters.append(f"drawtext=textfile='{cta_file.as_posix()}':x=(w-text_w)/2:y=1562:fontsize=24:fontcolor=black{common}")
+                        cta_width = int(output_w*0.44)
+                        cta_x = int((output_w-cta_width)/2)
+                        video_filters.append(f"drawbox=x={cta_x}:y={cta_y}:w={cta_width}:h=48:color=0xD6B46A@0.92:t=fill")
+                        video_filters.append(f"drawtext=textfile='{cta_file.as_posix()}':x=(w-text_w)/2:y={cta_y+12}:fontsize=24:fontcolor=black{common}")
                 else:
                     st.warning("فونت مناسب برای موشن‌گرافیک پیدا نشد؛ تیزر بدون نوشته ساخته می‌شود.")
             cmd += ["-vf", ",".join(video_filters), "-map", "0:v:0"]
