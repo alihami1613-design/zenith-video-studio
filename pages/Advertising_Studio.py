@@ -72,6 +72,13 @@ with e2:
 with e3:
     vfx_strength = st.slider("شدت جلوه تصویری", 0, 100, 45)
 
+st.markdown("#### ۵. موشن‌گرافیک متحرک")
+motion_graphics = st.checkbox("افزودن موشن‌گرافیک تبلیغاتی", value=True)
+mg_title = st.text_input("تیتر اصلی موشن‌گرافیک", value="DISCOVER THE DIFFERENCE", max_chars=48)
+mg_subtitle = st.text_input("زیرتیتر", value="DESIGNED FOR YOUR LIFESTYLE", max_chars=64)
+mg_cta = st.text_input("متن دعوت به اقدام", value="LEARN MORE", max_chars=24)
+mg_style = st.selectbox("جایگاه و سبک نمایش", ["لوکس — پایین تصویر", "مدرن — مرکز تصویر", "مینیمال — گوشه پایین"], index=0)
+
 if orientation.startswith("عمودی"):
     output_w, output_h = 1080, 1920
 else:
@@ -231,8 +238,59 @@ if st.button("✨ ساخت تیزر تبلیغاتی", type="primary", use_conta
                 cmd += ["-stream_loop", "-1", "-i", str(music_path)]
                 music_input_index = 2 if narration else 1
 
-            video_fade = f"fade=t=in:st=0:d=0.7,fade=t=out:st={max(0, duration-0.8):.3f}:d=0.8"
-            cmd += ["-vf", video_fade, "-map", "0:v:0"]
+            video_filters = [f"fade=t=in:st=0:d=0.7", f"fade=t=out:st={max(0, duration-0.8):.3f}:d=0.8"]
+            if motion_graphics and (mg_title.strip() or mg_subtitle.strip() or mg_cta.strip()):
+                # Use text files to avoid fragile FFmpeg escaping for user-entered text.
+                font_candidates = [
+                    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+                    "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf",
+                    "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
+                ]
+                font_file = next((p for p in font_candidates if Path(p).exists()), None)
+                if font_file:
+                    title_file = work / "mg_title.txt"
+                    subtitle_file = work / "mg_subtitle.txt"
+                    cta_file = work / "mg_cta.txt"
+                    title_file.write_text(mg_title.strip(), encoding="utf-8")
+                    subtitle_file.write_text(mg_subtitle.strip(), encoding="utf-8")
+                    cta_file.write_text(mg_cta.strip(), encoding="utf-8")
+                    font_arg = font_file.replace("\\", "/").replace(":", "\\:")
+                    # Animated title card: gentle upward entrance, opacity fade, accent rule and CTA pill.
+                    if mg_style.startswith("لوکس"):
+                        title_y = "h*0.70"
+                        subtitle_y = "h*0.70+text_h+18"
+                        cta_y = "h*0.70+text_h+72"
+                        x_expr = "(w-text_w)/2"
+                        box_x = "w*0.24"
+                        box_w = "w*0.52"
+                    elif mg_style.startswith("مدرن"):
+                        title_y = "(h-text_h)/2"
+                        subtitle_y = "(h-text_h)/2+text_h+22"
+                        cta_y = "(h-text_h)/2+text_h+76"
+                        x_expr = "(w-text_w)/2"
+                        box_x = "w*0.30"
+                        box_w = "w*0.40"
+                    else:
+                        title_y = "h*0.78"
+                        subtitle_y = "h*0.78+text_h+14"
+                        cta_y = "h*0.78+text_h+58"
+                        x_expr = "w*0.09"
+                        box_x = "w*0.09"
+                        box_w = "w*0.34"
+                    alpha_expr = "if(lt(t,0.7),t/0.7,if(gt(t," + str(max(0, duration-0.7)) + "),(" + str(duration) + "-t)/0.7,1))"
+                    rise_expr = "12*(1-min(t/0.7,1))"
+                    common = f":fontfile='{font_arg}':expansion=none:shadowcolor=black@0.65:shadowx=2:shadowy=2"
+                    video_filters.append(f"drawbox=x={box_x}:y=h*0.68:w={box_w}:h=3:color=0xD6B46A@0.95:t=fill:enable='between(t,0.15,{duration-0.15})'")
+                    if mg_title.strip():
+                        video_filters.append(f"drawtext=textfile='{title_file.as_posix()}':x={x_expr}:y={title_y}-{rise_expr}:fontsize=h*0.034:fontcolor=white:alpha='{alpha_expr}'{common}")
+                    if mg_subtitle.strip():
+                        video_filters.append(f"drawtext=textfile='{subtitle_file.as_posix()}':x=(w-text_w)/2:y={subtitle_y}:fontsize=h*0.018:fontcolor=0xE8D8B8:alpha='{alpha_expr}'{common}")
+                    if mg_cta.strip():
+                        video_filters.append(f"drawbox=x=(w-min(w*0.34,360))/2:y={cta_y}:w=min(w*0.34,360):h=48:color=0xD6B46A@0.92:t=fill:enable='between(t,0.5,{duration-0.2})'")
+                        video_filters.append(f"drawtext=textfile='{cta_file.as_posix()}':x=(w-text_w)/2:y={cta_y}+14:fontsize=h*0.015:fontcolor=black:alpha='{alpha_expr}'{common}")
+                else:
+                    st.warning("فونت مناسب برای موشن‌گرافیک در محیط رندر پیدا نشد؛ تیزر بدون نوشته‌های متحرک ساخته می‌شود.")
+            cmd += ["-vf", ",".join(video_filters), "-map", "0:v:0"]
 
             audio_fade = f"afade=t=in:st=0:d=0.35,afade=t=out:st={max(0, duration-0.8):.3f}:d=0.8"
             if narration and music_ready:
@@ -275,4 +333,4 @@ if st.button("✨ ساخت تیزر تبلیغاتی", type="primary", use_conta
         st.code(str(e)[-3500:])
 
 st.divider()
-st.caption("نکته: نسخه فعلی ابزارهای تدوین و فینیشینگ FFmpeg شامل درجه‌بندی رنگ، وینیت، شارپ‌سازی، حرکت آرام عکس و محوشدن اختیاری بین نماها را دارد. این‌ها جلوه‌های پس‌تولید هستند، نه تولید صحنه با هوش مصنوعی یا موشن‌گرافیک سه‌بعدی. موسیقی پیش‌فرض Wikimedia در صورت محدودیت سرور ممکن است در دسترس نباشد.")
+st.caption("نکته: موشن‌گرافیک این نسخه از قالب‌های متحرک آماده (تیتر، زیرتیتر، خط گرافیکی و دکمه دعوت به اقدام) ساخته می‌شود؛ این قابلیت تولید مولدِ هوش مصنوعی یا موشن‌گرافیک سه‌بعدی نیست. برای تولید AI واقعی باید بعداً سرویس و API جداگانه متصل شود. موسیقی پیش‌فرض Wikimedia در صورت محدودیت سرور ممکن است در دسترس نباشد.")
