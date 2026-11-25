@@ -1,4 +1,3 @@
-import json
 import re
 import subprocess
 import tempfile
@@ -10,48 +9,48 @@ import imageio_ffmpeg
 
 st.set_page_config(page_title="ZENITH Auto Studio", page_icon="🎬", layout="wide")
 st.title("🎬 ZENITH AUTO STUDIO")
-st.caption("ZENITH BEYOND | جست‌وجوی ویدئوهای رایگان و تدوین خودکار مستند افقی")
-
-st.info("این صفحه جدا از Documentary Editor است؛ فایل‌های قبلی و مراحل تأیید پروژه را تغییر نمی‌دهد.")
-
-with st.expander("تنظیم اتصال Pexels", expanded=True):
-    st.write("برای جست‌وجوی خودکار ویدئوهای استوک رایگان، یک API Key رایگان از Pexels لازم است. کلید فقط برای درخواست همین صفحه استفاده می‌شود.")
-    try:
-        saved_key = st.secrets.get("PEXELS_API_KEY", "")
-    except Exception:
-        saved_key = ""
-    api_key = st.text_input("Pexels API Key", value=saved_key, type="password", help="در Streamlit Cloud بهتر است کلید را در App settings → Secrets با نام PEXELS_API_KEY ذخیره کنی.")
+st.caption("ZENITH BEYOND | جست‌وجو و تدوین خودکار ویدئوهای علمی و فضایی")
+st.info("این صفحه مستقل از Documentary Editor است؛ پروژه‌ها و مراحل تأییدشده قبلی را تغییر نمی‌دهد.")
+st.warning("منبع فعلی آرشیو NASA است؛ برای موضوعات علمی، فضایی، زمین و فناوری مناسب است و جایگزین عمومی Pexels برای همه موضوعات نیست.")
 
 script = st.text_area(
-    "متن سناریو را وارد کن؛ هر صحنه را با یک خط خالی از صحنه بعد جدا کن.",
+    "متن سناریو را وارد کن؛ هر صحنه را با یک خط خالی جدا کن.",
     height=220,
-    placeholder="The human brain contains billions of neurons...\n\nInside the body, the heart works continuously..."
+    placeholder="The James Webb Space Telescope observes distant galaxies...\n\nScientists study the atmosphere of Mars..."
 )
 narration = st.file_uploader("صدای گوینده (اختیاری؛ برای تنظیم زمان صحنه‌ها)", type=["mp3", "wav", "m4a", "aac", "ogg"])
 music = st.file_uploader("موسیقی پس‌زمینه (اختیاری)", type=["mp3", "wav", "m4a", "aac", "ogg"])
-
 scenes = [p.strip() for p in re.split(r"\n\s*\n", script) if p.strip()]
-if scenes:
-    st.caption(f"{len(scenes)} صحنه از متن شناسایی شد. برای نتیجه بهتر، هر صحنه یک ایده تصویری روشن داشته باشد.")
 
-def pexels_search(query, key):
+def nasa_search(query):
     response = requests.get(
-        "https://api.pexels.com/videos/search",
-        headers={"Authorization": key},
-        params={"query": query[:100], "per_page": 8, "orientation": "landscape", "size": "medium"},
+        "https://images-api.nasa.gov/search",
+        params={"q": query[:100], "media_type": "video", "page_size": 8},
         timeout=30,
     )
     response.raise_for_status()
-    return response.json().get("videos", [])
-
-def choose_file(video):
-    files = [f for f in video.get("video_files", []) if f.get("file_type") == "video/mp4" and f.get("link")]
-    if not files:
-        return None
-    landscape = [f for f in files if (f.get("width") or 0) >= (f.get("height") or 0)]
-    files = landscape or files
-    files.sort(key=lambda f: (f.get("width") or 0, f.get("height") or 0))
-    return files[-1]
+    items = response.json().get("collection", {}).get("items", [])
+    videos = []
+    for item in items:
+        data = (item.get("data") or [{}])[0]
+        nasa_id = data.get("nasa_id")
+        if not nasa_id:
+            continue
+        manifest_response = requests.get(f"https://images-api.nasa.gov/asset/{nasa_id}", timeout=30)
+        if not manifest_response.ok:
+            continue
+        manifest = manifest_response.json()
+        files = manifest.get("collection", {}).get("items", [])
+        mp4s = [x.get("href", "") for x in files if x.get("href", "").lower().split("?")[0].endswith(".mp4")]
+        if mp4s:
+            videos.append({
+                "id": nasa_id,
+                "title": data.get("title", nasa_id),
+                "description": data.get("description", ""),
+                "url": mp4s[0],
+                "date": data.get("date_created", ""),
+            })
+    return videos
 
 def get_duration(ffmpeg, path):
     result = subprocess.run([ffmpeg, "-i", str(path), "-f", "null", "-"], capture_output=True, text=True, timeout=90)
@@ -61,71 +60,52 @@ def get_duration(ffmpeg, path):
     h, m, s = match.groups()
     return int(h) * 3600 + int(m) * 60 + float(s)
 
-if "pexels_results" not in st.session_state:
-    st.session_state.pexels_results = {}
+if "nasa_results" not in st.session_state:
+    st.session_state.nasa_results = {}
 
-if st.button("🔎 جست‌وجوی تصاویر و ویدئوهای هر صحنه", type="primary", use_container_width=True):
-    if not api_key:
-        st.error("ابتدا Pexels API Key را وارد کن.")
-    elif not scenes:
-        st.error("ابتدا متن سناریو را وارد کن و صحنه‌ها را با خط خالی جدا کن.")
+if st.button("🔎 جست‌وجوی ویدئوهای هر صحنه", type="primary", use_container_width=True):
+    if not scenes:
+        st.error("ابتدا متن سناریو را وارد کن و صحنه‌ها را با یک خط خالی جدا کن.")
     else:
         found = {}
         bar = st.progress(0)
         status = st.empty()
         try:
             for i, scene in enumerate(scenes):
-                # The scene text is used as a search phrase; the user can refine it below.
                 query = re.sub(r"[^\w\s-]", " ", scene, flags=re.UNICODE)
-                query = " ".join(query.split()[:9]) or "documentary science technology"
+                query = " ".join(query.split()[:9]) or "NASA science space"
                 status.write(f"جست‌وجوی صحنه {i + 1} از {len(scenes)}: {query}")
-                found[i] = {"query": query, "videos": pexels_search(query, api_key)}
+                found[i] = {"query": query, "videos": nasa_search(query)}
                 bar.progress((i + 1) / len(scenes))
-            st.session_state.pexels_results = found
-            st.session_state.pexels_scene_count = len(scenes)
-            st.success("نتایج جست‌وجو آماده شد. برای هر صحنه یک ویدئو انتخاب کن.")
-        except requests.HTTPError as e:
-            st.error(f"خطای Pexels: {e}. کلید API و دسترسی اینترنت را بررسی کن.")
+            st.session_state.nasa_results = found
+            st.session_state.nasa_scene_count = len(scenes)
+            st.success("جست‌وجو تمام شد. ویدئوی هر صحنه را بازبینی و انتخاب کن.")
         except Exception as e:
             st.error(f"جست‌وجو انجام نشد: {e}")
 
-results = st.session_state.pexels_results
-if results and st.session_state.get("pexels_scene_count") == len(scenes):
+results = st.session_state.nasa_results
+if results and st.session_state.get("nasa_scene_count") == len(scenes):
     st.subheader("انتخاب و تأیید ویدئوی هر صحنه")
     selections = {}
     for i, scene in enumerate(scenes):
         data = results.get(i, {})
         videos = data.get("videos", [])
         with st.expander(f"صحنه {i + 1}: {scene[:90]}", expanded=(i == 0)):
-            query = st.text_input("عبارت جست‌وجو (قابل ویرایش)", value=data.get("query", ""), key=f"q_{i}")
-            if query != data.get("query"):
-                st.caption("برای اعمال عبارت جدید، دکمه جست‌وجوی بالا را دوباره بزن.")
+            st.caption(f"عبارت جست‌وجو: {data.get('query', '')}")
             if not videos:
-                st.warning("برای این صحنه نتیجه‌ای پیدا نشد. عبارت جست‌وجو را ساده‌تر کن و دوباره جست‌وجو بزن.")
+                st.warning("برای این صحنه ویدئوی مناسبی در آرشیو NASA پیدا نشد. عبارت را علمی‌تر یا کوتاه‌تر کن.")
                 continue
-            labels = []
-            valid = []
-            for v in videos:
-                vf = choose_file(v)
-                if vf:
-                    valid.append((v, vf))
-                    labels.append(f"ویدئو {v.get('id')} — {v.get('duration', '?')} ثانیه — {vf.get('width')}×{vf.get('height')}")
-            if not valid:
-                st.warning("فایل MP4 مناسبی در نتایج نبود.")
-                continue
-            chosen = st.selectbox("ویدئوی این صحنه", range(len(valid)), format_func=lambda n: labels[n], key=f"pick_{i}")
-            v, vf = valid[chosen]
-            st.video(vf["link"])
-            st.caption(f"منبع: Pexels | شناسه ویدئو: {v.get('id')}")
-            selections[i] = {"url": vf["link"], "id": v.get("id"), "duration": v.get("duration", 0)}
+            labels = [f"{v['title']} | {v.get('date', '')[:10]}" for v in videos]
+            chosen = st.selectbox("ویدئوی این صحنه", range(len(videos)), format_func=lambda n: labels[n], key=f"nasa_pick_{i}")
+            v = videos[chosen]
+            st.video(v["url"])
+            st.caption(f"منبع: NASA Image and Video Library | شناسه: {v['id']}")
+            selections[i] = v
 
-    st.warning("قبل از رندر، انتخاب هر صحنه را بازبینی کن. نتایج خودکار ممکن است از نظر معنایی دقیق نباشند.")
+    st.warning("پیش از رندر، همه انتخاب‌ها را بازبینی کن. پوشش آرشیو NASA محدود به محتوای موجود در مجموعه خودش است.")
     if st.button("✅ تأیید انتخاب‌ها و ساخت ویدئوی 1080p", type="primary", use_container_width=True):
         if len(selections) != len(scenes):
             st.error("برای همه صحنه‌ها باید یک ویدئو انتخاب شود.")
-            st.stop()
-        if not api_key:
-            st.error("کلید Pexels موجود نیست.")
             st.stop()
 
         ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
@@ -134,26 +114,20 @@ if results and st.session_state.get("pexels_scene_count") == len(scenes):
         try:
             with tempfile.TemporaryDirectory() as tmp:
                 work = Path(tmp)
-                total_duration = get_duration(ffmpeg, work / "narration" ) if False else None
                 narration_path = None
                 if narration:
                     narration_path = work / f"narration.{narration.name.rsplit('.', 1)[-1]}"
                     narration_path.write_bytes(narration.getbuffer())
                     total_duration = get_duration(ffmpeg, narration_path)
                 else:
-                    total_duration = max(8, len(scenes) * 8)
+                    total_duration = max(8.0, len(scenes) * 8.0)
 
                 weights = [max(1, len(re.findall(r"\w+", s))) for s in scenes]
                 weight_sum = sum(weights)
-                durations = [max(2.0, total_duration * w / weight_sum) for w in weights]
-                # Keep the sum exactly equal to narration duration.
-                if len(durations) > 1:
-                    durations[-1] = max(2.0, total_duration - sum(durations[:-1]))
-                else:
-                    durations[0] = total_duration
+                durations = [total_duration * w / weight_sum for w in weights]
 
                 rendered = []
-                for i, scene in enumerate(scenes):
+                for i in range(len(scenes)):
                     status.write(f"دریافت و آماده‌سازی صحنه {i + 1} از {len(scenes)}...")
                     response = requests.get(selections[i]["url"], stream=True, timeout=90)
                     response.raise_for_status()
@@ -166,6 +140,7 @@ if results and st.session_state.get("pexels_scene_count") == len(scenes):
                                 if size > 180 * 1024 * 1024:
                                     raise ValueError("حجم یکی از کلیپ‌ها بیشتر از ۱۸۰ مگابایت است.")
                                 out.write(chunk)
+
                     scene_path = work / f"scene_{i:02d}.mp4"
                     subprocess.run([
                         ffmpeg, "-y", "-stream_loop", "-1", "-i", str(clip_path),
@@ -185,13 +160,18 @@ if results and st.session_state.get("pexels_scene_count") == len(scenes):
 
                 final = work / "ZENITH_BEYOND_AUTO.mp4"
                 cmd = [ffmpeg, "-y", "-i", str(silent)]
+                narration_index = None
+                music_index = None
                 if narration_path:
+                    narration_index = 1
                     cmd += ["-i", str(narration_path)]
                 music_path = None
                 if music:
                     music_path = work / f"music.{music.name.rsplit('.', 1)[-1]}"
                     music_path.write_bytes(music.getbuffer())
+                    music_index = 2 if narration_path else 1
                     cmd += ["-stream_loop", "-1", "-i", str(music_path)]
+
                 if narration_path and music_path:
                     cmd += ["-filter_complex", "[1:a]volume=1.0[n];[2:a]volume=0.15[m];[n][m]amix=inputs=2:duration=first:dropout_transition=2[a]",
                             "-map", "0:v", "-map", "[a]"]
@@ -201,14 +181,16 @@ if results and st.session_state.get("pexels_scene_count") == len(scenes):
                     cmd += ["-map", "0:v", "-map", "1:a", "-af", "volume=0.15"]
                 else:
                     cmd += ["-map", "0:v"]
+
                 cmd += ["-t", f"{total_duration:.3f}", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
                         "-movflags", "+faststart", str(final)]
                 status.write("در حال ترکیب صدا و خروجی نهایی...")
                 subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=1200)
                 progress.progress(100)
                 status.success("ویدئوی نهایی آماده شد.")
-                st.video(final.read_bytes())
-                st.download_button("⬇️ دریافت ویدئوی نهایی", data=final.read_bytes(),
+                video_bytes = final.read_bytes()
+                st.video(video_bytes)
+                st.download_button("⬇️ دریافت ویدئوی نهایی", data=video_bytes,
                                    file_name="ZENITH_BEYOND_AUTO.mp4", mime="video/mp4",
                                    use_container_width=True)
         except subprocess.CalledProcessError as e:
@@ -218,4 +200,4 @@ if results and st.session_state.get("pexels_scene_count") == len(scenes):
             st.error(f"ساخت ویدئو انجام نشد: {e}")
 
 st.divider()
-st.caption("خروجی افقی 1920×1080 و 30fps است. جست‌وجو از Pexels انجام می‌شود؛ انتخاب نهایی صحنه‌ها با تأیید توست. سرویس API رایگان است اما به کلید و محدودیت‌های حساب Pexels وابسته است.")
+st.caption("خروجی افقی 1920×1080 و 30fps است. جست‌وجو از NASA Image and Video Library انجام می‌شود؛ انتخاب نهایی صحنه‌ها با تأیید توست. پیش از انتشار، اطلاعات حقوق استفاده و اعتبار هر فایل را بررسی کن.")
