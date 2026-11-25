@@ -45,13 +45,20 @@ with c2:
     narration = st.file_uploader("گویندگی (اختیاری)", type=["mp3", "wav", "m4a", "aac", "ogg"], key="ad_voice")
 
 st.markdown("### ۳. تنظیمات تدوین")
-a, b, c = st.columns(3)
+a, b, c, d = st.columns(4)
 with a:
     duration = st.selectbox("مدت خروجی", [15, 30, 45, 60], index=0, format_func=lambda x: f"{x} ثانیه")
 with b:
-    style = st.selectbox("حال‌وهوای رنگ", ["لوکس مشکی و طلایی", "سینمایی طبیعی", "پرکنتراست و پرانرژی"])
+    orientation = st.selectbox("قالب تصویر", ["عمودی 9:16 — اینستاگرام Reels", "افقی 16:9"], index=0)
 with c:
+    style = st.selectbox("حال‌وهوای رنگ", ["لوکس مشکی و طلایی", "سینمایی طبیعی", "پرکنتراست و پرانرژی"])
+with d:
     quality = st.selectbox("کیفیت خروجی", ["1080p متعادل", "1080p با حجم کمتر"], index=0)
+
+if orientation.startswith("عمودی"):
+    output_w, output_h = 1080, 1920
+else:
+    output_w, output_h = 1920, 1080
 
 music_level = st.slider("بلندی موسیقی", 0, 100, 28)
 voice_level = st.slider("بلندی گویندگی", 0, 150, 100)
@@ -62,7 +69,7 @@ else:
 if narration:
     st.audio(narration)
 
-st.caption("خروجی: MP4 / H.264 / Full HD 1920×1080 / 24fps. شامل یکسان‌سازی قاب و فریم‌ریت، اصلاح رنگ، محو ورود و خروج و میکس صداست.")
+st.caption("خروجی: MP4 / H.264 / 1080p / 24fps. قالب عمودی 9:16 برای نمایش تمام‌صفحه Reels یا افقی 16:9.")
 st.caption("موسیقی پیش‌فرض: Soft Corporate — MusicLFiles | مجوز CC BY 4.0؛ در انتشار ویدئو نام سازنده و پیوند منبع را ذکر کن: https://commons.wikimedia.org/wiki/File:Soft_Corporate_by_MusicLFiles.ogg")
 
 def run_ffmpeg(cmd, timeout=900):
@@ -132,7 +139,7 @@ if st.button("✨ ساخت تیزر تبلیغاتی", type="primary", use_conta
                 dst = work / f"clip_{i:02d}.mp4"
                 src.write_bytes(uploaded.getbuffer())
 
-                vf = "scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,setsar=1,fps=24,eq=contrast=1.06:saturation=1.10:brightness=0.005,format=yuv420p"
+                vf = f"scale={output_w}:{output_h}:force_original_aspect_ratio=increase,crop={output_w}:{output_h},setsar=1,fps=24,eq=contrast=1.06:saturation=1.10:brightness=0.005,format=yuv420p"
                 if style == "لوکس مشکی و طلایی":
                     vf += ",curves=all='0/0 0.20/0.15 0.75/0.82 1/1'"
                 elif style == "پرکنتراست و پرانرژی":
@@ -160,7 +167,7 @@ if st.button("✨ ساخت تیزر تبلیغاتی", type="primary", use_conta
                     else:
                         zoom_expr = "if(eq(on,0),1.0,min(zoom+0.00016,1.03))"
                         x_expr = "iw/2-(iw/zoom/2)-4*sin(on/100)"
-                    vf += f",zoompan=z='{zoom_expr}':d=1:x='{x_expr}':y='ih/2-(ih/zoom/2)':s=1920x1080:fps=24,trim=duration={per_clip:.3f},setpts=PTS-STARTPTS"
+                    vf += f",zoompan=z='{zoom_expr}':d=1:x='{x_expr}':y='ih/2-(ih/zoom/2)':s={output_w}x{output_h}:fps=24,trim=duration={per_clip:.3f},setpts=PTS-STARTPTS"
                     input_args = ["-loop", "1", "-framerate", "24", "-i", str(src), "-t", f"{per_clip:.3f}"]
 
                 run_ffmpeg([
