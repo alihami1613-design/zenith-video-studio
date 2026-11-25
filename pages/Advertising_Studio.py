@@ -297,7 +297,7 @@ if st.button("✨ ساخت تیزر تبلیغاتی", type="primary", use_conta
                         x_expr = "w*0.09"
                         box_x = "w*0.09"
                         box_w = "w*0.34"
-                    alpha_expr = "if(lt(t,0.7),t/0.7,if(gt(t," + str(max(0, duration-0.7)) + "),(" + str(duration) + "-t)/0.7,1))"
+                    alpha_expr = "if(lt(t\\,0.7)\\,t/0.7\\,if(gt(t\\," + str(max(0, duration-0.7)) + ")\\,(" + str(duration) + "-t)/0.7\\,1))"
                     rise_expr = "12*(1-min(t/0.7,1))"
                     common = f":fontfile='{font_arg}':expansion=none:shadowcolor=black@0.65:shadowx=2:shadowy=2"
                     video_filters.append(f"drawbox=x={box_x}:y=h*0.68:w={box_w}:h=3:color=0xD6B46A@0.95:t=fill:enable='between(t,0.15,{duration-0.15})'")
