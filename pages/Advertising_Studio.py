@@ -97,23 +97,30 @@ if st.button("✨ ساخت تیزر تبلیغاتی", type="primary", use_conta
             work = Path(td)
             normalized = []
             music_path = work / "default_or_uploaded_music.ogg"
+            music_ready = False
             if music:
                 music_path = work / ("uploaded_music" + (Path(music.name).suffix or ".mp3"))
                 music_path.write_bytes(music.getbuffer())
+                music_ready = True
             else:
-                status.write("دریافت موسیقی تبلیغاتی پیش‌فرض از Wikimedia Commons ...")
-                # Direct original audio file; the source page lists it under CC BY 4.0.
+                status.write("تلاش برای دریافت موسیقی پیش‌فرض ...")
+                # If the public host rate-limits downloads (HTTP 429), continue rendering
+                # instead of failing the entire advertisement.
                 audio_url = "https://upload.wikimedia.org/wikipedia/commons/5/5f/Soft_Corporate_by_MusicLFiles.ogg"
-                audio_response = requests.get(
-                    audio_url,
-                    headers={"User-Agent": "ZENITH-Advertising-Studio/1.0 (video editor)"},
-                    timeout=90,
-                )
-                audio_response.raise_for_status()
-                content_type = audio_response.headers.get("Content-Type", "").lower()
-                if len(audio_response.content) < 100000 or not (content_type.startswith("audio/") or "application/ogg" in content_type):
-                    raise RuntimeError("فایل موسیقی پیش‌فرض از Wikimedia Commons به‌صورت کامل دریافت نشد. لطفاً دوباره تلاش کن یا موسیقی خودت را بارگذاری کن.")
-                music_path.write_bytes(audio_response.content)
+                try:
+                    audio_response = requests.get(
+                        audio_url,
+                        headers={"User-Agent": "ZENITH-Advertising-Studio/1.0 (video editor)"},
+                        timeout=45,
+                    )
+                    audio_response.raise_for_status()
+                    content_type = audio_response.headers.get("Content-Type", "").lower()
+                    if len(audio_response.content) < 100000 or not (content_type.startswith("audio/") or "application/ogg" in content_type):
+                        raise RuntimeError("فایل موسیقی پیش‌فرض معتبر دریافت نشد.")
+                    music_path.write_bytes(audio_response.content)
+                    music_ready = True
+                except (requests.RequestException, RuntimeError) as audio_error:
+                    st.warning("موسیقی پیش‌فرض در دسترس نیست (احتمالاً محدودیت موقت سرور). رندر ادامه پیدا می‌کند؛ برای داشتن صدا، فایل موسیقی خودت را بارگذاری کن. جزئیات: " + str(audio_error)[:240])
             assets = [(item, "video") for item in (videos or [])] + [(item, "photo") for item in (photos or [])]
             per_clip = duration / len(assets)
 
@@ -183,29 +190,37 @@ if st.button("✨ ساخت تیزر تبلیغاتی", type="primary", use_conta
                 vp = work / ("voice" + (Path(narration.name).suffix or ".mp3"))
                 vp.write_bytes(narration.getbuffer())
                 cmd += ["-i", str(vp)]
-            cmd += ["-stream_loop", "-1", "-i", str(music_path)]
-            music_input_index = 2 if narration else 1
+            music_input_index = None
+            if music_ready:
+                cmd += ["-stream_loop", "-1", "-i", str(music_path)]
+                music_input_index = 2 if narration else 1
 
             video_fade = f"fade=t=in:st=0:d=0.7,fade=t=out:st={max(0, duration-0.8):.3f}:d=0.8"
             cmd += ["-vf", video_fade, "-map", "0:v:0"]
 
             audio_fade = f"afade=t=in:st=0:d=0.35,afade=t=out:st={max(0, duration-0.8):.3f}:d=0.8"
-            if narration:
+            if narration and music_ready:
                 graph = (
                     f"[1:a]volume={voice_level/100:.2f}[v];"
                     f"[{music_input_index}:a]volume={music_level/100:.2f}[m];"
                     f"[v][m]amix=inputs=2:duration=longest:dropout_transition=2,"
                     f"atrim=duration={duration},{audio_fade}[a]"
                 )
-                cmd += ["-filter_complex", graph, "-map", "[a]"]
-            else:
+                cmd += ["-filter_complex", graph, "-map", "[a]", "-c:a", "aac", "-b:a", "160k"]
+            elif narration:
+                cmd += ["-map", "1:a:0", "-af",
+                        f"aresample=48000,apad,atrim=duration={duration},volume={voice_level/100:.2f},{audio_fade}",
+                        "-c:a", "aac", "-b:a", "160k"]
+            elif music_ready:
                 cmd += ["-map", f"{music_input_index}:a:0", "-af",
-                        f"aresample=48000,apad,atrim=duration={duration},volume={music_level/100:.2f},lowpass=f=15000,alimiter=limit=0.92,{audio_fade}"]
+                        f"aresample=48000,apad,atrim=duration={duration},volume={music_level/100:.2f},lowpass=f=15000,alimiter=limit=0.92,{audio_fade}",
+                        "-c:a", "aac", "-b:a", "160k"]
+            else:
+                st.warning("تیزر بدون صدا رندر می‌شود؛ برای خروجی صوتی، موسیقی یا گویندگی بارگذاری کن.")
 
             cmd += ["-t", str(duration), "-c:v", "libx264", "-preset", "veryfast",
                     "-crf", "23" if quality == "1080p متعادل" else "26",
                     "-pix_fmt", "yuv420p"]
-            cmd += ["-c:a", "aac", "-b:a", "160k"]
             cmd += ["-movflags", "+faststart", str(final)]
 
             status.write("رندر نهایی تیزر در حال انجام است ...")
