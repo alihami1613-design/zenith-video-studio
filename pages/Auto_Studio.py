@@ -53,6 +53,41 @@ def commons_search(query):
         })
     return videos
 
+def build_commons_queries(scene):
+    """Turn narration into short, topic-focused Commons searches."""
+    text = scene.lower()
+    if "autonomous" in text or "spacecraft" in text:
+        return ["Mars rover", "robotic spacecraft", "autonomous robot"]
+    if "engineer" in text or "developing" in text or "robotic system" in text:
+        return ["NASA robot", "robotic arm", "space exploration"]
+    if "future" in text or "intelligent machine" in text:
+        return ["space probe", "NASA spacecraft", "space exploration"]
+    if "artificial intelligence" in text or re.search(r"\\bAI\\b", scene):
+        return ["artificial intelligence", "AI robot", "computer technology"]
+    if "medical" in text or "health" in text:
+        return ["medical research", "medical laboratory", "microscope"]
+    if "climate" in text or "earth" in text:
+        return ["Earth observation", "weather satellite", "climate science"]
+    stop = {"the", "and", "are", "is", "to", "of", "in", "for", "with", "these",
+            "they", "can", "will", "help", "from", "that", "this", "their", "into"}
+    words = re.findall(r"[a-zA-Z0-9-]+", scene.lower())
+    keywords = [w for w in words if w not in stop and len(w) > 2][:4]
+    return [" ".join(keywords)] if keywords else ["science technology"]
+
+
+def search_commons_for_scene(scene):
+    queries = build_commons_queries(scene)
+    combined, seen = [], set()
+    for query in queries:
+        for video in commons_search(query):
+            key = video.get("page_url") or video.get("url")
+            if key and key not in seen:
+                seen.add(key)
+                video["matched_query"] = query
+                combined.append(video)
+    return queries, combined[:12]
+
+
 def get_duration(ffmpeg, path):
     result = subprocess.run([ffmpeg, "-i", str(path), "-f", "null", "-"], capture_output=True, text=True, timeout=90)
     match = re.search(r"Duration: (\d+):(\d+):(\d+(?:\.\d+)?)", result.stderr)
@@ -73,32 +108,34 @@ if st.button("🔎 جست‌وجوی ویدئوهای هر صحنه", type="prim
         status = st.empty()
         try:
             for i, scene in enumerate(scenes):
-                query = re.sub(r"[^\w\s-]", " ", scene, flags=re.UNICODE)
-                query = " ".join(query.split()[:9]) or "technology science"
-                status.write(f"جست‌وجوی صحنه {i + 1} از {len(scenes)}: {query}")
-                found[i] = {"query": query, "videos": commons_search(query)}
+                queries, videos = search_commons_for_scene(scene)
+                query_label = " | ".join(queries)
+                status.write(f"جست‌وجوی صحنه {i + 1} از {len(scenes)}: {query_label}")
+                found[i] = {"query": query_label, "videos": videos}
                 bar.progress((i + 1) / len(scenes))
             st.session_state.commons_results = found
             st.session_state.commons_scene_count = len(scenes)
+            st.session_state.commons_script = script
             st.success("جست‌وجو تمام شد. ویدئوی هر صحنه را بازبینی و انتخاب کن.")
         except Exception as e:
             st.error(f"جست‌وجو انجام نشد: {e}")
 
 results = st.session_state.commons_results
-if results and st.session_state.get("commons_scene_count") == len(scenes):
+if results and st.session_state.get("commons_scene_count") == len(scenes) and st.session_state.get("commons_script") == script:
     st.subheader("انتخاب و تأیید ویدئوی هر صحنه")
     selections = {}
     for i, scene in enumerate(scenes):
         data = results.get(i, {})
         videos = data.get("videos", [])
         with st.expander(f"صحنه {i + 1}: {scene[:90]}", expanded=(i == 0)):
-            st.caption(f"عبارت جست‌وجو: {data.get('query', '')}")
+            st.caption(f"کلیدواژه‌های جست‌وجو: {data.get('query', '')}")
             if not videos:
                 st.warning("برای این صحنه ویدئوی مناسبی در آرشیو Wikimedia Commons پیدا نشد. عبارت را علمی‌تر یا کوتاه‌تر کن.")
                 continue
             labels = [f"{v['title']} | {v.get('date', '')[:10]}" for v in videos]
             chosen = st.selectbox("ویدئوی این صحنه", range(len(videos)), format_func=lambda n: labels[n], key=f"commons_pick_{i}")
             v = videos[chosen]
+            st.caption(f"این نتیجه با جست‌وجوی «{v.get('matched_query', '')}» پیدا شده است.")
             st.video(v["url"])
             st.caption(f"مجوز: {v['license']} | سازنده: {v['artist'] or 'در صفحه منبع بررسی شود'}")
             if v.get('page_url'):
