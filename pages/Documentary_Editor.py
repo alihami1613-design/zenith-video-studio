@@ -5,12 +5,6 @@ import subprocess
 import imageio_ffmpeg
 from pathlib import Path
 
-st.set_page_config(
-    page_title="ZENITH Documentary Editor",
-    page_icon="🎬",
-    layout="wide"
-)
-
 st.title("🎬 ZENITH DOCUMENTARY EDITOR")
 st.caption("ZENITH BEYOND | Documentary Production Studio")
 
