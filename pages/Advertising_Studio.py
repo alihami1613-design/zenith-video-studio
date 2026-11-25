@@ -188,9 +188,6 @@ if st.button("✨ ساخت تیزر تبلیغاتی", type="primary", use_conta
                     f"atrim=duration={duration},{audio_fade}[a]"
                 )
                 cmd += ["-filter_complex", graph, "-map", "[a]"]
-            elif narration:
-                cmd += ["-map", "1:a:0", "-af",
-                        f"aresample=48000,apad,atrim=duration={duration},volume={voice_level/100:.2f},acompressor=threshold=0.12:ratio=3:attack=15:release=180,{audio_fade}"]
             else:
                 cmd += ["-map", f"{music_input_index}:a:0", "-af",
                         f"aresample=48000,apad,atrim=duration={duration},volume={music_level/100:.2f},lowpass=f=15000,alimiter=limit=0.92,{audio_fade}"]
