@@ -38,7 +38,7 @@ st.caption("می‌توانی عکس مبل را هم کنار ویدئوها ا
 
 c1, c2 = st.columns(2)
 with c1:
-    music = st.file_uploader("موسیقی تبلیغاتی (اختیاری)", type=["mp3", "wav", "m4a", "aac", "ogg"], key="ad_music")
+    music = st.file_uploader("موسیقی تبلیغاتی (برای خروجی صدادار الزامی)", type=["mp3", "wav", "m4a", "aac", "ogg"], key="ad_music")
 with c2:
     narration = st.file_uploader("گویندگی (اختیاری)", type=["mp3", "wav", "m4a", "aac", "ogg"], key="ad_voice")
 
@@ -53,6 +53,10 @@ with c:
 
 music_level = st.slider("بلندی موسیقی", 0, 100, 28)
 voice_level = st.slider("بلندی گویندگی", 0, 150, 100)
+if music:
+    st.audio(music)
+if narration:
+    st.audio(narration)
 
 st.caption("خروجی: MP4 / H.264 / Full HD 1920×1080 / 24fps. شامل یکسان‌سازی قاب و فریم‌ریت، اصلاح رنگ، محو ورود و خروج و میکس صداست.")
 
@@ -75,6 +79,9 @@ if st.button("✨ ساخت تیزر تبلیغاتی", type="primary", use_conta
     assets_count = len(videos or []) + len(photos or [])
     if assets_count == 0:
         st.error("ابتدا حداقل یک کلیپ ویدئویی یا یک عکس انتخاب کن.")
+        st.stop()
+    if not music and not narration:
+        st.error("برای جلوگیری از خروجی بی‌صدا، ابتدا موسیقی تبلیغاتی یا گویندگی بارگذاری کن.")
         st.stop()
     if assets_count > 12:
         st.error("برای پایداری رندر، مجموع عکس‌ها و کلیپ‌ها حداکثر ۱۲ فایل باشد.")
@@ -116,7 +123,8 @@ if st.button("✨ ساخت تیزر تبلیغاتی", type="primary", use_conta
                     input_args = ["-i", str(src)]
                 else:
                     frames = max(1, round(per_clip * 24))
-                    vf += f",zoompan=z='min(zoom+0.0005,1.08)':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1920x1080:fps=24,trim=duration={per_clip:.3f},setpts=PTS-STARTPTS"
+                    direction = "iw/2-(iw/zoom/2)" if i % 2 == 0 else "iw/2-(iw/zoom/2)+8"
+                    vf += f",zoompan=z='min(zoom+0.0008,1.14)':d=1:x='{direction}':y='ih/2-(ih/zoom/2)':s=1920x1080:fps=24,trim=duration={per_clip:.3f},setpts=PTS-STARTPTS"
                     input_args = ["-loop", "1", "-framerate", "24", "-i", str(src), "-t", f"{per_clip:.3f}"]
 
                 run_ffmpeg([
@@ -165,10 +173,10 @@ if st.button("✨ ساخت تیزر تبلیغاتی", type="primary", use_conta
                 cmd += ["-filter_complex", graph, "-map", "[a]"]
             elif narration:
                 cmd += ["-map", "1:a:0", "-af",
-                        f"volume={voice_level/100:.2f},{audio_fade}"]
+                        f"aresample=48000,apad,atrim=duration={duration},volume={voice_level/100:.2f},acompressor=threshold=0.12:ratio=3:attack=15:release=180,{audio_fade}"]
             elif music:
                 cmd += ["-map", "2:a:0", "-af",
-                        f"volume={music_level/100:.2f},{audio_fade}"]
+                        f"aresample=48000,apad,atrim=duration={duration},volume={music_level/100:.2f},lowpass=f=15000,alimiter=limit=0.92,{audio_fade}"]
             else:
                 cmd += ["-an"]
 
@@ -195,4 +203,4 @@ if st.button("✨ ساخت تیزر تبلیغاتی", type="primary", use_conta
         st.code(str(e)[-3500:])
 
 st.divider()
-st.caption("نکته: عکس‌ها به صحنه‌های ویدئویی کوتاه با حرکت آرام زوم تبدیل می‌شوند. این نسخه تدوین خودکار عکس‌ها و کلیپ‌های بارگذاری‌شده را انجام می‌دهد؛ جست‌وجو و دریافت خودکار فوتیج استوک و موشن‌گرافیک اختصاصی هنوز به آن متصل نشده است.")
+st.caption("نکته: عکس‌ها با حرکت آرام دوربین به صحنه تبدیل می‌شوند. برای خروجی صدادار، موسیقی یا گویندگی لازم است. این نسخه هنوز سرویس تولید خودکار موسیقی/گویندگی، فوتیج استوک و موشن‌گرافیک اختصاصی ندارد.")
