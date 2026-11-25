@@ -193,7 +193,7 @@ if st.button("✨ ساخت تیزر تبلیغاتی", type="primary", use_conta
                     vf += f",gblur=sigma={1.0 + glow_amount/35:.2f},eq=brightness={glow_amount/500:.3f}"
                 elif fx_mode == "فیلم قدیمی (Film)":
                     vf += f",noise=alls={grain_amount}:allf=t,eq=saturation=0.92"
-                elif fx_mode == "سیاه‌وسفاد":
+                elif fx_mode == "سیاه‌وسفید":
                     vf += ",hue=s=0,eq=contrast=1.08"
                 elif fx_mode == "RGB Split ساده (Glitch رنگی)":
                     vf += ",chromashift=cbh=3:cbv=0:crh=-3:crv=0"
