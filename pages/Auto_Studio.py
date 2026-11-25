@@ -117,7 +117,7 @@ else:
                 if audio_duration < 3500:
                     raise ValueError(f"مدت موسیقی فقط {audio_duration/60:.1f} دقیقه است؛ فایل باید نزدیک به ۶۰ دقیقه باشد.")
                 selected = []
-                for i, (label, queries) in enumerate(SCENES):
+                for i, (label, queries, _, _) in enumerate(SCENES):
                     status.write(f"جست‌وجوی خودکار صحنه {i+1}/3: {label}")
                     candidates = []
                     positive = SCENES[i][2]
@@ -128,7 +128,7 @@ else:
                             haystack = (item["title"] + " " + item.get("description", "")).lower()
                             if any(word in haystack for word in negative):
                                 continue
-                            if all(word in haystack for word in positive):
+                            if sum(1 for word in positive if word in haystack) >= 2:
                                 item["score"] = sum(2 for word in positive if word in haystack)
                                 candidates.append(item)
                     if not candidates:
