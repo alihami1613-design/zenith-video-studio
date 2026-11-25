@@ -7,11 +7,11 @@ import requests
 import streamlit as st
 import imageio_ffmpeg
 
-st.title("🌙 LUNAVERA — 1-Hour Sleep Video")
-st.caption("تولید خودکار ویدئوی افقی خواب عمیق | 720p سبک و مناسب سرور رایگان | بدون تدوین دستی")
+st.title("🌙 LUNAVERA — 30-Minute Sleep Video")
+st.caption("تولید خودکار ویدئوی افقی خواب عمیق | Full HD 1080p | بدون تدوین دستی")
 st.info("این ابزار مستقل از ZENITH Documentary Editor است و به پروژه‌های مستند دست نمی‌زند.")
 
-DURATION = 3600
+DURATION = 1800
 SCENES = [
     ("آسمان شب آرام", ["starry night sky video", "stars over dark sky video", "night sky stars video"],
      ["star", "stars", "night", "sky"], ["circled", "diagram", "map", "animation", "logo", "text"]),
@@ -165,13 +165,13 @@ else:
                 # Encode only a short 3-minute visual loop, then repeat its already-encoded
                 # video stream for one hour. This avoids encoding 60 minutes of video on
                 # Streamlit Cloud's limited CPU.
-                status.write("مرحله ۱ از ۲: ساخت حلقه تصویری کوتاه ۳ دقیقه‌ای با کیفیت 720p...")
+                status.write("مرحله ۱ از ۲: ساخت حلقه تصویری کوتاه ۳ دقیقه‌ای با کیفیت Full HD 1080p...")
                 loop_video = work / "LUNAVERA_visual_loop.mp4"
                 filter_parts = []
                 for i in range(3):
                     filter_parts.append(
-                        f"[{i}:v]scale=1280:720:force_original_aspect_ratio=increase,"
-                        f"crop=1280:720,setsar=1,fps=24,format=yuv420p,"
+                        f"[{i}:v]scale=1920:1080:force_original_aspect_ratio=increase,"
+                        f"crop=1920:1080,setsar=1,fps=24,format=yuv420p,"
                         f"trim=duration=60,setpts=PTS-STARTPTS[v{i}]"
                     )
                 filter_parts.append("[v0][v1][v2]concat=n=3:v=1:a=0[v]")
@@ -180,7 +180,7 @@ else:
                     loop_cmd += ["-stream_loop", "-1", "-i", str(source)]
                 loop_cmd += ["-filter_complex", ";".join(filter_parts),
                              "-map", "[v]", "-an", "-c:v", "libx264",
-                             "-preset", "ultrafast", "-crf", "30",
+                             "-preset", "ultrafast", "-crf", "23",
                              "-pix_fmt", "yuv420p", "-movflags", "+faststart",
                              str(loop_video)]
                 subprocess.run(loop_cmd, check=True, capture_output=True, text=True, timeout=1800)
@@ -198,10 +198,10 @@ else:
                 progress.progress(100)
                 status.success("ویدئوی یک‌ساعته LUNAVERA آماده شد.")
                 # Avoid loading a huge one-hour MP4 twice into server memory.
-                st.info("پیش‌نمایش داخل صفحه غیرفعال است تا حافظه سرور حفظ شود. خروجی نهایی 720p است.")
+                st.info("پیش‌نمایش داخل صفحه غیرفعال است تا حافظه سرور حفظ شود. خروجی نهایی Full HD 1080p و ۳۰ دقیقه است.")
                 with final.open("rb") as video_file:
                     st.download_button("⬇️ دریافت ویدئوی کامل LUNAVERA", data=video_file,
-                                       file_name="LUNAVERA_Deep_Sleep_1_Hour.mp4",
+                                       file_name="LUNAVERA_Deep_Sleep_30_Minutes.mp4",
                                        mime="video/mp4", use_container_width=True)
         except subprocess.CalledProcessError as e:
             st.error("رندر در سرور متوقف شد؛ جزئیات فنی:")
