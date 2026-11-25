@@ -79,6 +79,13 @@ mg_subtitle = st.text_input("زیرتیتر", value="DESIGNED FOR YOUR LIFESTYLE
 mg_cta = st.text_input("متن دعوت به اقدام", value="LEARN MORE", max_chars=24)
 mg_style = st.selectbox("جایگاه و سبک نمایش", ["لوکس — پایین تصویر", "مدرن — مرکز تصویر", "مینیمال — گوشه پایین"], index=0)
 
+
+with st.expander("🎛️ کنترل‌های تکمیلی افکت حرفه‌ای", expanded=False):
+    fx_mode = st.selectbox("افکت ویژه", ["بدون افکت اضافه", "Glow نرم", "فیلم قدیمی (Film)", "سیاه‌وسفید", "RGB Split ساده (Glitch رنگی)"], index=0)
+    glow_amount = st.slider("شدت Glow", 0, 100, 30, disabled=(fx_mode != "Glow نرم"))
+    grain_amount = st.slider("میزان Grain", 0, 100, 15, disabled=(fx_mode != "فیلم قدیمی (Film)"))
+    use_flash = st.checkbox("افکت Flash کوتاه (روشنایی)", value=False)
+
 if orientation.startswith("عمودی"):
     output_w, output_h = 1080, 1920
 else:
@@ -179,6 +186,19 @@ if st.button("✨ ساخت تیزر تبلیغاتی", type="primary", use_conta
                     vf += f",vignette=PI/{4.5 - 1.0 * strength},eq=contrast={1.06 + 0.12 * strength:.3f}:saturation={0.94 + 0.08 * strength:.3f},unsharp=5:5:{0.20 + 0.35 * strength:.2f}:5:5:0"
                 else:
                     vf += f",eq=contrast={1.10 + 0.16 * strength:.3f}:saturation={1.12 + 0.20 * strength:.3f},unsharp=5:5:{0.35 + 0.55 * strength:.2f}:5:5:0"
+
+
+                # Extra selectable finishing effects implemented with FFmpeg filters.
+                if fx_mode == "Glow نرم":
+                    vf += f",gblur=sigma={1.0 + glow_amount/35:.2f},eq=brightness={glow_amount/500:.3f}"
+                elif fx_mode == "فیلم قدیمی (Film)":
+                    vf += f",noise=alls={grain_amount}:allf=t,eq=saturation=0.92"
+                elif fx_mode == "سیاه‌وسفاد":
+                    vf += ",hue=s=0,eq=contrast=1.08"
+                elif fx_mode == "RGB Split ساده (Glitch رنگی)":
+                    vf += ",chromashift=cbh=3:cbv=0:crh=-3:crv=0"
+                if use_flash:
+                    vf += ",eq=brightness=0.10"
 
                 if asset_type == "video":
                     # Loop short source clips to fill their assigned segment instead of
