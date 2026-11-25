@@ -146,15 +146,10 @@ if st.button("✨ ساخت تیزر تبلیغاتی", type="primary", use_conta
                     vf += ",eq=contrast=1.12:saturation=1.18"
 
                 if asset_type == "video":
-                    source_duration = media_duration(ffmpeg, src)
-                    if source_duration + 0.15 < per_clip:
-                        raise ValueError(
-                            f"مدت کلیپ «{uploaded.name}» فقط {source_duration:.1f} ثانیه است؛ "
-                            f"برای زمان‌بندی فعلی حداقل {per_clip:.1f} ثانیه لازم است. "
-                            "کلیپ طولانی‌تری انتخاب کن یا تعداد فایل‌ها را کمتر کن."
-                        )
+                    # Loop short source clips to fill their assigned segment instead of
+                    # rejecting them. This avoids forcing users to find/download longer footage.
                     vf += f",trim=duration={per_clip:.3f},setpts=PTS-STARTPTS"
-                    input_args = ["-i", str(src)]
+                    input_args = ["-stream_loop", "-1", "-i", str(src), "-t", f"{per_clip:.3f}"]
                 else:
                     frames = max(1, round(per_clip * 24))
                     # Gentle luxury-product camera movement: subtle 3-4% zoom, not an aggressive push-in.
