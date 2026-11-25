@@ -143,8 +143,17 @@ if st.button("✨ ساخت تیزر تبلیغاتی", type="primary", use_conta
                     input_args = ["-i", str(src)]
                 else:
                     frames = max(1, round(per_clip * 24))
-                    direction = "iw/2-(iw/zoom/2)" if i % 2 == 0 else "iw/2-(iw/zoom/2)+8"
-                    vf += f",zoompan=z='min(zoom+0.0008,1.14)':d=1:x='{direction}':y='ih/2-(ih/zoom/2)':s=1920x1080:fps=24,trim=duration={per_clip:.3f},setpts=PTS-STARTPTS"
+                    # Gentle luxury-product camera movement: subtle 3-4% zoom, not an aggressive push-in.
+                    if i % 3 == 0:
+                        zoom_expr = "min(zoom+0.00022,1.04)"
+                        x_expr = "iw/2-(iw/zoom/2)"
+                    elif i % 3 == 1:
+                        zoom_expr = "if(eq(on,0),1.0,min(zoom+0.00018,1.035))"
+                        x_expr = "iw/2-(iw/zoom/2)+4*sin(on/90)"
+                    else:
+                        zoom_expr = "if(eq(on,0),1.0,min(zoom+0.00016,1.03))"
+                        x_expr = "iw/2-(iw/zoom/2)-4*sin(on/100)"
+                    vf += f",zoompan=z='{zoom_expr}':d=1:x='{x_expr}':y='ih/2-(ih/zoom/2)':s=1920x1080:fps=24,trim=duration={per_clip:.3f},setpts=PTS-STARTPTS"
                     input_args = ["-loop", "1", "-framerate", "24", "-i", str(src), "-t", f"{per_clip:.3f}"]
 
                 run_ffmpeg([
