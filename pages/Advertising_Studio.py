@@ -111,7 +111,7 @@ if st.button("✨ ساخت تیزر تبلیغاتی", type="primary", use_conta
                 )
                 audio_response.raise_for_status()
                 content_type = audio_response.headers.get("Content-Type", "").lower()
-                if len(audio_response.content) < 100000 or "audio" not in content_type:
+                if len(audio_response.content) < 100000 or not (content_type.startswith("audio/") or "application/ogg" in content_type):
                     raise RuntimeError("فایل موسیقی پیش‌فرض از Wikimedia Commons به‌صورت کامل دریافت نشد. لطفاً دوباره تلاش کن یا موسیقی خودت را بارگذاری کن.")
                 music_path.write_bytes(audio_response.content)
             assets = [(item, "video") for item in (videos or [])] + [(item, "photo") for item in (photos or [])]
