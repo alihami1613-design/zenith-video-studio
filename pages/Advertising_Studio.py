@@ -47,7 +47,7 @@ with c2:
 st.markdown("### ۳. تنظیمات تدوین")
 a, b, c = st.columns(3)
 with a:
-    duration = st.selectbox("مدت خروجی", [30, 45, 50, 60], index=2, format_func=lambda x: f"{x} ثانیه")
+    duration = st.selectbox("مدت خروجی", [30, 45, 50, 60], index=0, format_func=lambda x: f"{x} ثانیه")
 with b:
     style = st.selectbox("حال‌وهوای رنگ", ["لوکس مشکی و طلایی", "سینمایی طبیعی", "پرکنتراست و پرانرژی"])
 with c:
