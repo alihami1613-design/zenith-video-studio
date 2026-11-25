@@ -158,10 +158,12 @@ else:
                 ], check=True, capture_output=True, text=True, timeout=1200)
                 progress.progress(100)
                 status.success("ویدئوی یک‌ساعته LUNAVERA آماده شد.")
-                st.video(final.read_bytes())
-                st.download_button("⬇️ دریافت ویدئوی کامل LUNAVERA", data=final.read_bytes(),
-                                   file_name="LUNAVERA_Deep_Sleep_1_Hour.mp4",
-                                   mime="video/mp4", use_container_width=True)
+                # Avoid loading a huge one-hour MP4 twice into server memory.
+                st.info("پیش‌نمایش داخل صفحه غیرفعال است تا سرور هنگام بارگذاری ویدئوی حجیم از کار نیفتد.")
+                with final.open("rb") as video_file:
+                    st.download_button("⬇️ دریافت ویدئوی کامل LUNAVERA", data=video_file,
+                                       file_name="LUNAVERA_Deep_Sleep_1_Hour.mp4",
+                                       mime="video/mp4", use_container_width=True)
         except subprocess.CalledProcessError as e:
             st.error("رندر در سرور متوقف شد؛ جزئیات فنی:")
             st.code((e.stderr or str(e))[-3000:])
