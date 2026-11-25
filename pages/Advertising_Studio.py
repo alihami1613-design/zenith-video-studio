@@ -1,3 +1,4 @@
+import re
 import subprocess
 import tempfile
 from pathlib import Path
@@ -24,7 +25,7 @@ videos = st.file_uploader(
     accept_multiple_files=True,
     key="ad_video_assets",
 )
-st.caption("برای نمونه‌کار لوکس، کلیپ‌های محصول، خودرو، شهر شبانه، فناوری یا جزئیات نزدیک مناسب‌اند. از فایل‌هایی استفاده کن که مجوز استفاده تجاری‌شان را داری.")
+st.caption("حداکثر ۱۲ کلیپ؛ هر فایل تا سقف ۲۰۰ مگابایت. از فوتیج‌هایی استفاده کن که مجوز استفاده تجاری‌شان را داری.")
 
 c1, c2 = st.columns(2)
 with c1:
@@ -44,13 +45,22 @@ with c:
 music_level = st.slider("بلندی موسیقی", 0, 100, 28)
 voice_level = st.slider("بلندی گویندگی", 0, 150, 100)
 
-st.caption("خروجی: MP4 / H.264 / Full HD 1920×1080 / 24fps. تدوین خودکار شامل یکسان‌سازی قاب و فریم‌ریت، اصلاح رنگ، محو ورود و خروج و میکس صداست.")
+st.caption("خروجی: MP4 / H.264 / Full HD 1920×1080 / 24fps. شامل یکسان‌سازی قاب و فریم‌ریت، اصلاح رنگ، محو ورود و خروج و میکس صداست.")
 
 def run_ffmpeg(cmd, timeout=900):
     p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
     if p.returncode != 0:
         detail = (p.stderr or p.stdout or "خطای نامشخص FFmpeg")[-3500:]
         raise RuntimeError(detail)
+
+def media_duration(ffmpeg, path):
+    p = subprocess.run([ffmpeg, "-i", str(path), "-f", "null", "-"],
+                       capture_output=True, text=True, timeout=90)
+    match = re.search(r"Duration: (\d+):(\d+):(\d+(?:\.\d+)?)", p.stderr)
+    if not match:
+        raise ValueError(f"مدت فایل «{path.name}» قابل تشخیص نیست یا فایل ویدئویی معتبر نیست.")
+    hours, minutes, seconds = match.groups()
+    return int(hours) * 3600 + int(minutes) * 60 + float(seconds)
 
 if st.button("✨ ساخت تیزر تبلیغاتی", type="primary", use_container_width=True):
     if not videos:
@@ -67,19 +77,29 @@ if st.button("✨ ساخت تیزر تبلیغاتی", type="primary", use_conta
         with tempfile.TemporaryDirectory() as td:
             work = Path(td)
             normalized = []
-            per_clip = max(2.0, duration / len(videos))
+            per_clip = duration / len(videos)
+
             for i, uploaded in enumerate(videos):
-                status.write(f"آماده‌سازی کلیپ {i+1} از {len(videos)} ...")
-                suffix = Path(uploaded.name).suffix or ".mp4"
+                status.write(f"بررسی و آماده‌سازی کلیپ {i+1} از {len(videos)} ...")
+                suffix = Path(uploaded.name).suffix.lower() or ".mp4"
                 src = work / f"input_{i}{suffix}"
                 dst = work / f"clip_{i:02d}.mp4"
                 src.write_bytes(uploaded.getbuffer())
-                vf = "scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,setsar=1,fps=24,eq=contrast=1.08:saturation=1.12:brightness=0.01,format=yuv420p"
+                source_duration = media_duration(ffmpeg, src)
+                if source_duration + 0.15 < per_clip:
+                    raise ValueError(
+                        f"مدت کلیپ «{uploaded.name}» فقط {source_duration:.1f} ثانیه است؛ "
+                        f"برای تقسیم مساوی زمان‌بندی فعلی حداقل {per_clip:.1f} ثانیه لازم است. "
+                        "کلیپ طولانی‌تری انتخاب کن یا تعداد کلیپ‌ها را کمتر کن."
+                    )
+
+                vf = "scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,setsar=1,fps=24,eq=contrast=1.06:saturation=1.10:brightness=0.005,format=yuv420p"
                 if style == "لوکس مشکی و طلایی":
                     vf += ",curves=all='0/0 0.20/0.15 0.75/0.82 1/1'"
                 elif style == "پرکنتراست و پرانرژی":
-                    vf += ",eq=contrast=1.16:saturation=1.20"
+                    vf += ",eq=contrast=1.12:saturation=1.18"
                 vf += f",trim=duration={per_clip:.3f},setpts=PTS-STARTPTS"
+
                 run_ffmpeg([
                     ffmpeg, "-y", "-i", str(src), "-vf", vf,
                     "-an", "-c:v", "libx264", "-preset", "veryfast",
@@ -87,45 +107,59 @@ if st.button("✨ ساخت تیزر تبلیغاتی", type="primary", use_conta
                     "-pix_fmt", "yuv420p", "-movflags", "+faststart", str(dst)
                 ])
                 normalized.append(dst)
-                progress.progress(int((i + 1) / (len(videos) + 2) * 70))
+                progress.progress(int((i + 1) / (len(videos) + 2) * 65))
 
             status.write("اتصال سکانس‌ها و آماده‌سازی صدا ...")
             concat = work / "concat.txt"
-            with concat.open("w", encoding="utf-8") as f:
+            with concat.open("w", encoding="utf-8", newline="\n") as f:
                 for p in normalized:
-                    f.write("file '" + p.as_posix().replace("'", "'\\''") + "'\\n")
+                    safe_path = p.as_posix().replace("'", "'\\''")
+                    f.write(f"file '{safe_path}'\n")
+
             joined = work / "joined.mp4"
             run_ffmpeg([ffmpeg, "-y", "-f", "concat", "-safe", "0", "-i", str(concat),
                         "-c", "copy", str(joined)])
+            progress.progress(72)
 
             final = work / "ADVERTISING_SHOWREEL.mp4"
             cmd = [ffmpeg, "-y", "-i", str(joined)]
-            audio_inputs = []
             if narration:
                 vp = work / ("voice" + (Path(narration.name).suffix or ".mp3"))
                 vp.write_bytes(narration.getbuffer())
                 cmd += ["-i", str(vp)]
-                audio_inputs.append("voice")
             if music:
                 mp = work / ("music" + (Path(music.name).suffix or ".mp3"))
                 mp.write_bytes(music.getbuffer())
                 cmd += ["-stream_loop", "-1", "-i", str(mp)]
-                audio_inputs.append("music")
 
+            video_fade = f"fade=t=in:st=0:d=0.7,fade=t=out:st={max(0, duration-0.8):.3f}:d=0.8"
+            cmd += ["-vf", video_fade, "-map", "0:v:0"]
+
+            audio_fade = f"afade=t=in:st=0:d=0.35,afade=t=out:st={max(0, duration-0.8):.3f}:d=0.8"
             if narration and music:
-                graph = f"[1:a]volume={voice_level/100:.2f}[v];[2:a]volume={music_level/100:.2f}[m];[v][m]amix=inputs=2:duration=longest:dropout_transition=2,atrim=duration={duration}[a]"
-                cmd += ["-filter_complex", graph, "-map", "0:v", "-map", "[a]"]
+                graph = (
+                    f"[1:a]volume={voice_level/100:.2f}[v];"
+                    f"[2:a]volume={music_level/100:.2f}[m];"
+                    f"[v][m]amix=inputs=2:duration=longest:dropout_transition=2,"
+                    f"atrim=duration={duration},{audio_fade}[a]"
+                )
+                cmd += ["-filter_complex", graph, "-map", "[a]"]
             elif narration:
-                cmd += ["-map", "0:v", "-map", "1:a", "-af", f"volume={voice_level/100:.2f},atrim=duration={duration}"]
+                cmd += ["-map", "1:a:0", "-af",
+                        f"volume={voice_level/100:.2f},{audio_fade}"]
             elif music:
-                cmd += ["-map", "0:v", "-map", "1:a", "-af", f"volume={music_level/100:.2f},atrim=duration={duration}"]
+                cmd += ["-map", "2:a:0", "-af",
+                        f"volume={music_level/100:.2f},{audio_fade}"]
             else:
-                cmd += ["-map", "0:v", "-an"]
+                cmd += ["-an"]
 
             cmd += ["-t", str(duration), "-c:v", "libx264", "-preset", "veryfast",
                     "-crf", "23" if quality == "1080p متعادل" else "26",
-                    "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "160k",
-                    "-movflags", "+faststart", str(final)]
+                    "-pix_fmt", "yuv420p"]
+            if narration or music:
+                cmd += ["-c:a", "aac", "-b:a", "160k"]
+            cmd += ["-movflags", "+faststart", str(final)]
+
             status.write("رندر نهایی تیزر در حال انجام است ...")
             run_ffmpeg(cmd, timeout=1200)
             data = final.read_bytes()
