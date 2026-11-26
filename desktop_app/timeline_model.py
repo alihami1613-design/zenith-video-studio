@@ -267,6 +267,11 @@ class TimelineProject:
             fade_out_frames=original.fade_out_frames,
             video_fade_out_frames=original.video_fade_out_frames,
             transition_in_frames=0,
+            transform_keyframes=[
+                dict(key, frame=int(key["frame"]) - (at_frame - original.start_frame))
+                for key in original.transform_keyframes
+                if int(key["frame"]) >= (at_frame - original.start_frame)
+            ],
         )
         original.duration_frames = at_frame - original.start_frame
         original.fade_out_frames = 0
