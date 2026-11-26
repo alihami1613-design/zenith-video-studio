@@ -12,7 +12,7 @@ from proxy_manager import find_ffmpeg
 from video_color import build_color_filter
 from speed_ramp import build_speed_segments
 
-RENDER_VERSION = "timeline-h264-v13-shape-feather-mask"
+RENDER_VERSION = "timeline-h264-v14-animated-mask"
 STILL_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".webp", ".tif", ".tiff"}
 
 
@@ -160,6 +160,36 @@ def build_mask_shape_expression(shape: str, x: float, y: float, width: float, he
     return f"eq(mod({count}\\,2)\\,1)"
 
 
+def build_animated_mask_shape_expression(shape: str, x_expr: str, y_expr: str,
+                                          width_expr: str, height_expr: str,
+                                          points: list[list[float]],
+                                          base_rect: tuple[float, float, float, float]) -> str:
+    """Build a per-frame alpha condition using animated normalized mask bounds."""
+    if shape == "rectangle":
+        return (f"gte(X\,({x_expr})*W)*lt(X\,(({x_expr})+({width_expr}))*W)*"
+                f"gte(Y\,({y_expr})*H)*lt(Y\,(({y_expr})+({height_expr}))*H)")
+    if shape == "ellipse":
+        cx = f"(({x_expr})+({width_expr})/2)*W"
+        cy = f"(({y_expr})+({height_expr})/2)*H"
+        rx = f"max(1\,({width_expr})*W/2)"
+        ry = f"max(1\,({height_expr})*H/2)"
+        return f"lte(pow((X-{cx})/{rx}\,2)+pow((Y-{cy})/{ry}\,2)\,1)"
+    if shape != "polygon" or len(points) < 3:
+        raise ValueError("Animated mask requires rectangle, ellipse or a polygon with at least 3 points")
+    bx, by, bw, bh = base_rect
+    crossings = []
+    transformed = []
+    for px, py in points:
+        tx = f"(({x_expr})+(({float(px):.6f}-{bx:.6f})/{max(bw, 1e-9):.6f})*({width_expr}))*W"
+        ty = f"(({y_expr})+(({float(py):.6f}-{by:.6f})/{max(bh, 1e-9):.6f})*({height_expr}))*H"
+        transformed.append((tx, ty))
+    for index, (x1, y1) in enumerate(transformed):
+        x2, y2 = transformed[(index + 1) % len(transformed)]
+        crossings.append(f"if(gt(Y\,{y1})*lte(Y\,{y2})*lt(X\,({x1}+((Y-{y1})*({x2}-{x1})/({y2}-{y1}))))\,1\,0)")
+    count = "+".join(crossings)
+    return f"eq(mod({count}\,2)\,1)"
+
+
 def build_video_render_command(ffmpeg: str, project: object,
                                output_path: str | Path) -> list[str]:
     """Composite V1-V4 bottom-to-top; still images loop for their clip duration."""
@@ -250,21 +280,35 @@ def build_video_render_command(ffmpeg: str, project: object,
             mask_w = float(getattr(clip, "mask_width", 1.0))
             mask_h = float(getattr(clip, "mask_height", 1.0))
             mask_shape = str(getattr(clip, "mask_shape", "rectangle"))
-            if mask_shape == "rectangle":
+            mask_points = list(getattr(clip, "mask_points", []) or [])
+            mask_keys = list(getattr(clip, "mask_keyframes", []) or [])
+            if mask_keys:
+                x_expr = _keyframe_expression(mask_keys, "x", mask_x, fps, "T")
+                y_expr = _keyframe_expression(mask_keys, "y", mask_y, fps, "T")
+                w_expr = _keyframe_expression(mask_keys, "width", mask_w, fps, "T")
+                h_expr = _keyframe_expression(mask_keys, "height", mask_h, fps, "T")
+                mask_expr = build_animated_mask_shape_expression(
+                    mask_shape, x_expr, y_expr, w_expr, h_expr, mask_points,
+                    (mask_x, mask_y, mask_w, mask_h),
+                )
                 chain += (
-                    f",crop=w='max(2\\,trunc(iw*{mask_w:.6f}))':"
-                    f"h='max(2\\,trunc(ih*{mask_h:.6f}))':"
+                    f",geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':"
+                    f"a='if({mask_expr}\,alpha(X,Y)\,0)'"
+                )
+            elif mask_shape == "rectangle":
+                chain += (
+                    f",crop=w='max(2\,trunc(iw*{mask_w:.6f}))':"
+                    f"h='max(2\,trunc(ih*{mask_h:.6f}))':"
                     f"x='trunc(iw*{mask_x:.6f})':y='trunc(ih*{mask_y:.6f})',"
                     f"pad={width}:{height}:x='trunc({width}*{mask_x:.6f})':y='trunc({height}*{mask_y:.6f})':color=black@0"
                 )
             else:
                 mask_expr = build_mask_shape_expression(
-                    mask_shape, mask_x, mask_y, mask_w, mask_h,
-                    list(getattr(clip, "mask_points", []) or []), width, height,
+                    mask_shape, mask_x, mask_y, mask_w, mask_h, mask_points, width, height,
                 )
                 chain += (
                     f",geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':"
-                    f"a='if({mask_expr}\\,alpha(X,Y)\\,0)'"
+                    f"a='if({mask_expr}\,alpha(X,Y)\,0)'"
                 )
             feather = float(getattr(clip, "mask_feather_px", 0.0))
             if feather > 0.0:
