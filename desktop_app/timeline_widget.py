@@ -18,6 +18,7 @@ class TimelineCanvas(QWidget):
     clipMoved = Signal(str, int, str)
     clipTrimmed = Signal(str, int, int)
     editStarted = Signal()
+    speedRampChanged = Signal(str, list)
 
     def __init__(self, project, parent=None):
         super().__init__(parent)
@@ -32,6 +33,9 @@ class TimelineCanvas(QWidget):
         self._original_end = 0
         self._original_source_in = 0
         self._preview_state = None
+        self._drag_ramp_index = None
+        self._preview_ramp_points = None
+        self._playhead_dragging = False
         self.waveforms = {}
         self.setMouseTracking(True)
         self.setMinimumHeight(RULER_HEIGHT + len(TRACKS) * TRACK_HEIGHT + 2)
@@ -172,9 +176,13 @@ class TimelineCanvas(QWidget):
                         px = x1 + 4 + pixel_offset
                         painter.setPen(QPen(QColor("#B7D8E5"), 1))
                         painter.drawLine(px, center_y - bar_height, px, center_y + bar_height)
+                ramp_source = (
+                    self._preview_ramp_points
+                    if self._drag_clip_id == clip.clip_id and self._preview_ramp_points is not None
+                    else getattr(clip, "speed_ramp", [])
+                )
                 ramp_points = sorted(
-                    getattr(clip, "speed_ramp", []) or [],
-                    key=lambda point: int(point["frame"]),
+                    ramp_source or [], key=lambda point: int(point["frame"])
                 ) if clip.media_type == "video" else []
                 if ramp_points and duration_frames > 0:
                     def ramp_y(rate):
@@ -212,6 +220,28 @@ class TimelineCanvas(QWidget):
         painter.drawLine(playhead_x, 0, playhead_x, height)
         painter.end()
 
+    def _ramp_point_y(self, rate: float, clip) -> int:
+        track_index = TRACKS.index(clip.track)
+        rect_y = RULER_HEIGHT + track_index * TRACK_HEIGHT + 5
+        rect_h = TRACK_HEIGHT - 10
+        normalized = (max(0.25, min(4.0, float(rate))) - 0.25) / 3.75
+        return rect_y + rect_h - 5 - int(normalized * max(1, rect_h - 10))
+
+    def _ramp_point_at(self, clip, point):
+        if clip.media_type != "video" or not getattr(clip, "speed_ramp", None):
+            return None
+        left, right = self._frame_x(clip.start_frame), self._frame_x(clip.end_frame)
+        width = max(1, right - left)
+        nearest = None
+        nearest_distance = 10 ** 9
+        for index, key in enumerate(clip.speed_ramp):
+            x = left + int(int(key["frame"]) / max(1, clip.duration_frames) * width)
+            y = self._ramp_point_y(float(key["rate"]), clip)
+            distance = (point.x() - x) ** 2 + (point.y() - y) ** 2
+            if distance <= 100 and distance < nearest_distance:
+                nearest, nearest_distance = index, distance
+        return nearest
+
     def mousePressEvent(self, event):
         if event.button() != Qt.LeftButton:
             return
@@ -225,21 +255,61 @@ class TimelineCanvas(QWidget):
             self._drag_track = clip.track
             self._original_end = clip.end_frame
             self._original_source_in = clip.source_in
-            self._drag_mode = self._drag_mode_for(clip, point.x())
+            ramp_index = self._ramp_point_at(clip, point)
+            if ramp_index is not None:
+                self._drag_mode = "ramp"
+                self._drag_ramp_index = ramp_index
+                self._preview_ramp_points = [dict(item) for item in clip.speed_ramp]
+            else:
+                self._drag_mode = self._drag_mode_for(clip, point.x())
+                self._drag_ramp_index = None
+                self._preview_ramp_points = None
             self.editStarted.emit()
             self.clipSelected.emit(clip.clip_id)
         else:
             self.selected_clip_id = None
+            self._drag_clip_id = None
+            self._playhead_dragging = True
             self.playheadChanged.emit(self._x_frame(point.x()))
         self.update()
 
     def mouseMoveEvent(self, event):
+        if self._playhead_dragging and (event.buttons() & Qt.LeftButton):
+            self.playheadChanged.emit(self._x_frame(event.position().toPoint().x()))
+            return
         if not self._drag_clip_id or not (event.buttons() & Qt.LeftButton):
             return
         delta_x = event.position().toPoint().x() - self._drag_origin.x()
         delta_frames = int(round(delta_x / max(1, self.pixels_per_second) * self.project.fps))
         clip = self.project.get_clip(self._drag_clip_id)
-        if self._drag_mode == "move":
+        if self._drag_mode == "ramp":
+            index = self._drag_ramp_index
+            if index is not None and self._preview_ramp_points:
+                left = self._frame_x(clip.start_frame)
+                width = max(1, self._frame_x(clip.end_frame) - left)
+                local_frame = int(round(
+                    (event.position().toPoint().x() - left) / width * clip.duration_frames
+                ))
+                previous_frame = (
+                    int(self._preview_ramp_points[index - 1]["frame"]) + 1
+                    if index > 0 else 0
+                )
+                next_frame = (
+                    int(self._preview_ramp_points[index + 1]["frame"]) - 1
+                    if index + 1 < len(self._preview_ramp_points)
+                    else clip.duration_frames - 1
+                )
+                local_frame = max(previous_frame, min(next_frame, local_frame))
+                track_index = TRACKS.index(clip.track)
+                rect_y = RULER_HEIGHT + track_index * TRACK_HEIGHT + 5
+                rect_h = TRACK_HEIGHT - 10
+                rate_range = max(1, rect_h - 10)
+                normalized = (rect_y + rect_h - 5 - event.position().toPoint().y()) / rate_range
+                rate = 0.25 + max(0.0, min(1.0, normalized)) * 3.75
+                self._preview_ramp_points[index] = {
+                    "frame": local_frame, "rate": round(rate, 2)
+                }
+        elif self._drag_mode == "move":
             new_start = self._snap(max(0, self._drag_start_frame + delta_frames), clip.clip_id, "move")
             target_track = self._track_at(event.position().toPoint().y()) or self._drag_track
             if target_track.startswith("V") != self._drag_track.startswith("V"):
@@ -270,11 +340,18 @@ class TimelineCanvas(QWidget):
         self.update()
 
     def mouseReleaseEvent(self, event):
+        if self._playhead_dragging:
+            self._playhead_dragging = False
+            self.update()
+            return
         if not self._drag_clip_id:
             return
         clip = self.project.get_clip(self._drag_clip_id)
         preview = self._preview_state
-        if preview:
+        if self._drag_mode == "ramp" and self._preview_ramp_points is not None:
+            if self._preview_ramp_points != clip.speed_ramp:
+                self.speedRampChanged.emit(clip.clip_id, self._preview_ramp_points)
+        elif preview:
             if self._drag_mode == "move":
                 if preview["start_frame"] != clip.start_frame or preview["track"] != clip.track:
                     self.clipMoved.emit(clip.clip_id, preview["start_frame"], preview["track"])
@@ -283,6 +360,8 @@ class TimelineCanvas(QWidget):
                 if preview["start_frame"] != clip.start_frame or end_frame != clip.end_frame:
                     self.clipTrimmed.emit(clip.clip_id, preview["start_frame"], end_frame)
         self._preview_state = None
+        self._preview_ramp_points = None
+        self._drag_ramp_index = None
         self._drag_clip_id = None
         self.update_geometry_for_project()
 
@@ -293,6 +372,7 @@ class TimelineWidget(QWidget):
     clipMoved = Signal(str, int, str)
     clipTrimmed = Signal(str, int, int)
     editStarted = Signal()
+    speedRampChanged = Signal(str, list)
 
     def __init__(self, project, parent=None):
         super().__init__(parent)
@@ -326,6 +406,7 @@ class TimelineWidget(QWidget):
         self.canvas.clipMoved.connect(self.clipMoved)
         self.canvas.clipTrimmed.connect(self.clipTrimmed)
         self.canvas.editStarted.connect(self.editStarted)
+        self.canvas.speedRampChanged.connect(self.speedRampChanged)
 
     def set_project(self, project):
         self.project = project
