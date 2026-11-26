@@ -13,6 +13,19 @@ def _seconds(frames: int, fps: int) -> float:
     return frames / fps
 
 
+def _atempo_chain(rate: float) -> list[str]:
+    """Build FFmpeg atempo stages, each within the supported 0.5x-2x range."""
+    stages = []
+    remaining = float(rate)
+    while remaining < 0.5:
+        stages.append("atempo=0.5")
+        remaining /= 0.5
+    while remaining > 2.0:
+        stages.append("atempo=2.0")
+        remaining /= 2.0
+    if abs(remaining - 1.0) > 1e-9:
+        stages.append(f"atempo={remaining:.6f}")
+    return stages
 def build_audio_mix_command(
     ffmpeg: str,
     clips: Iterable[object],
@@ -69,11 +82,14 @@ def build_audio_mix_command(
             raise ValueError(f"مدت Fade از طول کلیپ بیشتر است: {clip.name}")
 
         command.extend(["-i", str(source)])
+        playback_rate = float(getattr(clip, "playback_rate", 1.0)) if getattr(clip, "media_type", "") == "video" else 1.0
         duration = _seconds(clip.duration_frames, fps)
+        source_duration = duration * playback_rate
         source_start = _seconds(clip.source_in, fps)
         chain = [
-            f"atrim=start={source_start:.6f}:duration={duration:.6f}",
+            f"atrim=start={source_start:.6f}:duration={source_duration:.6f}",
             "asetpts=PTS-STARTPTS",
+            *_atempo_chain(playback_rate),
             f"volume={clip.volume:.4f}",
         ]
         if clip.fade_in_frames:
