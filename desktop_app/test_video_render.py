@@ -36,7 +36,7 @@ class VideoRenderTests(unittest.TestCase):
         joined = " ".join(command)
         self.assertIn("scale=1920:1080:force_original_aspect_ratio=decrease", joined)
         self.assertIn("color=c=black:s=1920x1080:r=30:d=4.000000", joined)
-        self.assertIn("enable='between(t,3.000000,4.000000)'", joined)
+        self.assertIn("enable='gte(t,3.000000)*lt(t,4.000000)'", joined)
         self.assertIn("exposure=exposure=1.000", joined)
         self.assertIn("libx264", joined)
         self.assertIn("-crf 22", joined)
@@ -56,6 +56,15 @@ class VideoRenderTests(unittest.TestCase):
             project.clips[1].start_frame = 50
             project.clips[1].end_frame = 80
             with self.assertRaisesRegex(ValueError, "هم‌پوشانی"):
+                validate_render_project(project)
+
+    def test_rejects_still_image_inputs_until_looped_image_support_exists(self):
+        with tempfile.TemporaryDirectory() as folder:
+            project = self.project(folder)
+            image = Path(folder) / "still.png"
+            image.touch()
+            project.clips[0].path = str(image)
+            with self.assertRaisesRegex(ValueError, "تصویر ثابت"):
                 validate_render_project(project)
 
     def test_rejects_unsupported_frame_rate_and_missing_media(self):
