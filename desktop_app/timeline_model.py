@@ -10,7 +10,7 @@ import math
 from typing import Any
 from uuid import uuid4
 
-PROJECT_SCHEMA_VERSION = 5
+PROJECT_SCHEMA_VERSION = 6
 DEFAULT_FPS = 30
 DEFAULT_VIDEO_TRACKS = ("V1", "V2", "V3", "V4")
 DEFAULT_AUDIO_TRACKS = ("A1", "A2", "A3", "A4")
@@ -32,6 +32,7 @@ class Clip:
     duration_frames: int = 150
     clip_id: str = field(default_factory=_new_id)
     media_type: str = "video"
+    has_audio: bool = False
     volume: float = 1.0
     fade_in_frames: int = 0
     fade_out_frames: int = 0
@@ -133,6 +134,7 @@ class TimelineProject:
         start_frame: int | None = None,
         duration_frames: int = 150,
         media_type: str = "video",
+        has_audio: bool = False,
     ) -> Clip:
         if track not in self.video_tracks + self.audio_tracks:
             raise ValueError(f"Unknown track: {track}")
@@ -143,6 +145,7 @@ class TimelineProject:
             start_frame=self.playhead_frame if start_frame is None else start_frame,
             duration_frames=duration_frames,
             media_type=media_type,
+            has_audio=bool(has_audio),
         )
         clip.validate()
         self.clips.append(clip)
@@ -290,7 +293,7 @@ class TimelineProject:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "TimelineProject":
-        """Load schema v4 and migrate older path/name/track list projects."""
+        """Load schema v1-v5 and migrate older path/name/track list projects."""
         fps = int(data.get("fps", DEFAULT_FPS) or DEFAULT_FPS)
         raw_clips = data.get("clips")
         if raw_clips is None:
@@ -323,6 +326,7 @@ class TimelineProject:
                 duration_frames=duration,
                 clip_id=str(raw.get("clip_id") or _new_id()),
                 media_type=str(raw.get("media_type", "audio" if track.startswith("A") else "video")),
+                has_audio=bool(raw.get("has_audio", raw.get("media_type", "audio" if track.startswith("A") else "video") == "audio")),
                 volume=float(raw.get("volume", 1.0)),
                 fade_in_frames=max(0, int(raw.get("fade_in_frames", 0) or 0)),
                 fade_out_frames=max(0, int(raw.get("fade_out_frames", 0) or 0)),
