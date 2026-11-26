@@ -101,6 +101,22 @@ class TimelineModelTests(unittest.TestCase):
                 {"frame": 0, "scale": 5.0},
             ])
 
+    def test_blend_mode_round_trip_split_and_validation(self):
+        project = TimelineProject()
+        clip = project.add_clip("blend.mp4", "blend.mp4", duration_frames=90)
+        clip.blend_mode = "screen"
+        clip.validate()
+        restored = TimelineProject.from_dict(project.to_dict())
+        saved = restored.get_clip(clip.clip_id)
+        self.assertEqual(saved.blend_mode, "screen")
+        left, right = restored.split_clip(clip.clip_id, 45)
+        self.assertEqual(left.blend_mode, "screen")
+        self.assertEqual(right.blend_mode, "screen")
+        clip.blend_mode = "unknown"
+        with self.assertRaisesRegex(ValueError, "blend mode"):
+            clip.validate()
+
+
     def test_color_grade_round_trip_and_split(self):
         project = TimelineProject()
         clip = project.add_clip("shot.mp4", "shot.mp4", duration_frames=120)
