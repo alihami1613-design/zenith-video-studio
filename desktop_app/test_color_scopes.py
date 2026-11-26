@@ -1,4 +1,9 @@
 import unittest
+import subprocess
+import tempfile
+from pathlib import Path
+
+from proxy_manager import find_ffmpeg
 
 from color_scopes import (
     SCOPE_HEIGHT, SCOPE_WIDTH, build_histogram_command,
@@ -33,6 +38,24 @@ class RGBHistogramTests(unittest.TestCase):
         command = build_histogram_command("ffmpeg", "sample.mp4", 0, {"wheel_shadows_r": 0.5})
         filters = command[command.index("-vf") + 1]
         self.assertIn("colorbalance=", filters)
+
+    def test_real_ffmpeg_frame_sampling(self):
+        ffmpeg = find_ffmpeg()
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / "scope-test.mp4"
+            subprocess.run([
+                ffmpeg, "-y", "-hide_banner", "-loglevel", "error",
+                "-f", "lavfi", "-i", "testsrc2=size=160x90:rate=10:duration=0.4",
+                "-frames:v", "4", "-c:v", "mpeg4", "-threads", "1", str(source),
+            ], check=True, capture_output=True, timeout=30)
+            from color_scopes import extract_rgb_histogram
+            red, green, blue = extract_rgb_histogram(
+                source, 0.1, {"wheel_shadows_r": 0.2, "wheel_highlights_b": -0.1}
+            )
+            expected_pixels = SCOPE_WIDTH * SCOPE_HEIGHT
+            self.assertEqual(sum(red), expected_pixels)
+            self.assertEqual(sum(green), expected_pixels)
+            self.assertEqual(sum(blue), expected_pixels)
 
     def test_rejects_negative_timestamp(self):
         with self.assertRaises(ValueError):
