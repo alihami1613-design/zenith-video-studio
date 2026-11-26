@@ -90,6 +90,7 @@ def build_audio_mix_command(
             f"atrim=start={source_start:.6f}:duration={source_duration:.6f}",
             "asetpts=PTS-STARTPTS",
             *_atempo_chain(playback_rate),
+            *(["areverse"] if bool(getattr(clip, "reverse_playback", False)) and getattr(clip, "media_type", "") == "video" else []),
             f"volume={clip.volume:.4f}",
         ]
         if clip.fade_in_frames:
