@@ -295,6 +295,17 @@ class TimelineProject:
         frames = int(dissolve_in_frames)
         if frames < 0 or frames > clip.duration_frames:
             raise ValueError("Cross Dissolve duration must be within clip duration")
+        if frames:
+            previous = next((item for item in reversed(self.clips_on_track(clip.track))
+                             if item.start_frame < clip.start_frame), None)
+            if previous is None or previous.end_frame != clip.start_frame:
+                raise ValueError("Cross Dissolve requires an adjacent previous clip on the same track")
+            if frames > previous.duration_frames:
+                raise ValueError("Cross Dissolve duration exceeds the previous clip")
+            before_previous = next((item for item in reversed(self.clips_on_track(clip.track))
+                                     if item.start_frame < previous.start_frame), None)
+            if before_previous and previous.transition_in_frames + frames > previous.duration_frames:
+                raise ValueError("Adjacent Cross Dissolves exceed the middle clip duration")
         clip.transition_in_frames = frames
         clip.validate()
         return clip
