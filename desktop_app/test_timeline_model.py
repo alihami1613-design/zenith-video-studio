@@ -44,7 +44,7 @@ class TimelineModelTests(unittest.TestCase):
         self.assertAlmostEqual(saved.volume, 0.8)
         self.assertEqual(saved.fade_in_frames, 30)
         self.assertEqual(saved.fade_out_frames, 45)
-        self.assertEqual(project.to_dict()["schema_version"], 3)
+        self.assertEqual(project.to_dict()["schema_version"], 4)
 
     def test_audio_track_mixer_round_trip(self):
         project = TimelineProject()
