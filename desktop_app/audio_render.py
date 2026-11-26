@@ -33,7 +33,7 @@ def build_audio_mix_command(
         (clip for clip in clips
          if getattr(clip, "media_type", "") == "audio"
          or (getattr(clip, "media_type", "") == "video" and getattr(clip, "has_audio", False))),
-        key=lambda clip: (clip.start_frame, clip.track, clip.clip_id),
+        key=lambda clip: (clip.start_frame, getattr(clip, "audio_track", clip.track), clip.clip_id),
     )
     if not audio_clips:
         raise ValueError("هیچ کلیپ صوتی روی تایم‌لاین وجود ندارد.")
@@ -41,14 +41,14 @@ def build_audio_mix_command(
     settings = audio_track_settings or {}
     solo_tracks = {track for track, value in settings.items() if value.get("solo", False)}
     active_tracks = []
-    for track in sorted({clip.track for clip in audio_clips}):
+    for track in sorted({getattr(clip, "audio_track", clip.track) for clip in audio_clips}):
         value = settings.get(track, {})
         if value.get("muted", False):
             continue
         if solo_tracks and track not in solo_tracks:
             continue
         active_tracks.append(track)
-    audio_clips = [clip for clip in audio_clips if clip.track in active_tracks]
+    audio_clips = [clip for clip in audio_clips if getattr(clip, "audio_track", clip.track) in active_tracks]
     if not audio_clips:
         raise ValueError("همه ترک‌های صوتی Mute هستند یا از حالت Solo خارج شده‌اند.")
 
@@ -87,7 +87,10 @@ def build_audio_mix_command(
         chain.append(f"adelay={delay_ms}:all=1")
         label = f"a{index}"
         filters.append(f"[{index}:a:0]{','.join(chain)}[{label}]")
-        clip_labels.setdefault(clip.track, []).append(f"[{label}]")
+        route = getattr(clip, "audio_track", clip.track)
+        if route not in {"A1", "A2", "A3", "A4"}:
+            raise ValueError(f"مسیر صدای کلیپ معتبر نیست: {clip.name}")
+        clip_labels.setdefault(route, []).append(f"[{label}]")
 
     if timeline_duration_frames is not None:
         if timeline_duration_frames < 1:
