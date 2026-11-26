@@ -84,39 +84,65 @@ SCENES = [
 
 def fetch_commons_image(query, used_titles, folder, index):
     api = "https://commons.wikimedia.org/w/api.php"
-    headers = {"User-Agent": "ZENITHDocumentaryStudio/1.0 (educational video editor)"}
-    params = {
-        "action": "query",
-        "generator": "search",
-        "gsrsearch": query + " filetype:bitmap",
-        "gsrnamespace": 6,
-        "gsrlimit": 15,
-        "prop": "imageinfo",
-        "iiprop": "url",
-        "iiurlwidth": 1920,
-        "format": "json",
-    }
-    response = requests.get(api, params=params, headers=headers, timeout=35)
-    response.raise_for_status()
-    pages = response.json().get("query", {}).get("pages", {})
-    candidates = sorted(pages.values(), key=lambda p: p.get("index", 999))
-    for page in candidates:
-        title = page.get("title", "")
-        info = (page.get("imageinfo") or [{}])[0]
-        url = info.get("thumburl") or info.get("url")
-        if not url or title in used_titles:
+    headers = {"User-Agent": "ZENITHDocumentaryStudio/1.1 (educational video editor; contact: studio@example.com)"}
+    # Try the original cinematic phrase first, then progressively broader searches.
+    alternatives = [
+        query.replace(" cinematic", "").replace(" close up", ""),
+        query.replace("portrait", "").replace("cinematic", "").strip(),
+        "human face portrait" if "human" in query or "face" in query else query.split()[0],
+        "portrait photography" if "human" in query or "face" in query else query.replace(" artificial intelligence", ""),
+        query.split()[0],
+    ]
+    tried = set()
+    last_error = None
+    for search_term in alternatives:
+        search_term = " ".join(search_term.split())
+        if not search_term or search_term.lower() in tried:
             continue
-        if not url.lower().split("?")[0].endswith((".jpg", ".jpeg", ".png", ".webp")):
+        tried.add(search_term.lower())
+        params = {
+            "action": "query",
+            "generator": "search",
+            "gsrsearch": search_term,
+            "gsrnamespace": 6,
+            "gsrlimit": 35,
+            "prop": "imageinfo",
+            "iiprop": "url",
+            "iiurlwidth": 1920,
+            "format": "json",
+        }
+        try:
+            response = requests.get(api, params=params, headers=headers, timeout=35)
+            response.raise_for_status()
+            pages = response.json().get("query", {}).get("pages", {})
+            candidates = sorted(pages.values(), key=lambda p: p.get("index", 999))
+            for page in candidates:
+                title = page.get("title", "")
+                info = (page.get("imageinfo") or [{}])[0]
+                url = info.get("thumburl") or info.get("url")
+                if not url or title in used_titles:
+                    continue
+                if not url.lower().split("?")[0].endswith((".jpg", ".jpeg", ".png", ".webp")):
+                    continue
+                image_response = requests.get(url, headers=headers, timeout=45)
+                image_response.raise_for_status()
+                if len(image_response.content) < 8000:
+                    continue
+                path = folder / f"source_{index:02d}.jpg"
+                path.write_bytes(image_response.content)
+                used_titles.add(title)
+                source_url = page.get("canonicalurl") or (
+                    "https://commons.wikimedia.org/wiki/" + quote(title.replace(" ", "_"))
+                )
+                return path, title, source_url
+        except requests.RequestException as exc:
+            last_error = exc
             continue
-        image_response = requests.get(url, headers=headers, timeout=45)
-        image_response.raise_for_status()
-        if len(image_response.content) < 12000:
-            continue
-        path = folder / f"source_{index:02d}.jpg"
-        path.write_bytes(image_response.content)
-        used_titles.add(title)
-        return path, title, page.get("canonicalurl", "https://commons.wikimedia.org/wiki/" + quote(title.replace(" ", "_")))
-    raise RuntimeError("برای این سکانس تصویر مناسبی در Wikimedia Commons پیدا نشد: " + query)
+    if last_error and not tried:
+        raise last_error
+    raise RuntimeError(
+        "پس از چند جست‌وجوی جایگزین، تصویر مناسبی در Wikimedia Commons پیدا نشد: " + query
+    )
 
 if create:
     if mode == "استفاده از کلیپ‌های ویدئویی خودم" and not videos:
