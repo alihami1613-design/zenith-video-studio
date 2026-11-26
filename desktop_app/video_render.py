@@ -12,7 +12,7 @@ from proxy_manager import find_ffmpeg
 from video_color import build_color_filter
 from speed_ramp import build_speed_segments
 
-RENDER_VERSION = "timeline-h264-v12-chroma-mask"
+RENDER_VERSION = "timeline-h264-v13-shape-feather-mask"
 STILL_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".webp", ".tif", ".tiff"}
 
 
@@ -130,6 +130,36 @@ def _keyframe_expression(keyframes: list[dict[str, float]], field: str, default:
     return f"if(lt({time_expr}\\,{points[0][0]:.6f})\\,{points[0][1]:.6f}\\,{expression})"
 
 
+def build_mask_shape_expression(shape: str, x: float, y: float, width: float, height: float,
+                                points: list[list[float]], frame_width: int,
+                                frame_height: int) -> str:
+    """Build a bounded FFmpeg geq condition for ellipse or polygon alpha masks."""
+    if shape == "ellipse":
+        cx = (x + width / 2.0) * frame_width
+        cy = (y + height / 2.0) * frame_height
+        rx = max(1.0, width * frame_width / 2.0)
+        ry = max(1.0, height * frame_height / 2.0)
+        return f"lte(pow((X-{cx:.6f})/{rx:.6f}\\,2)+pow((Y-{cy:.6f})/{ry:.6f}\\,2)\\,1)"
+    if shape != "polygon" or len(points) < 3:
+        raise ValueError("Mask shape needs ellipse or a polygon with at least 3 points")
+    crossings = []
+    for index, point in enumerate(points):
+        next_point = points[(index + 1) % len(points)]
+        x1, y1 = float(point[0]) * frame_width, float(point[1]) * frame_height
+        x2, y2 = float(next_point[0]) * frame_width, float(next_point[1]) * frame_height
+        if abs(y2 - y1) < 1e-9:
+            continue
+        cross_x = f"({x1:.6f}+(Y-{y1:.6f})*({x2-x1:.6f})/({y2-y1:.6f}))"
+        if y1 < y2:
+            crossings.append(f"if(gt(Y\\,{y1:.6f})*lte(Y\\,{y2:.6f})*lt(X\\,{cross_x})\\,1\\,0)")
+        else:
+            crossings.append(f"if(gt(Y\\,{y2:.6f})*lte(Y\\,{y1:.6f})*gt(X\\,{cross_x})\\,1\\,0)")
+    if not crossings:
+        raise ValueError("Polygon mask cannot contain only horizontal edges")
+    count = "+".join(crossings)
+    return f"eq(mod({count}\\,2)\\,1)"
+
+
 def build_video_render_command(ffmpeg: str, project: object,
                                output_path: str | Path) -> list[str]:
     """Composite V1-V4 bottom-to-top; still images loop for their clip duration."""
@@ -219,12 +249,26 @@ def build_video_render_command(ffmpeg: str, project: object,
             mask_y = float(getattr(clip, "mask_y", 0.0))
             mask_w = float(getattr(clip, "mask_width", 1.0))
             mask_h = float(getattr(clip, "mask_height", 1.0))
-            chain += (
-                f",crop=w='max(2\\,trunc(iw*{mask_w:.6f}))':"
-                f"h='max(2\\,trunc(ih*{mask_h:.6f}))':"
-                f"x='trunc(iw*{mask_x:.6f})':y='trunc(ih*{mask_y:.6f})',"
-                f"pad={width}:{height}:x='trunc({width}*{mask_x:.6f})':y='trunc({height}*{mask_y:.6f})':color=black@0"
-            )
+            mask_shape = str(getattr(clip, "mask_shape", "rectangle"))
+            if mask_shape == "rectangle":
+                chain += (
+                    f",crop=w='max(2\\,trunc(iw*{mask_w:.6f}))':"
+                    f"h='max(2\\,trunc(ih*{mask_h:.6f}))':"
+                    f"x='trunc(iw*{mask_x:.6f})':y='trunc(ih*{mask_y:.6f})',"
+                    f"pad={width}:{height}:x='trunc({width}*{mask_x:.6f})':y='trunc({height}*{mask_y:.6f})':color=black@0"
+                )
+            else:
+                mask_expr = build_mask_shape_expression(
+                    mask_shape, mask_x, mask_y, mask_w, mask_h,
+                    list(getattr(clip, "mask_points", []) or []), width, height,
+                )
+                chain += (
+                    f",geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':"
+                    f"a='if({mask_expr}\\,alpha(X,Y)\\,0)'"
+                )
+            feather = float(getattr(clip, "mask_feather_px", 0.0))
+            if feather > 0.0:
+                chain += f",gblur=sigma={feather:.3f}:steps=1:planes=8"
         fade_in = int(getattr(clip, "video_fade_in_frames", 0))
         fade_out = int(getattr(clip, "video_fade_out_frames", 0))
         transition_type = str(getattr(clip, "transition_in_type", "dissolve"))
