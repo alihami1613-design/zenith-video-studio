@@ -101,7 +101,7 @@ def _keyframe_expression(keyframes: list[dict[str, float]], field: str, default:
     for index in range(len(points) - 2, -1, -1):
         t0, v0 = points[index]
         t1, v1 = points[index + 1]
-        linear = f"({v0:.6f}+({v1-v0:.6f})*(T-{t0:.6f})/{(t1-t0):.6f})"
+        linear = f"({v0:.6f}+({v1-v0:.6f})*({time_expr}-{t0:.6f})/{(t1-t0):.6f})"
         expression = f"if(lt(T\\,{t1:.6f})\\,{linear}\\,{expression})"
     return f"if(lt(T\\,{points[0][0]:.6f})\\,{points[0][1]:.6f}\\,{expression})"
 
