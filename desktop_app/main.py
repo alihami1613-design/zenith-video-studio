@@ -20,6 +20,7 @@ from timeline_model import TimelineProject
 from timeline_widget import TimelineWidget
 from media_probe import probe_media, duration_to_frames
 from proxy_manager import create_proxy
+from waveform_manager import create_waveform, load_waveform
 
 APP_NAME = "ZENITH Desktop"
 PROJECT_VERSION = 2
@@ -75,6 +76,27 @@ class ProxyTask(QRunnable):
             self.signals.finished.emit(self.path, "", str(exc))
 
 
+class WaveformTaskSignals(QObject):
+    finished = Signal(str, object, str)
+
+
+class WaveformTask(QRunnable):
+    """Build and load a compact waveform cache away from the GUI thread."""
+
+    def __init__(self, path: str) -> None:
+        super().__init__()
+        self.path = path
+        self.signals = WaveformTaskSignals()
+
+    def run(self) -> None:
+        try:
+            cache_path = create_waveform(self.path)
+            values = load_waveform(cache_path)
+            self.signals.finished.emit(self.path, values, "")
+        except Exception as exc:
+            self.signals.finished.emit(self.path, [], str(exc))
+
+
 class ZenithEditor(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
@@ -86,6 +108,10 @@ class ZenithEditor(QMainWindow):
         self._proxy_pool = QThreadPool(self)
         self._proxy_pool.setMaxThreadCount(1)
         self._proxy_tasks: list[ProxyTask] = []
+        self._waveform_pool = QThreadPool(self)
+        self._waveform_pool.setMaxThreadCount(1)
+        self._waveform_tasks: list[WaveformTask] = []
+        self.waveforms: dict[str, list[float]] = {}
         self._undo_stack: list[dict[str, Any]] = []
         self._redo_stack: list[dict[str, Any]] = []
         self._history_limit = 50
@@ -447,12 +473,36 @@ class ZenithEditor(QMainWindow):
 
     def _refresh_timeline(self) -> None:
         self.timeline_widget.set_project(self.timeline_project)
+        self.timeline_widget.set_waveforms(self.waveforms)
+
+    def _start_waveform(self, path: str) -> None:
+        if path in self.waveforms or any(task.path == path for task in self._waveform_tasks):
+            return
+        task = WaveformTask(path)
+        task.signals.finished.connect(self._waveform_finished)
+        self._waveform_tasks.append(task)
+        self._waveform_pool.start(task)
+
+    def _waveform_finished(self, path: str, values: object, error: str) -> None:
+        self._waveform_tasks = [task for task in self._waveform_tasks if task.path != path]
+        if values:
+            self.waveforms[path] = list(values)
+            self.timeline_widget.set_waveforms(self.waveforms)
+            self.statusBar().showMessage(
+                f"شکل موج صوتی آماده شد: {Path(path).name}"
+            )
+        elif error:
+            self.statusBar().showMessage(
+                f"ساخت شکل موج برای {Path(path).name} ناموفق بود: {error}"
+            )
 
     def new_project(self) -> None:
         self.player.stop()
         self.player.setSource(QUrl())
         self.project_path = None
         self.media_items = []
+        self.waveforms = {}
+        self.timeline_widget.set_waveforms(self.waveforms)
         self.timeline_project = TimelineProject()
         self._undo_stack.clear()
         self._redo_stack.clear()
@@ -508,6 +558,8 @@ class ZenithEditor(QMainWindow):
                     details.append("صدا")
                 label = item["name"] + ("  •  " + " | ".join(details) if details else "  •  مشخصات خوانده شد")
                 self.media_list.item(index).setText(label)
+                if metadata.get("has_audio"):
+                    self._start_waveform(path)
             else:
                 item["probe_state"] = "failed"
                 item["probe_error"] = error
@@ -675,6 +727,10 @@ class ZenithEditor(QMainWindow):
                 self._probe_tasks.append(task)
                 self._probe_pool.start(task)
         self._refresh_timeline()
+        for item in self.media_items:
+            metadata = item.get("metadata") or {}
+            if metadata.get("has_audio") and Path(item["path"]).is_file():
+                self._start_waveform(item["path"])
         self._set_playhead(self.timeline_project.playhead_frame)
         self.statusBar().showMessage(f"پروژه باز شد: {self.project_path.name}")
 
