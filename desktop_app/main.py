@@ -498,6 +498,9 @@ class ZenithEditor(QMainWindow):
         self.mask_checkbox = QCheckBox("فعال‌سازی ماسک")
         self.mask_checkbox.toggled.connect(self._clip_effects_changed)
         inspector_layout.addWidget(self.mask_checkbox)
+        self.mask_invert_checkbox = QCheckBox("معکوس کردن ناحیه ماسک (Invert)")
+        self.mask_invert_checkbox.toggled.connect(self._clip_effects_changed)
+        inspector_layout.addWidget(self.mask_invert_checkbox)
         self.mask_controls: dict[str, QDoubleSpinBox] = {}
         for key, label, default in (
             ("mask_x", "Mask X", 0.0), ("mask_y", "Mask Y", 0.0),
@@ -1152,6 +1155,7 @@ class ZenithEditor(QMainWindow):
             clip.chroma_key_similarity = self.chroma_key_similarity_spin.value()
             clip.chroma_key_blend = self.chroma_key_blend_spin.value()
             clip.mask_enabled = self.mask_checkbox.isChecked()
+            clip.mask_invert = self.mask_invert_checkbox.isChecked()
             for key, control in self.mask_controls.items():
                 setattr(clip, key, control.value())
             clip.mask_shape = str(self.mask_shape_combo.currentData() or "rectangle")
@@ -1453,7 +1457,7 @@ class ZenithEditor(QMainWindow):
         effect_controls = [
             self.chroma_key_checkbox, self.chroma_key_color_edit,
             self.chroma_key_similarity_spin, self.chroma_key_blend_spin,
-            self.mask_checkbox, *self.mask_controls.values(),
+            self.mask_checkbox, self.mask_invert_checkbox, *self.mask_controls.values(),
             self.mask_shape_combo, self.mask_feather_spin, self.mask_points_edit,
         ]
         for control in effect_controls:
@@ -1487,6 +1491,9 @@ class ZenithEditor(QMainWindow):
                 blocker = QSignalBlocker(control)
                 control.setValue(float(mask_values[key.removeprefix("mask_")]))
                 del blocker
+            blocker = QSignalBlocker(self.mask_invert_checkbox)
+            self.mask_invert_checkbox.setChecked(bool(clip.mask_invert))
+            del blocker
             blocker = QSignalBlocker(self.mask_shape_combo)
             shape_index = self.mask_shape_combo.findData(str(clip.mask_shape))
             self.mask_shape_combo.setCurrentIndex(max(0, shape_index))
