@@ -216,5 +216,14 @@ class VideoRenderTests(unittest.TestCase):
         self.assertIn("3-2*", joined)
         self.assertIn("0.250000-0.5", joined)
         self.assertIn("0.750000-0.5", joined)
+
+    def test_reverse_filter_is_opt_in(self):
+        with tempfile.TemporaryDirectory() as folder:
+            project = self.project(folder)
+            normal = " ".join(build_video_render_command("ffmpeg", project, "normal.mp4"))
+            project.clips[0].reverse_playback = True
+            reverse = " ".join(build_video_render_command("ffmpeg", project, "reverse.mp4"))
+        self.assertNotIn("reverse,setpts", normal)
+        self.assertIn("reverse,setpts", reverse)
 if __name__ == "__main__":
     unittest.main()
