@@ -10,7 +10,7 @@ import math
 from typing import Any
 from uuid import uuid4
 
-PROJECT_SCHEMA_VERSION = 7
+PROJECT_SCHEMA_VERSION = 8
 DEFAULT_FPS = 30
 DEFAULT_VIDEO_TRACKS = ("V1", "V2", "V3", "V4")
 DEFAULT_AUDIO_TRACKS = ("A1", "A2", "A3", "A4")
@@ -37,6 +37,8 @@ class Clip:
     volume: float = 1.0
     fade_in_frames: int = 0
     fade_out_frames: int = 0
+    video_fade_in_frames: int = 0
+    video_fade_out_frames: int = 0
     color_grade: dict[str, float] = field(default_factory=lambda: {
         "exposure": 0.0, "contrast": 1.0, "saturation": 1.0,
         "temperature": 0.0, "tint": 0.0,
@@ -57,9 +59,9 @@ class Clip:
             raise ValueError("Clip audio route must be A1-A4")
         if not math.isfinite(float(self.volume)) or not 0.0 <= float(self.volume) <= 2.0:
             raise ValueError("Clip volume must be between 0.0 and 2.0")
-        if self.fade_in_frames < 0 or self.fade_out_frames < 0:
+        if min(self.fade_in_frames, self.fade_out_frames, self.video_fade_in_frames, self.video_fade_out_frames) < 0:
             raise ValueError("Fade durations cannot be negative")
-        if self.fade_in_frames > self.duration_frames or self.fade_out_frames > self.duration_frames:
+        if any(value > self.duration_frames for value in (self.fade_in_frames, self.fade_out_frames, self.video_fade_in_frames, self.video_fade_out_frames)):
             raise ValueError("Fade duration cannot exceed clip duration")
         grade = dict(self.color_grade or {})
         defaults = {"exposure": 0.0, "contrast": 1.0, "saturation": 1.0,
@@ -231,9 +233,12 @@ class TimelineProject:
             color_grade=dict(original.color_grade),
             volume=original.volume,
             fade_out_frames=original.fade_out_frames,
+            video_fade_out_frames=original.video_fade_out_frames,
         )
         original.duration_frames = at_frame - original.start_frame
         original.fade_out_frames = 0
+        original.video_fade_out_frames = 0
+        original.video_fade_in_frames = min(original.video_fade_in_frames, original.duration_frames)
         original.fade_in_frames = min(original.fade_in_frames, original.duration_frames)
         self.clips.append(right)
         return original, right
@@ -261,6 +266,19 @@ class TimelineProject:
             clip.fade_in_frames = int(fade_in_frames)
         if fade_out_frames is not None:
             clip.fade_out_frames = int(fade_out_frames)
+        clip.validate()
+        return clip
+
+    def set_clip_video_fade(self, clip_id: str, *, fade_in_frames: int | None = None,
+                            fade_out_frames: int | None = None) -> Clip:
+        """Set non-destructive visual fades, measured in timeline frames."""
+        clip = self.get_clip(clip_id)
+        if clip.media_type != "video" or not clip.track.startswith("V"):
+            raise ValueError("Visual fades require a video-track clip")
+        if fade_in_frames is not None:
+            clip.video_fade_in_frames = int(fade_in_frames)
+        if fade_out_frames is not None:
+            clip.video_fade_out_frames = int(fade_out_frames)
         clip.validate()
         return clip
 
@@ -369,6 +387,8 @@ class TimelineProject:
                 volume=float(raw.get("volume", 1.0)),
                 fade_in_frames=max(0, int(raw.get("fade_in_frames", 0) or 0)),
                 fade_out_frames=max(0, int(raw.get("fade_out_frames", 0) or 0)),
+                video_fade_in_frames=max(0, int(raw.get("video_fade_in_frames", 0) or 0)),
+                video_fade_out_frames=max(0, int(raw.get("video_fade_out_frames", 0) or 0)),
                 color_grade=dict(raw.get("color_grade") or {}),
             ))
         return cls(
