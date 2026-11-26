@@ -31,6 +31,7 @@ class TimelineCanvas(QWidget):
         self._drag_mode = "move"
         self._original_end = 0
         self._original_source_in = 0
+        self._preview_state = None
         self.setMouseTracking(True)
         self.setMinimumHeight(RULER_HEIGHT + len(TRACKS) * TRACK_HEIGHT + 2)
         self.setMinimumWidth(900)
@@ -41,6 +42,8 @@ class TimelineCanvas(QWidget):
 
     def set_project(self, project):
         self.project = project
+        self._preview_state = None
+        self._drag_clip_id = None
         self.update_geometry_for_project()
         self.update()
 
@@ -116,8 +119,15 @@ class TimelineCanvas(QWidget):
             painter.drawText(12, y + 25, track)
             painter.setPen(QPen(QColor("#303136"), 1))
             painter.drawLine(0, y + TRACK_HEIGHT - 1, width, y + TRACK_HEIGHT - 1)
-            for clip in self.project.clips_on_track(track):
-                x1, x2 = self._frame_x(clip.start_frame), max(self._frame_x(clip.start_frame) + 5, self._frame_x(clip.end_frame))
+            for clip in self.project.clips:
+                preview = self._preview_state if self._preview_state and self._preview_state["clip_id"] == clip.clip_id else None
+                clip_track = preview["track"] if preview else clip.track
+                if clip_track != track:
+                    continue
+                start_frame = preview["start_frame"] if preview else clip.start_frame
+                duration_frames = preview["duration_frames"] if preview else clip.duration_frames
+                end_frame = start_frame + duration_frames
+                x1, x2 = self._frame_x(start_frame), max(self._frame_x(start_frame) + 5, self._frame_x(end_frame))
                 rect_y, rect_h = y + 5, TRACK_HEIGHT - 10
                 selected = clip.clip_id == self.selected_clip_id
                 fill = QColor("#A77F35") if selected and track.startswith("V") else QColor("#477E91") if selected else QColor("#66502C") if track.startswith("V") else QColor("#315766")
@@ -164,31 +174,48 @@ class TimelineCanvas(QWidget):
         clip = self.project.get_clip(self._drag_clip_id)
         if self._drag_mode == "move":
             new_start = self._snap(max(0, self._drag_start_frame + delta_frames), clip.clip_id, "move")
-            clip.start_frame = max(0, new_start)
             target_track = self._track_at(event.position().toPoint().y()) or self._drag_track
-            if target_track.startswith("V") == self._drag_track.startswith("V"):
-                clip.track = target_track
+            if target_track.startswith("V") != self._drag_track.startswith("V"):
+                target_track = self._drag_track
+            self._preview_state = {
+                "clip_id": clip.clip_id, "start_frame": max(0, new_start),
+                "track": target_track, "source_in": clip.source_in,
+                "duration_frames": clip.duration_frames,
+            }
         elif self._drag_mode == "left":
             proposed = self._snap(self._drag_start_frame + delta_frames, clip.clip_id, "left")
             earliest_start = max(0, self._drag_start_frame - self._original_source_in)
             new_start = max(earliest_start, min(proposed, self._original_end - 1))
-            clip.source_in = self._original_source_in + (new_start - self._drag_start_frame)
-            clip.start_frame = new_start
-            clip.duration_frames = self._original_end - new_start
+            self._preview_state = {
+                "clip_id": clip.clip_id, "start_frame": new_start,
+                "track": self._drag_track,
+                "source_in": self._original_source_in + (new_start - self._drag_start_frame),
+                "duration_frames": self._original_end - new_start,
+            }
         else:
             proposed = self._snap(self._original_end + delta_frames, clip.clip_id, "right")
-            new_end = max(clip.start_frame + 1, proposed)
-            clip.duration_frames = new_end - clip.start_frame
+            new_end = max(self._drag_start_frame + 1, proposed)
+            self._preview_state = {
+                "clip_id": clip.clip_id, "start_frame": self._drag_start_frame,
+                "track": self._drag_track, "source_in": self._original_source_in,
+                "duration_frames": new_end - self._drag_start_frame,
+            }
         self.update()
 
     def mouseReleaseEvent(self, event):
         if not self._drag_clip_id:
             return
         clip = self.project.get_clip(self._drag_clip_id)
-        if self._drag_mode == "move":
-            self.clipMoved.emit(clip.clip_id, clip.start_frame, clip.track)
-        else:
-            self.clipTrimmed.emit(clip.clip_id, clip.start_frame, clip.end_frame)
+        preview = self._preview_state
+        if preview:
+            if self._drag_mode == "move":
+                if preview["start_frame"] != clip.start_frame or preview["track"] != clip.track:
+                    self.clipMoved.emit(clip.clip_id, preview["start_frame"], preview["track"])
+            else:
+                end_frame = preview["start_frame"] + preview["duration_frames"]
+                if preview["start_frame"] != clip.start_frame or end_frame != clip.end_frame:
+                    self.clipTrimmed.emit(clip.clip_id, preview["start_frame"], end_frame)
+        self._preview_state = None
         self._drag_clip_id = None
         self.update_geometry_for_project()
 
