@@ -39,6 +39,7 @@ class Clip:
     fade_out_frames: int = 0
     video_fade_in_frames: int = 0
     video_fade_out_frames: int = 0
+    transition_in_frames: int = 0
     color_grade: dict[str, float] = field(default_factory=lambda: {
         "exposure": 0.0, "contrast": 1.0, "saturation": 1.0,
         "temperature": 0.0, "tint": 0.0,
@@ -59,9 +60,9 @@ class Clip:
             raise ValueError("Clip audio route must be A1-A4")
         if not math.isfinite(float(self.volume)) or not 0.0 <= float(self.volume) <= 2.0:
             raise ValueError("Clip volume must be between 0.0 and 2.0")
-        if min(self.fade_in_frames, self.fade_out_frames, self.video_fade_in_frames, self.video_fade_out_frames) < 0:
+        if min(self.fade_in_frames, self.fade_out_frames, self.video_fade_in_frames, self.video_fade_out_frames, self.transition_in_frames) < 0:
             raise ValueError("Fade durations cannot be negative")
-        if any(value > self.duration_frames for value in (self.fade_in_frames, self.fade_out_frames, self.video_fade_in_frames, self.video_fade_out_frames)):
+        if any(value > self.duration_frames for value in (self.fade_in_frames, self.fade_out_frames, self.video_fade_in_frames, self.video_fade_out_frames, self.transition_in_frames)):
             raise ValueError("Fade duration cannot exceed clip duration")
         grade = dict(self.color_grade or {})
         defaults = {"exposure": 0.0, "contrast": 1.0, "saturation": 1.0,
@@ -237,6 +238,7 @@ class TimelineProject:
             volume=original.volume,
             fade_out_frames=original.fade_out_frames,
             video_fade_out_frames=original.video_fade_out_frames,
+            transition_in_frames=0,
         )
         original.duration_frames = at_frame - original.start_frame
         original.fade_out_frames = 0
@@ -282,6 +284,18 @@ class TimelineProject:
             clip.video_fade_in_frames = int(fade_in_frames)
         if fade_out_frames is not None:
             clip.video_fade_out_frames = int(fade_out_frames)
+        clip.validate()
+        return clip
+
+    def set_clip_transition(self, clip_id: str, *, dissolve_in_frames: int) -> Clip:
+        """Set a pre-roll cross dissolve on an incoming video clip."""
+        clip = self.get_clip(clip_id)
+        if clip.media_type != "video" or not clip.track.startswith("V"):
+            raise ValueError("Cross Dissolve requires a video-track clip")
+        frames = int(dissolve_in_frames)
+        if frames < 0 or frames > clip.duration_frames:
+            raise ValueError("Cross Dissolve duration must be within clip duration")
+        clip.transition_in_frames = frames
         clip.validate()
         return clip
 
@@ -392,6 +406,7 @@ class TimelineProject:
                 fade_out_frames=max(0, int(raw.get("fade_out_frames", 0) or 0)),
                 video_fade_in_frames=max(0, int(raw.get("video_fade_in_frames", 0) or 0)),
                 video_fade_out_frames=max(0, int(raw.get("video_fade_out_frames", 0) or 0)),
+                transition_in_frames=max(0, int(raw.get("transition_in_frames", 0) or 0)),
                 color_grade=dict(raw.get("color_grade") or {}),
             ))
         return cls(
