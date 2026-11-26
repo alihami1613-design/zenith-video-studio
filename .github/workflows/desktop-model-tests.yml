@@ -16,6 +16,8 @@ on:
       - ".github/workflows/desktop-model-tests.yml"
   pull_request:
     paths:
+      - "desktop_app/proxy_manager.py"
+      - "desktop_app/test_proxy_manager.py"
       - "desktop_app/timeline_model.py"
       - "desktop_app/test_timeline_model.py"
       - "desktop_app/main.py"
