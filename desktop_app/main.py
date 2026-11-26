@@ -1338,6 +1338,185 @@ class ZenithEditor(QMainWindow):
         except (TypeError, ValueError, KeyError) as exc:
             self.statusBar().showMessage(f"ویرایش رأس ماسک نامعتبر است: {exc}")
 
+    def _sync_transform_controls(self) -> None:
+        clip_id = self.timeline_widget.canvas.selected_clip_id
+        clip = None
+        if clip_id:
+            try:
+                clip = self.timeline_project.get_clip(clip_id)
+            except KeyError:
+                pass
+        enabled = bool(clip and clip.media_type == "video" and clip.track.startswith("V"))
+        self.add_transform_keyframe_button.setEnabled(enabled)
+        self.add_mask_keyframe_button.setEnabled(enabled)
+        self.delete_mask_keyframe_button.setEnabled(enabled)
+        self.mask_keyframe_frame_spin.setEnabled(enabled)
+        self.blend_mode_combo.setEnabled(enabled)
+        effect_controls = [
+            self.chroma_key_checkbox, self.chroma_key_color_edit,
+            self.chroma_key_similarity_spin, self.chroma_key_blend_spin,
+            self.mask_checkbox, *self.mask_controls.values(),
+            self.mask_shape_combo, self.mask_feather_spin, self.mask_points_edit,
+        ]
+        for control in effect_controls:
+            control.setEnabled(enabled)
+        if enabled:
+            blocker = QSignalBlocker(self.chroma_key_checkbox)
+            self.chroma_key_checkbox.setChecked(bool(clip.chroma_key_enabled))
+            del blocker
+            blocker = QSignalBlocker(self.chroma_key_color_edit)
+            self.chroma_key_color_edit.setText(str(clip.chroma_key_color))
+            del blocker
+            for control, value in (
+                (self.chroma_key_similarity_spin, clip.chroma_key_similarity),
+                (self.chroma_key_blend_spin, clip.chroma_key_blend),
+            ):
+                blocker = QSignalBlocker(control)
+                control.setValue(float(value))
+                del blocker
+            blocker = QSignalBlocker(self.mask_checkbox)
+            self.mask_checkbox.setChecked(bool(clip.mask_enabled))
+            del blocker
+            local_frame = max(0, min(clip.duration_frames - 1,
+                self.timeline_project.playhead_frame - clip.start_frame))
+            mask_values = mask_values_at(
+                clip.mask_keyframes, local_frame,
+                {"x": clip.mask_x, "y": clip.mask_y,
+                 "width": clip.mask_width, "height": clip.mask_height},
+            )
+            for key, control in self.mask_controls.items():
+                blocker = QSignalBlocker(control)
+                control.setValue(float(mask_values[key.removeprefix("mask_")]))
+                del blocker
+            blocker = QSignalBlocker(self.mask_shape_combo)
+            shape_index = self.mask_shape_combo.findData(str(clip.mask_shape))
+            self.mask_shape_combo.setCurrentIndex(max(0, shape_index))
+            del blocker
+            blocker = QSignalBlocker(self.mask_feather_spin)
+            self.mask_feather_spin.setValue(float(clip.mask_feather_px))
+            del blocker
+            blocker = QSignalBlocker(self.mask_points_edit)
+            self.mask_points_edit.setText("; ".join(
+                f"{float(point[0]):.3f},{float(point[1]):.3f}" for point in clip.mask_points
+            ))
+            del blocker
+            local_frame = max(0, min(clip.duration_frames - 1,
+                self.timeline_project.playhead_frame - clip.start_frame))
+            blocker = QSignalBlocker(self.mask_keyframe_frame_spin)
+            self.mask_keyframe_frame_spin.setValue(local_frame)
+            del blocker
+            key_frames = [int(key["frame"]) for key in clip.mask_keyframes]
+            self.mask_keyframes_label.setText(
+                "Mask Keyframes: " + (", ".join(str(frame) for frame in key_frames) if key_frames else "—")
+            )
+            self.delete_mask_keyframe_button.setEnabled(enabled and local_frame in key_frames)
+        else:
+            self.mask_keyframes_label.setText("Mask Keyframes: —")
+        if enabled:
+            blend_index = self.blend_mode_combo.findData(str(getattr(clip, "blend_mode", "normal")))
+            if blend_index >= 0:
+                blocker = QSignalBlocker(self.blend_mode_combo)
+                self.blend_mode_combo.setCurrentIndex(blend_index)
+                del blocker
+        selected_frame = self.timeline_widget.canvas.selected_transform_keyframe_frame
+        self.delete_transform_keyframe_button.setEnabled(bool(enabled and selected_frame is not None and any(int(item['frame']) == selected_frame for item in clip.transform_keyframes)))
+        self.playback_speed_combo.setEnabled(enabled)
+        self.apply_speed_button.setEnabled(enabled)
+        self.motion_blur_checkbox.setEnabled(enabled)
+        self.reverse_checkbox.setEnabled(enabled)
+        self.speed_ramp_frame_spin.setEnabled(enabled)
+        self.speed_ramp_rate_spin.setEnabled(enabled)
+        self.add_speed_ramp_button.setEnabled(enabled)
+        self.clear_speed_ramp_button.setEnabled(enabled and bool(clip.speed_ramp) if enabled else False)
+        self.speed_ramp_preview_button.setEnabled(enabled and bool(clip.speed_ramp) if enabled else False)
+        if enabled:
+            local_frame_for_ramp = max(0, min(clip.duration_frames - 1,
+                self.timeline_project.playhead_frame - clip.start_frame))
+            self.speed_ramp_frame_spin.setMaximum(max(0, clip.duration_frames - 1))
+            self.speed_ramp_frame_spin.setValue(local_frame_for_ramp)
+            ramp_points = sorted(clip.speed_ramp, key=lambda point: int(point["frame"]))
+            self.speed_ramp_label.setText(
+                "Speed Ramp: " + (" | ".join(
+                    f'{int(point["frame"])}f → {float(point["rate"]):.2f}x'
+                    for point in ramp_points
+                ) if ramp_points else "هنوز نقطه‌ای ثبت نشده")
+            )
+        else:
+            self.speed_ramp_label.setText("Speed Ramp: —")
+        if enabled:
+            blocker = QSignalBlocker(self.reverse_checkbox)
+            self.reverse_checkbox.setChecked(bool(getattr(clip, "reverse_playback", False)))
+            del blocker
+            blocker = QSignalBlocker(self.motion_blur_checkbox)
+            self.motion_blur_checkbox.setChecked(bool(getattr(clip, "motion_blur", False)))
+            del blocker
+        if enabled:
+            index = self.playback_speed_combo.findData(float(getattr(clip, "playback_rate", 1.0)))
+            if index >= 0:
+                blocker = QSignalBlocker(self.playback_speed_combo)
+                self.playback_speed_combo.setCurrentIndex(index)
+                del blocker
+        for control in self.transform_controls.values():
+            control.setEnabled(enabled)
+        for control in self.bezier_controls.values():
+            control.setEnabled(enabled)
+        if not enabled:
+            self.bezier_curve_widget.setVisible(False)
+            self.transform_keyframes_label.setText("Keyframe: —")
+            self._sync_mask_overlay(None)
+            return
+        local_frame = max(0, min(clip.duration_frames - 1,
+                                 self.timeline_project.playhead_frame - clip.start_frame))
+        keys = sorted(clip.transform_keyframes, key=lambda item: int(item["frame"]))
+        defaults = {"x": 0.0, "y": 0.0, "scale": 1.0, "rotation": 0.0, "opacity": 1.0}
+        before = max((key for key in keys if int(key["frame"]) <= local_frame),
+                     key=lambda item: int(item["frame"]), default=None)
+        after = min((key for key in keys if int(key["frame"]) > local_frame),
+                    key=lambda item: int(item["frame"]), default=None)
+        if before and after:
+            span = int(after["frame"]) - int(before["frame"])
+            ratio = transform_eased_progress(before, (local_frame - int(before["frame"])) / max(1, span))
+            values = {key: float(before.get(key, defaults[key])) +
+                      (float(after.get(key, defaults[key])) - float(before.get(key, defaults[key]))) * ratio
+                      for key in defaults}
+        elif before:
+            values = {key: float(before.get(key, defaults[key])) for key in defaults}
+        elif after:
+            values = {key: float(after.get(key, defaults[key])) for key in defaults}
+        else:
+            values = defaults
+        for key, control in self.transform_controls.items():
+            blocker = QSignalBlocker(control)
+            control.setValue(values[key])
+            del blocker
+        for key, control in self.anchor_controls.items():
+            blocker = QSignalBlocker(control)
+            control.setValue(float(getattr(clip, key, 0.5)))
+            del blocker
+        active_key = before or after
+        if active_key:
+            index = self.transform_easing_combo.findData(active_key.get("ease", "linear"))
+            if index >= 0:
+                blocker = QSignalBlocker(self.transform_easing_combo)
+                self.transform_easing_combo.setCurrentIndex(index)
+                del blocker
+            for key, control in self.bezier_controls.items():
+                blocker = QSignalBlocker(control)
+                control.setValue(float(active_key.get(key, 0.0 if key.endswith("y1") else 1.0)))
+                del blocker
+        self.bezier_curve_widget.set_values(
+            float((before or {}).get("bezier_y1", 0.0)),
+            float((before or {}).get("bezier_y2", 1.0)),
+        )
+        self._sync_bezier_graph_visibility()
+        selected_frame = self.timeline_widget.canvas.selected_transform_keyframe_frame
+        selected_text = f" | انتخاب: {selected_frame}f" if selected_frame is not None else ""
+        self.transform_keyframes_label.setText(
+            f"{len(clip.transform_keyframes)} Keyframe | فریم فعلی کلیپ: {local_frame}{selected_text}"
+        )
+        self._sync_mask_overlay(clip, local_frame)
+
+
     def _delete_transform_keyframe(self) -> None:
         clip_id = self.timeline_widget.canvas.selected_clip_id
         frame = self.timeline_widget.canvas.selected_transform_keyframe_frame
