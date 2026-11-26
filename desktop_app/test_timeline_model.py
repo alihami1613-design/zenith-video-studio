@@ -394,7 +394,8 @@ class TimelineModelTests(unittest.TestCase):
             {"frame": 10, "rate": 0.5}, {"frame": 60, "rate": 2.0}
         ])
         project2.trim_clip(trimmed.clip_id, new_start_frame=20, new_end_frame=90)
-        self.assertEqual([point["frame"] for point in trimmed.speed_ramp], [40])
+        self.assertEqual([point["frame"] for point in trimmed.speed_ramp], [0, 40])
+        self.assertAlmostEqual(trimmed.speed_ramp[0]["rate"], 0.8)
 
     def test_speed_ramp_rejects_invalid_rates_and_audio_clips(self):
         project = TimelineProject()
