@@ -95,7 +95,8 @@ def build_video_render_command(ffmpeg: str, project: object,
     duration = _seconds(int(project.duration_frames), fps)
     command = [str(ffmpeg), "-y", "-hide_banner", "-loglevel", "error"]
     for clip in clips:
-        clip_duration = _seconds(clip.duration_frames, fps)
+        transition = int(getattr(clip, "transition_in_frames", 0))
+        clip_duration = _seconds(clip.duration_frames + transition, fps)
         if _is_still(clip):
             command.extend([
                 "-loop", "1", "-framerate", str(fps),
@@ -114,8 +115,8 @@ def build_video_render_command(ffmpeg: str, project: object,
     ]
     previous = "base0"
     for index, clip in enumerate(clips):
-        clip_duration = _seconds(clip.duration_frames, fps)
         transition = int(getattr(clip, "transition_in_frames", 0))
+        clip_duration = _seconds(clip.duration_frames + transition, fps)
         start = _seconds(clip.start_frame - transition, fps)
         chain = (
             f"[{index}:v:0]trim=duration={clip_duration:.6f},"
