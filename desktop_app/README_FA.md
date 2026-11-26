@@ -244,3 +244,9 @@ python -m unittest discover -s desktop_app -p "test_*.py"
 - Transform keyframes now support Cubic Bezier easing with two editable Y handles (0–1) in the Inspector.
 - Handle values are stored on the starting keyframe and rendered through FFmpeg expressions; legacy projects remain compatible.
 - A draggable curve graph and live preview are still planned, not yet implemented.
+
+
+### ویرایش گرافیکی منحنی Bezier
+- نمودار Cubic Bezier در Inspector حرکت اضافه شده است؛ دو دستگیره کنترل را می‌توان با ماوس در راستای عمودی جابه‌جا کرد.
+- تغییرات بلافاصله در داده Keyframe انتخاب‌شده ذخیره می‌شوند و یک Undo برای کل حرکت ماوس ثبت می‌شود.
+- نمودار سبک و مبتنی بر رسم Qt است؛ هیچ فریم ویدیویی برای نمایش منحنی decode نمی‌شود.
