@@ -363,6 +363,7 @@ class ZenithEditor(QMainWindow):
         self.mask_overlay.editingStarted.connect(self._mask_overlay_edit_started)
         self.mask_overlay.pointsChanged.connect(self._polygon_mask_points_changed)
         self.mask_overlay.geometryChanged.connect(self._mask_geometry_changed)
+        self.mask_overlay.rotationChanged.connect(self._mask_rotation_changed)
         preview_layout.addWidget(self.video_widget, 1)
 
         playback = QHBoxLayout()
@@ -517,6 +518,13 @@ class ZenithEditor(QMainWindow):
         self.mask_shape_combo.addItem("Polygon (3–8 points)", "polygon")
         self.mask_shape_combo.currentIndexChanged.connect(self._clip_effects_changed)
         inspector_layout.addWidget(self.mask_shape_combo)
+        inspector_layout.addWidget(QLabel("Mask Rotation (degrees)"))
+        self.mask_rotation_spin = QDoubleSpinBox()
+        self.mask_rotation_spin.setRange(-3600.0, 3600.0)
+        self.mask_rotation_spin.setSingleStep(1.0)
+        self.mask_rotation_spin.setDecimals(1)
+        self.mask_rotation_spin.valueChanged.connect(self._clip_effects_changed)
+        inspector_layout.addWidget(self.mask_rotation_spin)
         inspector_layout.addWidget(QLabel("Mask Feather (pixels)"))
         self.mask_feather_spin = QDoubleSpinBox()
         self.mask_feather_spin.setRange(0.0, 40.0)
@@ -1146,6 +1154,14 @@ class ZenithEditor(QMainWindow):
             for key, control in self.mask_controls.items():
                 setattr(clip, key, control.value())
             clip.mask_shape = str(self.mask_shape_combo.currentData() or "rectangle")
+            local_frame = max(0, min(clip.duration_frames - 1,
+                                     self.timeline_project.playhead_frame - clip.start_frame))
+            active_mask_key = next((item for item in clip.mask_keyframes
+                                    if int(item["frame"]) == local_frame), None)
+            if active_mask_key is not None:
+                active_mask_key["rotation"] = self.mask_rotation_spin.value()
+            else:
+                clip.mask_rotation = self.mask_rotation_spin.value()
             clip.mask_feather_px = self.mask_feather_spin.value()
             points = []
             for raw_point in self.mask_points_edit.text().split(";"):
@@ -1195,6 +1211,7 @@ class ZenithEditor(QMainWindow):
                 "y": self.mask_controls["mask_y"].value(),
                 "width": self.mask_controls["mask_width"].value(),
                 "height": self.mask_controls["mask_height"].value(),
+                "rotation": self.mask_rotation_spin.value(),
                 "points": self._parse_mask_points() if clip.mask_shape == "polygon" else clip.mask_points,
                 "ease": "linear",
             }
@@ -1246,6 +1263,7 @@ class ZenithEditor(QMainWindow):
         values = mask_values_at(clip.mask_keyframes, frame, {
             "x": clip.mask_x, "y": clip.mask_y,
             "width": clip.mask_width, "height": clip.mask_height,
+            "rotation": clip.mask_rotation,
         })
         points = mask_points_at(clip.mask_keyframes, frame, clip.mask_points)
         bx, by = float(clip.mask_x), float(clip.mask_y)
@@ -1262,7 +1280,7 @@ class ZenithEditor(QMainWindow):
             display_points, self.timeline_project.width,
             self.timeline_project.height, bool(clip.mask_enabled),
             shape=clip.mask_shape, rect=[x, y, width, height],
-            geometry_editable=editable
+            geometry_editable=editable, rotation=float(values["rotation"])
         )
         self.mask_overlay.setGeometry(self.video_widget.rect())
         self.mask_overlay.raise_()
@@ -1308,6 +1326,25 @@ class ZenithEditor(QMainWindow):
             self.statusBar().showMessage("محدوده ماسک تغییر کرد؛ کل حرکت با یک Undo برمی‌گردد.")
         except (KeyError, TypeError, ValueError) as exc:
             self.statusBar().showMessage(f"تغییر محدوده ماسک نامعتبر است: {exc}")
+
+    def _mask_rotation_changed(self, rotation: float) -> None:
+        clip_id = self.timeline_widget.canvas.selected_clip_id
+        if not clip_id:
+            return
+        try:
+            clip = self.timeline_project.get_clip(clip_id)
+            frame = self.timeline_project.playhead_frame - clip.start_frame
+            key = next((item for item in clip.mask_keyframes if int(item["frame"]) == frame), None)
+            if key is None or not clip.mask_enabled:
+                return
+            key["rotation"] = float(rotation)
+            clip.validate()
+            blocker = QSignalBlocker(self.mask_rotation_spin)
+            self.mask_rotation_spin.setValue(float(rotation))
+            del blocker
+            self.timeline_widget.refresh()
+        except (KeyError, TypeError, ValueError) as exc:
+            self.statusBar().showMessage(f"چرخش ماسک نامعتبر است: {exc}")
 
     def _polygon_mask_points_changed(self, points) -> None:
         clip_id = self.timeline_widget.canvas.selected_clip_id
@@ -1382,7 +1419,8 @@ class ZenithEditor(QMainWindow):
             mask_values = mask_values_at(
                 clip.mask_keyframes, local_frame,
                 {"x": clip.mask_x, "y": clip.mask_y,
-                 "width": clip.mask_width, "height": clip.mask_height},
+                 "width": clip.mask_width, "height": clip.mask_height,
+                 "rotation": clip.mask_rotation},
             )
             for key, control in self.mask_controls.items():
                 blocker = QSignalBlocker(control)
@@ -1391,6 +1429,9 @@ class ZenithEditor(QMainWindow):
             blocker = QSignalBlocker(self.mask_shape_combo)
             shape_index = self.mask_shape_combo.findData(str(clip.mask_shape))
             self.mask_shape_combo.setCurrentIndex(max(0, shape_index))
+            del blocker
+            blocker = QSignalBlocker(self.mask_rotation_spin)
+            self.mask_rotation_spin.setValue(float(mask_values["rotation"]))
             del blocker
             blocker = QSignalBlocker(self.mask_feather_spin)
             self.mask_feather_spin.setValue(float(clip.mask_feather_px))
