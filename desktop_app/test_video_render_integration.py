@@ -47,6 +47,42 @@ class TransformRenderIntegrationTests(unittest.TestCase):
             self.assertEqual(decoded.returncode, 0, decoded.stderr[-2000:])
 
 
+    def test_ellipse_polygon_and_feather_masks_render_and_decode(self):
+        with tempfile.TemporaryDirectory(prefix="zenith_mask_test_") as folder:
+            root = Path(folder)
+            source = root / "source.mp4"
+            generated = subprocess.run(
+                [FFMPEG, "-y", "-hide_banner", "-loglevel", "error",
+                 "-f", "lavfi", "-i", "testsrc2=size=96x64:rate=25:duration=1",
+                 "-an", "-c:v", "libx264", "-preset", "ultrafast",
+                 "-threads", "1", str(source)],
+                capture_output=True, text=True, timeout=30)
+            self.assertEqual(generated.returncode, 0, generated.stderr)
+            for shape in ("ellipse", "polygon"):
+                output = root / f"{shape}.mp4"
+                clip = SimpleNamespace(
+                    path=str(source), name="mask test", track="V1",
+                    clip_id=shape, media_type="video", start_frame=0,
+                    source_in=0, duration_frames=25, end_frame=25,
+                    color_grade={}, mask_enabled=True, mask_shape=shape,
+                    mask_x=0.1, mask_y=0.1, mask_width=0.8, mask_height=0.8,
+                    mask_feather_px=2.0,
+                    mask_points=[[0.5, 0.05], [0.95, 0.9], [0.05, 0.9]],
+                )
+                project = SimpleNamespace(
+                    fps=25, width=96, height=64, duration_frames=25, clips=[clip]
+                )
+                rendered = subprocess.run(
+                    build_video_render_command(FFMPEG, project, output),
+                    capture_output=True, text=True, timeout=60)
+                self.assertEqual(rendered.returncode, 0, rendered.stderr[-3000:])
+                self.assertGreater(output.stat().st_size, 0)
+                decoded = subprocess.run(
+                    [FFMPEG, "-hide_banner", "-loglevel", "error",
+                     "-i", str(output), "-f", "null", "-"],
+                    capture_output=True, text=True, timeout=30)
+                self.assertEqual(decoded.returncode, 0, decoded.stderr[-2000:])
+
     def test_speed_ramp_renders_video_and_matching_embedded_audio(self):
         with tempfile.TemporaryDirectory(prefix="zenith_speed_ramp_test_") as folder:
             root = Path(folder)
