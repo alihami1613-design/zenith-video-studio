@@ -58,6 +58,7 @@ class TimelineCanvas(QWidget):
         seconds = max(30, (self.project.duration_frames / max(1, self.project.fps)) + 10)
         width = LABEL_WIDTH + int(seconds * self.pixels_per_second)
         self.setMinimumWidth(min(20000, max(900, width)))
+        self.resize(self.sizeHint())
         self.updateGeometry()
 
     def _frame_x(self, frame):
