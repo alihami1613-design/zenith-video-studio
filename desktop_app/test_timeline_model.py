@@ -556,6 +556,36 @@ class TimelineModelTests(unittest.TestCase):
         clip = project.add_clip("voice.wav", "voice.wav", duration_frames=50, track="A1")
         with self.assertRaises(ValueError):
             project.set_clip_reverse(clip.clip_id, True)
+    def test_polygon_mask_keyframe_vertices_round_trip_and_interpolate(self):
+        from timeline_model import mask_points_at
+        project = TimelineProject()
+        clip = project.add_clip("poly.mp4", "poly.mp4", duration_frames=60)
+        clip.mask_enabled = True
+        clip.mask_shape = "polygon"
+        first = [[0.1, 0.1], [0.8, 0.1], [0.5, 0.8]]
+        second = [[0.2, 0.2], [0.9, 0.2], [0.5, 0.9]]
+        clip.mask_keyframes = [
+            {"frame": 0, "x": 0.0, "y": 0.0, "width": 1.0, "height": 1.0, "points": first},
+            {"frame": 30, "x": 0.0, "y": 0.0, "width": 1.0, "height": 1.0, "points": second},
+        ]
+        clip.validate()
+        restored = TimelineProject.from_dict(project.to_dict()).get_clip(clip.clip_id)
+        self.assertEqual(restored.mask_keyframes[1]["points"], second)
+        middle = mask_points_at(restored.mask_keyframes, 15, restored.mask_points)
+        self.assertAlmostEqual(middle[0][0], 0.15)
+        self.assertAlmostEqual(middle[1][1], 0.15)
+
+    def test_polygon_mask_keyframes_reject_vertex_count_mismatch(self):
+        project = TimelineProject()
+        clip = project.add_clip("poly.mp4", "poly.mp4", duration_frames=60)
+        clip.mask_shape = "polygon"
+        clip.mask_keyframes = [
+            {"frame": 0, "points": [[0.1, 0.1], [0.8, 0.1], [0.5, 0.8]]},
+            {"frame": 30, "points": [[0.2, 0.2], [0.9, 0.2], [0.5, 0.9], [0.1, 0.5]]},
+        ]
+        with self.assertRaisesRegex(ValueError, "same number"):
+            clip.validate()
+
     def test_speed_ramp_round_trip_split_and_trim(self):
         project = TimelineProject()
         clip = project.add_clip("ramp.mp4", "ramp.mp4", duration_frames=100)
