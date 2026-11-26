@@ -46,6 +46,29 @@ class TimelineModelTests(unittest.TestCase):
         self.assertEqual(saved.fade_out_frames, 45)
         self.assertEqual(project.to_dict()["schema_version"], 3)
 
+    def test_audio_track_mixer_round_trip(self):
+        project = TimelineProject()
+        project.set_audio_track("A1", volume=0.65, muted=True)
+        project.set_audio_track("A2", solo=True)
+        restored = TimelineProject.from_dict(project.to_dict())
+        self.assertAlmostEqual(restored.audio_track_settings["A1"]["volume"], 0.65)
+        self.assertTrue(restored.audio_track_settings["A1"]["muted"])
+        self.assertTrue(restored.audio_track_settings["A2"]["solo"])
+
+    def test_audio_track_volume_out_of_range_is_rejected(self):
+        project = TimelineProject()
+        with self.assertRaises(ValueError):
+            project.set_audio_track("A1", volume=2.5)
+        with self.assertRaises(ValueError):
+            project.set_audio_track("V1", muted=True)
+
+    def test_legacy_projects_receive_default_track_mixer(self):
+        restored = TimelineProject.from_dict({"clips": []})
+        self.assertEqual(
+            restored.audio_track_settings["A1"],
+            {"volume": 1.0, "muted": False, "solo": False},
+        )
+
     def test_legacy_clip_gets_safe_audio_defaults(self):
         project = TimelineProject.from_dict({"clips": [
             {"path": "old.wav", "name": "old.wav", "track": "A1",
