@@ -452,6 +452,25 @@ class TimelineModelTests(unittest.TestCase):
                                  duration_frames=50)
         with self.assertRaises(ValueError):
             project.set_clip_speed_ramp(audio.clip_id, [{"frame": 0, "rate": 1.0}])
+    def test_transform_values_follow_selected_easing_curve(self):
+        from timeline_model import _transform_value_at
+        cases = [
+            ({"frame": 0, "ease": "linear"}, 0.5),
+            ({"frame": 0, "ease": "ease_in"}, 0.25),
+            ({"frame": 0, "ease": "ease_out"}, 0.75),
+            ({"frame": 0, "ease": "ease_in_out"}, 0.5),
+            ({"frame": 0, "ease": "bezier", "bezier_y1": 0.0, "bezier_y2": 1.0}, 0.5),
+        ]
+        for key, expected in cases:
+            with self.subTest(ease=key["ease"]):
+                result = _transform_value_at([dict(key, x=0.0), {"frame": 10, "x": 1.0}], 5)
+                self.assertAlmostEqual(result["x"], expected)
+
+    def test_transform_easing_clamps_progress(self):
+        from timeline_model import transform_eased_progress
+        self.assertEqual(transform_eased_progress({"ease": "ease_in"}, -1), 0.0)
+        self.assertEqual(transform_eased_progress({"ease": "ease_out"}, 2), 1.0)
+
 
 if __name__ == "__main__":
     unittest.main()
