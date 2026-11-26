@@ -1326,6 +1326,8 @@ class ZenithEditor(QMainWindow):
             self._scope_clip_id = clip_id
         self.color_preview_button.setEnabled(enabled)
         self.color_wheel_reset_button.setEnabled(enabled)
+        for wheel in self.color_wheels.values():
+            wheel.setEnabled(enabled)
         scope_ready = bool(enabled and not self._scope_tasks)
         self.rgb_histogram_button.setEnabled(scope_ready)
         self.waveform_button.setEnabled(scope_ready)
