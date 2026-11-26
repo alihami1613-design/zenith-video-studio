@@ -193,5 +193,18 @@ class AudioRenderCommandTests(unittest.TestCase):
         self.assertEqual(inputs, [str(first), str(second)])
 
 
+    def test_embedded_video_audio_uses_same_slow_motion_rate(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / "slow-camera.mp4"
+            source.touch()
+            clip = self.make_clip(
+                source, clip_id="slow-camera", track="V1", media_type="video",
+                has_audio=True, audio_track="A2", playback_rate=0.5,
+            )
+            command = build_audio_mix_command("ffmpeg", [clip], 30, "mix.wav")
+        joined = " ".join(command)
+        self.assertIn("atrim=start=1.000000:duration=5.000000", joined)
+        self.assertIn("atempo=0.500000", joined)
+
 if __name__ == "__main__":
     unittest.main()
