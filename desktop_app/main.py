@@ -6,14 +6,14 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import Qt, QUrl, QSignalBlocker, QObject, Signal, QRunnable, QThreadPool, QPointF
-from PySide6.QtGui import QAction, QFont, QPainter, QPen, QBrush, QColor, QPolygonF
+from PySide6.QtCore import Qt, QUrl, QSignalBlocker, QObject, Signal, QRunnable, QThreadPool, QEvent
+from PySide6.QtGui import QAction, QFont
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtMultimediaWidgets import QVideoWidget
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QFileDialog, QMessageBox,
     QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QListWidget,
-    QListWidgetItem, QSplitter, QFrame, QStatusBar, QSlider, QCheckBox, QComboBox, QProgressBar, QDoubleSpinBox, QLineEdit, QSpinBox, QStackedLayout
+    QListWidgetItem, QSplitter, QFrame, QStatusBar, QSlider, QCheckBox, QComboBox, QProgressBar, QDoubleSpinBox, QLineEdit, QSpinBox
 )
 
 from timeline_model import TimelineProject, mask_values_at, mask_points_at, transform_eased_progress
@@ -33,6 +33,7 @@ from color_wheel_math import rgb_to_wheel, wheel_to_rgb
 from bezier_curve_widget import BezierCurveWidget
 from speed_ramp_preview import create_speed_ramp_preview
 from video_render import render_timeline_mp4
+from polygon_mask_overlay import PolygonMaskOverlay
 
 APP_NAME = "ZENITH Desktop"
 PROJECT_VERSION = 2
@@ -246,116 +247,6 @@ class VideoRenderTask(QRunnable):
             self.signals.finished.emit("", str(exc))
 
 
-class MaskOverlay(QWidget):
-    """Lightweight transparent polygon handle layer over the video preview."""
-    dragStarted = Signal()
-    vertexMoved = Signal(int, float, float)
-
-    def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
-        self.setMouseTracking(True)
-        self.setCursor(Qt.CursorShape.CrossCursor)
-        self._clip_id: str | None = None
-        self._frame = 0
-        self._points: list[list[float]] = []
-        self._base_rect = (0.0, 0.0, 1.0, 1.0)
-        self._current_rect = (0.0, 0.0, 1.0, 1.0)
-        self._drag_index: int | None = None
-        self.hide()
-
-    def set_mask(self, clip_id: str | None, frame: int = 0,
-                 points: list[list[float]] | None = None,
-                 base_rect: tuple[float, float, float, float] = (0, 0, 1, 1),
-                 current_rect: tuple[float, float, float, float] = (0, 0, 1, 1),
-                 enabled: bool = False) -> None:
-        self._clip_id = clip_id
-        self._frame = int(frame)
-        self._points = [list(point) for point in (points or [])]
-        self._base_rect = tuple(float(v) for v in base_rect)
-        self._current_rect = tuple(float(v) for v in current_rect)
-        self.setVisible(bool(enabled and clip_id and len(self._points) >= 3))
-        self.update()
-
-    def _image_rect(self):
-        from PySide6.QtCore import QRectF
-        width, height = max(1, self.width()), max(1, self.height())
-        target_ratio = 16.0 / 9.0
-        if width / height > target_ratio:
-            h = float(height)
-            w = h * target_ratio
-            return QRectF((width - w) / 2.0, 0.0, w, h)
-        w = float(width)
-        h = w / target_ratio
-        return QRectF(0.0, (height - h) / 2.0, w, h)
-
-    def _screen_points(self):
-        rect = self._image_rect()
-        bx, by, bw, bh = self._base_rect
-        x, y, width, height = self._current_rect
-        bw, bh = max(1e-9, bw), max(1e-9, bh)
-        return [QPointF(rect.left() + (x + ((px - bx) / bw) * width) * rect.width(),
-                        rect.top() + (y + ((py - by) / bh) * height) * rect.height())
-                for px, py in self._points]
-
-    def paintEvent(self, event) -> None:
-        if not self.isVisible() or len(self._points) < 3:
-            return
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        vertices = self._screen_points()
-        painter.setPen(QPen(QColor("#F2C66D"), 2.0))
-        painter.setBrush(QBrush(QColor(214, 174, 85, 28)))
-        painter.drawPolygon(QPolygonF(vertices))
-        for index, point in enumerate(vertices):
-            painter.setPen(QPen(QColor("#171717"), 1.5))
-            painter.setBrush(QBrush(QColor("#FFF0C2") if index == self._drag_index else QColor("#D6AE55")))
-            painter.drawEllipse(point, 6.5, 6.5)
-        painter.end()
-
-    def mousePressEvent(self, event) -> None:
-        if event.button() != Qt.MouseButton.LeftButton:
-            return
-        position = event.position()
-        vertices = self._screen_points()
-        nearest = min(range(len(vertices)),
-                      key=lambda index: (vertices[index].x() - position.x()) ** 2 +
-                                        (vertices[index].y() - position.y()) ** 2,
-                      default=-1)
-        if nearest >= 0 and (vertices[nearest] - position).manhattanLength() <= 18:
-            self._drag_index = nearest
-            self.dragStarted.emit()
-            self.update()
-            event.accept()
-            return
-        event.ignore()
-
-    def mouseMoveEvent(self, event) -> None:
-        if self._drag_index is None:
-            return
-        rect = self._image_rect()
-        position = event.position()
-        image_x = min(1.0, max(0.0, (position.x() - rect.left()) / max(1.0, rect.width())))
-        image_y = min(1.0, max(0.0, (position.y() - rect.top()) / max(1.0, rect.height())))
-        bx, by, bw, bh = self._base_rect
-        x, y, width, height = self._current_rect
-        if width <= 1e-9 or height <= 1e-9:
-            return
-        point_x = bx + ((image_x - x) / width) * bw
-        point_y = by + ((image_y - y) / height) * bh
-        point_x, point_y = min(1.0, max(0.0, point_x)), min(1.0, max(0.0, point_y))
-        self._points[self._drag_index] = [point_x, point_y]
-        self.vertexMoved.emit(self._drag_index, point_x, point_y)
-        self.update()
-        event.accept()
-
-    def mouseReleaseEvent(self, event) -> None:
-        if event.button() == Qt.MouseButton.LeftButton:
-            self._drag_index = None
-            self.update()
-            event.accept()
-
-
 class ZenithEditor(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
@@ -466,17 +357,12 @@ class ZenithEditor(QMainWindow):
         self.video_widget.setMinimumHeight(300)
         self.video_widget.setStyleSheet("background:#050506;")
         self.player.setVideoOutput(self.video_widget)
-        preview_surface = QWidget()
-        preview_surface.setMinimumHeight(300)
-        preview_stack = QStackedLayout(preview_surface)
-        preview_stack.setStackingMode(QStackedLayout.StackingMode.StackAll)
-        preview_stack.setContentsMargins(0, 0, 0, 0)
-        preview_stack.addWidget(self.video_widget)
-        self.mask_overlay = MaskOverlay(preview_surface)
-        preview_stack.addWidget(self.mask_overlay)
-        self.mask_overlay.dragStarted.connect(self._mask_overlay_drag_started)
-        self.mask_overlay.vertexMoved.connect(self._mask_overlay_vertex_moved)
-        preview_layout.addWidget(preview_surface, 1)
+        self.mask_overlay = PolygonMaskOverlay(self.video_widget)
+        self.mask_overlay.setGeometry(self.video_widget.rect())
+        self.video_widget.installEventFilter(self)
+        self.mask_overlay.editingStarted.connect(self._polygon_mask_edit_started)
+        self.mask_overlay.pointsChanged.connect(self._polygon_mask_points_changed)
+        preview_layout.addWidget(self.video_widget, 1)
 
         playback = QHBoxLayout()
         self.play_button = QPushButton("▶ پخش")
@@ -1350,561 +1236,74 @@ class ZenithEditor(QMainWindow):
             except KeyError:
                 clip = None
         if not clip or clip.media_type != "video" or not clip.track.startswith("V"):
-            self.mask_overlay.set_mask(None, enabled=False)
+            self.mask_overlay.set_mask([], self.timeline_project.width, self.timeline_project.height, False)
             return
         frame = (max(0, min(clip.duration_frames - 1,
                             self.timeline_project.playhead_frame - clip.start_frame))
                  if local_frame is None else int(local_frame))
-        current_rect_values = mask_values_at(
-            clip.mask_keyframes, frame,
-            {"x": clip.mask_x, "y": clip.mask_y,
-             "width": clip.mask_width, "height": clip.mask_height},
-        )
+        key = next((item for item in clip.mask_keyframes if int(item["frame"]) == frame), None)
+        values = mask_values_at(clip.mask_keyframes, frame, {
+            "x": clip.mask_x, "y": clip.mask_y,
+            "width": clip.mask_width, "height": clip.mask_height,
+        })
         points = mask_points_at(clip.mask_keyframes, frame, clip.mask_points)
+        bx, by = float(clip.mask_x), float(clip.mask_y)
+        bw, bh = max(1e-9, float(clip.mask_width)), max(1e-9, float(clip.mask_height))
+        x, y = float(values["x"]), float(values["y"])
+        width, height = float(values["width"]), float(values["height"])
+        display_points = [
+            [x + ((float(px) - bx) / bw) * width,
+             y + ((float(py) - by) / bh) * height]
+            for px, py in points
+        ]
+        editable = bool(clip.mask_enabled and clip.mask_shape == "polygon" and key is not None)
         self.mask_overlay.set_mask(
-            clip.clip_id, frame, points,
-            (clip.mask_x, clip.mask_y, clip.mask_width, clip.mask_height),
-            (current_rect_values["x"], current_rect_values["y"],
-             current_rect_values["width"], current_rect_values["height"]),
-            bool(clip.mask_enabled and clip.mask_shape == "polygon"),
+            display_points, self.timeline_project.width,
+            self.timeline_project.height, editable
         )
+        self.mask_overlay.setGeometry(self.video_widget.rect())
+        self.mask_overlay.raise_()
+        self._mask_overlay_mapping = {
+            "base": (bx, by, bw, bh), "current": (x, y, width, height)
+        }
 
-    def _mask_overlay_drag_started(self) -> None:
-        self._push_undo()
-
-    def _mask_overlay_vertex_moved(self, point_index: int, point_x: float, point_y: float) -> None:
+    def _polygon_mask_edit_started(self) -> None:
         clip_id = self.timeline_widget.canvas.selected_clip_id
         if not clip_id:
             return
+        clip = self.timeline_project.get_clip(clip_id)
+        frame = self.timeline_project.playhead_frame - clip.start_frame
+        if (clip.mask_enabled and clip.mask_shape == "polygon"
+                and any(int(key["frame"]) == frame for key in clip.mask_keyframes)):
+            self._push_undo()
+
+    def _polygon_mask_points_changed(self, points) -> None:
+        clip_id = self.timeline_widget.canvas.selected_clip_id
+        if not clip_id:
+            return
+        clip = self.timeline_project.get_clip(clip_id)
+        frame = self.timeline_project.playhead_frame - clip.start_frame
+        key = next((item for item in clip.mask_keyframes if int(item["frame"]) == frame), None)
+        if key is None or clip.mask_shape != "polygon" or not clip.mask_enabled:
+            return
         try:
-            clip = self.timeline_project.get_clip(clip_id)
-            if clip.mask_shape != "polygon" or not clip.mask_enabled:
+            bx, by, bw, bh = self._mask_overlay_mapping["base"]
+            x, y, width, height = self._mask_overlay_mapping["current"]
+            if width <= 1e-9 or height <= 1e-9:
                 return
-            frame = max(0, min(clip.duration_frames - 1,
-                              self.timeline_project.playhead_frame - clip.start_frame))
-            keys = [dict(item) for item in clip.mask_keyframes]
-            key = next((item for item in keys if int(item["frame"]) == frame), None)
-            if key is None and keys:
-                values = mask_values_at(keys, frame, {
-                    "x": clip.mask_x, "y": clip.mask_y,
-                    "width": clip.mask_width, "height": clip.mask_height,
-                })
-                points = mask_points_at(keys, frame, clip.mask_points)
-                key = {"frame": frame, **values, "points": points, "ease": "linear"}
-                keys.append(key)
-                keys.sort(key=lambda item: int(item["frame"]))
-            if key is not None:
-                points = [list(point) for point in key.get("points", clip.mask_points)]
-                if not 0 <= point_index < len(points):
-                    return
-                points[point_index] = [float(point_x), float(point_y)]
-                key["points"] = points
-                clip.mask_keyframes = keys
-            else:
-                points = [list(point) for point in clip.mask_points]
-                if not 0 <= point_index < len(points):
-                    return
-                points[point_index] = [float(point_x), float(point_y)]
-                clip.mask_points = points
+            key["points"] = [[
+                max(0.0, min(1.0, bx + ((float(px) - x) / width) * bw)),
+                max(0.0, min(1.0, by + ((float(py) - y) / height) * bh)),
+            ] for px, py in points]
             clip.validate()
             blocker = QSignalBlocker(self.mask_points_edit)
             self.mask_points_edit.setText("; ".join(
-                f"{point[0]:.3f},{point[1]:.3f}" for point in
-                (key["points"] if key is not None else clip.mask_points)
+                f"{px:.3f},{py:.3f}" for px, py in key["points"]
             ))
             del blocker
             self._sync_mask_overlay(clip, frame)
-            self.timeline_widget.refresh()
-            self.statusBar().showMessage(
-                f"رأس {point_index + 1} ماسک جابه‌جا شد؛ تغییرات با یک Undo قابل بازگشت است."
-            )
-        except (KeyError, ValueError, IndexError) as exc:
-            self.statusBar().showMessage(f"ویرایش رأس ماسک انجام نشد: {exc}")
-
-    def _sync_transform_controls(self) -> None:
-        clip_id = self.timeline_widget.canvas.selected_clip_id
-        clip = None
-        if clip_id:
-            try:
-                clip = self.timeline_project.get_clip(clip_id)
-            except KeyError:
-                pass
-        enabled = bool(clip and clip.media_type == "video" and clip.track.startswith("V"))
-        self.add_transform_keyframe_button.setEnabled(enabled)
-        self.add_mask_keyframe_button.setEnabled(enabled)
-        self.delete_mask_keyframe_button.setEnabled(enabled)
-        self.mask_keyframe_frame_spin.setEnabled(enabled)
-        self.blend_mode_combo.setEnabled(enabled)
-        effect_controls = [
-            self.chroma_key_checkbox, self.chroma_key_color_edit,
-            self.chroma_key_similarity_spin, self.chroma_key_blend_spin,
-            self.mask_checkbox, *self.mask_controls.values(),
-            self.mask_shape_combo, self.mask_feather_spin, self.mask_points_edit,
-        ]
-        for control in effect_controls:
-            control.setEnabled(enabled)
-        if enabled:
-            blocker = QSignalBlocker(self.chroma_key_checkbox)
-            self.chroma_key_checkbox.setChecked(bool(clip.chroma_key_enabled))
-            del blocker
-            blocker = QSignalBlocker(self.chroma_key_color_edit)
-            self.chroma_key_color_edit.setText(str(clip.chroma_key_color))
-            del blocker
-            for control, value in (
-                (self.chroma_key_similarity_spin, clip.chroma_key_similarity),
-                (self.chroma_key_blend_spin, clip.chroma_key_blend),
-            ):
-                blocker = QSignalBlocker(control)
-                control.setValue(float(value))
-                del blocker
-            blocker = QSignalBlocker(self.mask_checkbox)
-            self.mask_checkbox.setChecked(bool(clip.mask_enabled))
-            del blocker
-            local_frame = max(0, min(clip.duration_frames - 1,
-                self.timeline_project.playhead_frame - clip.start_frame))
-            mask_values = mask_values_at(
-                clip.mask_keyframes, local_frame,
-                {"x": clip.mask_x, "y": clip.mask_y,
-                 "width": clip.mask_width, "height": clip.mask_height},
-            )
-            for key, control in self.mask_controls.items():
-                blocker = QSignalBlocker(control)
-                control.setValue(float(mask_values[key.removeprefix("mask_")]))
-                del blocker
-            blocker = QSignalBlocker(self.mask_shape_combo)
-            shape_index = self.mask_shape_combo.findData(str(clip.mask_shape))
-            self.mask_shape_combo.setCurrentIndex(max(0, shape_index))
-            del blocker
-            blocker = QSignalBlocker(self.mask_feather_spin)
-            self.mask_feather_spin.setValue(float(clip.mask_feather_px))
-            del blocker
-            local_frame = max(0, min(clip.duration_frames - 1,
-                self.timeline_project.playhead_frame - clip.start_frame))
-            current_points = clip.mask_points
-            if clip.mask_shape == "polygon" and clip.mask_keyframes:
-                from timeline_model import mask_points_at
-                current_points = mask_points_at(clip.mask_keyframes, local_frame, clip.mask_points)
-            blocker = QSignalBlocker(self.mask_points_edit)
-            self.mask_points_edit.setText("; ".join(
-                f"{float(point[0]):.3f},{float(point[1]):.3f}" for point in current_points
-            ))
-            del blocker
-            blocker = QSignalBlocker(self.mask_keyframe_frame_spin)
-            self.mask_keyframe_frame_spin.setValue(local_frame)
-            del blocker
-            key_frames = [int(key["frame"]) for key in clip.mask_keyframes]
-            self.mask_keyframes_label.setText(
-                "Mask Keyframes: " + (", ".join(str(frame) for frame in key_frames) if key_frames else "—")
-            )
-            self.delete_mask_keyframe_button.setEnabled(enabled and local_frame in key_frames)
-        else:
-            self.mask_keyframes_label.setText("Mask Keyframes: —")
-        if enabled:
-            blend_index = self.blend_mode_combo.findData(str(getattr(clip, "blend_mode", "normal")))
-            if blend_index >= 0:
-                blocker = QSignalBlocker(self.blend_mode_combo)
-                self.blend_mode_combo.setCurrentIndex(blend_index)
-                del blocker
-        self._sync_mask_overlay(clip, local_frame if enabled else 0)
-        selected_frame = self.timeline_widget.canvas.selected_transform_keyframe_frame
-        self.delete_transform_keyframe_button.setEnabled(bool(enabled and selected_frame is not None and any(int(item['frame']) == selected_frame for item in clip.transform_keyframes)))
-        self.playback_speed_combo.setEnabled(enabled)
-        self.apply_speed_button.setEnabled(enabled)
-        self.motion_blur_checkbox.setEnabled(enabled)
-        self.reverse_checkbox.setEnabled(enabled)
-        self.speed_ramp_frame_spin.setEnabled(enabled)
-        self.speed_ramp_rate_spin.setEnabled(enabled)
-        self.add_speed_ramp_button.setEnabled(enabled)
-        self.clear_speed_ramp_button.setEnabled(enabled and bool(clip.speed_ramp) if enabled else False)
-        self.speed_ramp_preview_button.setEnabled(enabled and bool(clip.speed_ramp) if enabled else False)
-        if enabled:
-            local_frame_for_ramp = max(0, min(clip.duration_frames - 1,
-                self.timeline_project.playhead_frame - clip.start_frame))
-            self.speed_ramp_frame_spin.setMaximum(max(0, clip.duration_frames - 1))
-            self.speed_ramp_frame_spin.setValue(local_frame_for_ramp)
-            ramp_points = sorted(clip.speed_ramp, key=lambda point: int(point["frame"]))
-            self.speed_ramp_label.setText(
-                "Speed Ramp: " + (" | ".join(
-                    f'{int(point["frame"])}f → {float(point["rate"]):.2f}x'
-                    for point in ramp_points
-                ) if ramp_points else "هنوز نقطه‌ای ثبت نشده")
-            )
-        else:
-            self.speed_ramp_label.setText("Speed Ramp: —")
-        if enabled:
-            blocker = QSignalBlocker(self.reverse_checkbox)
-            self.reverse_checkbox.setChecked(bool(getattr(clip, "reverse_playback", False)))
-            del blocker
-            blocker = QSignalBlocker(self.motion_blur_checkbox)
-            self.motion_blur_checkbox.setChecked(bool(getattr(clip, "motion_blur", False)))
-            del blocker
-        if enabled:
-            index = self.playback_speed_combo.findData(float(getattr(clip, "playback_rate", 1.0)))
-            if index >= 0:
-                blocker = QSignalBlocker(self.playback_speed_combo)
-                self.playback_speed_combo.setCurrentIndex(index)
-                del blocker
-        for control in self.transform_controls.values():
-            control.setEnabled(enabled)
-        for control in self.bezier_controls.values():
-            control.setEnabled(enabled)
-        if not enabled:
-            self.bezier_curve_widget.setVisible(False)
-            self.transform_keyframes_label.setText("Keyframe: —")
-            return
-        local_frame = max(0, min(clip.duration_frames - 1,
-                                 self.timeline_project.playhead_frame - clip.start_frame))
-        keys = sorted(clip.transform_keyframes, key=lambda item: int(item["frame"]))
-        defaults = {"x": 0.0, "y": 0.0, "scale": 1.0, "rotation": 0.0, "opacity": 1.0}
-        before = max((key for key in keys if int(key["frame"]) <= local_frame),
-                     key=lambda item: int(item["frame"]), default=None)
-        after = min((key for key in keys if int(key["frame"]) > local_frame),
-                    key=lambda item: int(item["frame"]), default=None)
-        if before and after:
-            span = int(after["frame"]) - int(before["frame"])
-            ratio = transform_eased_progress(before, (local_frame - int(before["frame"])) / max(1, span))
-            values = {key: float(before.get(key, defaults[key])) +
-                      (float(after.get(key, defaults[key])) - float(before.get(key, defaults[key]))) * ratio
-                      for key in defaults}
-        elif before:
-            values = {key: float(before.get(key, defaults[key])) for key in defaults}
-        elif after:
-            values = {key: float(after.get(key, defaults[key])) for key in defaults}
-        else:
-            values = defaults
-        for key, control in self.transform_controls.items():
-            blocker = QSignalBlocker(control)
-            control.setValue(values[key])
-            del blocker
-        for key, control in self.anchor_controls.items():
-            blocker = QSignalBlocker(control)
-            control.setValue(float(getattr(clip, key, 0.5)))
-            del blocker
-        active_key = before or after
-        if active_key:
-            index = self.transform_easing_combo.findData(active_key.get("ease", "linear"))
-            if index >= 0:
-                blocker = QSignalBlocker(self.transform_easing_combo)
-                self.transform_easing_combo.setCurrentIndex(index)
-                del blocker
-            for key, control in self.bezier_controls.items():
-                blocker = QSignalBlocker(control)
-                control.setValue(float(active_key.get(key, 0.0 if key.endswith("y1") else 1.0)))
-                del blocker
-        self.bezier_curve_widget.set_values(
-            float((before or {}).get("bezier_y1", 0.0)),
-            float((before or {}).get("bezier_y2", 1.0)),
-        )
-        self._sync_bezier_graph_visibility()
-        selected_frame = self.timeline_widget.canvas.selected_transform_keyframe_frame
-        selected_text = f" | انتخاب: {selected_frame}f" if selected_frame is not None else ""
-        self.transform_keyframes_label.setText(
-            f"{len(clip.transform_keyframes)} Keyframe | فریم فعلی کلیپ: {local_frame}{selected_text}"
-        )
-
-    def _active_bezier_key(self):
-        clip_id = self.timeline_widget.canvas.selected_clip_id
-        if not clip_id:
-            return None, None, None
-        try:
-            clip = self.timeline_project.get_clip(clip_id)
-        except KeyError:
-            return None, None, None
-        if clip.media_type != "video" or not clip.track.startswith("V"):
-            return None, None, None
-        local_frame = self.timeline_project.playhead_frame - clip.start_frame
-        keys = sorted(clip.transform_keyframes, key=lambda item: int(item["frame"]))
-        key = max((item for item in keys if int(item["frame"]) <= local_frame),
-                  key=lambda item: int(item["frame"]), default=None)
-        return clip, key, keys
-
-    def _sync_bezier_graph_visibility(self, *_args) -> None:
-        clip, key, _keys = self._active_bezier_key()
-        visible = bool(clip and key and self.transform_easing_combo.currentData() == "bezier")
-        self.bezier_curve_widget.setVisible(visible)
-
-    def _bezier_graph_edit_started(self) -> None:
-        _clip, key, _keys = self._active_bezier_key()
-        self._bezier_edit_snapshot_active = bool(key)
-        if self._bezier_edit_snapshot_active:
-            self._push_undo()
-
-    def _bezier_graph_changed(self, y1: float, y2: float) -> None:
-        clip, key, keys = self._active_bezier_key()
-        if not clip or not key or not self._bezier_edit_snapshot_active:
-            return
-        key_frame = int(key["frame"])
-        updated = []
-        for item in keys:
-            copy = dict(item)
-            if int(copy["frame"]) == key_frame:
-                copy["ease"] = "bezier"
-                copy["bezier_y1"] = float(y1)
-                copy["bezier_y2"] = float(y2)
-            updated.append(copy)
-        try:
-            self.timeline_project.set_clip_transform_keyframes(clip.clip_id, updated)
-        except (KeyError, ValueError) as exc:
-            self.statusBar().showMessage(f"ویرایش منحنی انجام نشد: {exc}")
-            return
-        for name, value in (("bezier_y1", y1), ("bezier_y2", y2)):
-            blocker = QSignalBlocker(self.bezier_controls[name])
-            self.bezier_controls[name].setValue(value)
-            del blocker
-        self.timeline_widget.refresh()
-
-    def _bezier_graph_edit_finished(self) -> None:
-        self._bezier_edit_snapshot_active = False
-        self.statusBar().showMessage("منحنی Bezier ذخیره شد؛ تغییرات با Undo قابل بازگشت است.")
-
-    def _toggle_clip_reverse(self, enabled: bool) -> None:
-        clip_id = self.timeline_widget.canvas.selected_clip_id
-        if not clip_id:
-            return
-        try:
-            self._push_undo()
-            self.timeline_project.set_clip_reverse(clip_id, enabled)
-        except (KeyError, ValueError) as exc:
-            if self._undo_stack:
-                self._undo_stack.pop()
-            self._update_history_buttons()
-            self.statusBar().showMessage(f"Reverse change failed: {exc}")
-            return
-        self.statusBar().showMessage("Reverse will be applied in final render." if enabled else "Reverse disabled.")
-    def _toggle_clip_motion_blur(self, enabled: bool) -> None:
-        clip_id = self.timeline_widget.canvas.selected_clip_id
-        if not clip_id:
-            return
-        try:
-            self._push_undo()
-            self.timeline_project.set_clip_motion_blur(clip_id, enabled)
-        except (KeyError, ValueError) as exc:
-            if self._undo_stack:
-                self._undo_stack.pop()
-            self._update_history_buttons()
-            self.statusBar().showMessage(f"Motion Blur change failed: {exc}")
-            return
-        self.statusBar().showMessage(
-            "Motion Blur enabled for final render." if enabled else "Motion Blur disabled."
-        )
-
-    def _apply_clip_speed(self) -> None:
-        clip_id = self.timeline_widget.canvas.selected_clip_id
-        if not clip_id:
-            return
-        rate = float(self.playback_speed_combo.currentData() or 1.0)
-        try:
-            self._push_undo()
-            clip = self.timeline_project.set_clip_speed(clip_id, rate)
-        except (KeyError, ValueError) as exc:
-            if self._undo_stack:
-                self._undo_stack.pop()
-            self._update_history_buttons()
-            self.statusBar().showMessage(f"Speed change failed: {exc}")
-            return
-        self._refresh_timeline()
-        self._sync_transform_controls()
-        self.statusBar().showMessage(
-            f"Speed {rate:g}x applied; clip length is now {clip.duration_frames} frames. Check for overlaps."
-        )
-
-    def _speed_ramp_changed(self, clip_id: str, points: list) -> None:
-        try:
-            self.timeline_project.set_clip_speed_ramp(clip_id, points)
-        except (KeyError, ValueError) as exc:
-            if self._undo_stack:
-                self._undo_stack.pop()
-            self._update_history_buttons()
-            self.timeline_widget.refresh()
-            self.statusBar().showMessage(f"ویرایش منحنی Speed Ramp انجام نشد: {exc}")
-            return
-        self._sync_transform_controls()
-        self.timeline_widget.refresh()
-        self.statusBar().showMessage("منحنی تغییر کرد؛ پیش‌نمایش سبک در پس‌زمینه به‌روزرسانی می‌شود...")
-        self._start_speed_ramp_preview(clip_id, automatic=True)
-
-    def preview_speed_ramp(self) -> None:
-        clip_id = self.timeline_widget.canvas.selected_clip_id
-        if not clip_id:
-            self.statusBar().showMessage("ابتدا یک کلیپ دارای Speed Ramp انتخاب کن")
-            return
-        self._start_speed_ramp_preview(clip_id, automatic=False)
-
-    def _start_speed_ramp_preview(self, clip_id: str, automatic: bool) -> None:
-        try:
-            clip = self.timeline_project.get_clip(clip_id)
-        except KeyError:
-            return
-        if (clip.media_type != "video" or not clip.track.startswith("V")
-                or not clip.speed_ramp):
-            return
-        if clip.reverse_playback or clip.transition_in_frames > 0:
-            if not automatic:
-                self.statusBar().showMessage(
-                    "پیش‌نمایش Speed Ramp با Reverse یا Transition ورودی هم‌زمان پشتیبانی نمی‌شود."
-                )
-            return
-        source_path = Path(clip.path)
-        if not source_path.is_file():
-            if not automatic:
-                self.statusBar().showMessage("فایل اصلی کلیپ برای پیش‌نمایش پیدا نشد")
-            return
-        if any(task.clip_id == clip_id for task in self._speed_ramp_preview_tasks):
-            if automatic:
-                self._speed_ramp_preview_pending.add(clip_id)
-            else:
-                self.statusBar().showMessage("پیش‌نمایش این کلیپ در حال ساخته‌شدن است")
-            return
-        local_start = max(
-            0, min(clip.duration_frames - 1,
-                   self.timeline_project.playhead_frame - clip.start_frame)
-        )
-        preview_frames = min(
-            clip.duration_frames - local_start,
-            max(1, self.timeline_project.fps * 5),
-        )
-        task = SpeedRampPreviewTask(
-            clip_id, str(source_path), clip.source_in, clip.duration_frames,
-            self.timeline_project.fps, clip.speed_ramp, local_start, preview_frames,
-        )
-        task.signals.finished.connect(self._speed_ramp_preview_finished)
-        self._speed_ramp_preview_tasks.append(task)
-        self.speed_ramp_preview_button.setEnabled(False)
-        self.speed_ramp_status_label.setText(
-            "در حال ساخت پیش‌نمایش کوتاه ۴۸۰px/15fps در پس‌زمینه..."
-        )
-        self._speed_ramp_preview_pool.start(task)
-
-    def _speed_ramp_preview_finished(
-        self, clip_id: str, preview_path: str, error: str
-    ) -> None:
-        finished_task = next(
-            (task for task in self._speed_ramp_preview_tasks
-             if task.clip_id == clip_id), None
-        )
-        self._speed_ramp_preview_tasks = [
-            task for task in self._speed_ramp_preview_tasks
-            if task.clip_id != clip_id
-        ]
-        try:
-            clip = self.timeline_project.get_clip(clip_id)
-        except KeyError:
-            clip = None
-        if error:
-            self.speed_ramp_status_label.setText("ساخت پیش‌نمایش ناموفق بود؛ جزئیات در نوار وضعیت")
-            self.statusBar().showMessage(f"پیش‌نمایش Speed Ramp ناموفق بود: {error}")
-        elif clip and finished_task and clip.speed_ramp == finished_task.points:
-            if self.timeline_widget.canvas.selected_clip_id == clip_id:
-                self._load_preview_source(Path(preview_path), 0)
-            self.speed_ramp_status_label.setText(
-                "پیش‌نمایش سبک آماده شد؛ برای دیدن نتیجه، پخش را اجرا کن."
-            )
-            self.statusBar().showMessage("پیش‌نمایش Speed Ramp به‌روز شد")
-        pending = clip_id in self._speed_ramp_preview_pending
-        self._speed_ramp_preview_pending.discard(clip_id)
-        if pending and clip and clip.speed_ramp:
-            self._start_speed_ramp_preview(clip_id, automatic=True)
-        else:
-            selected = self.timeline_widget.canvas.selected_clip_id
-            if selected:
-                try:
-                    selected_clip = self.timeline_project.get_clip(selected)
-                    self.speed_ramp_preview_button.setEnabled(
-                        selected_clip.media_type == "video"
-                        and selected_clip.track.startswith("V")
-                        and bool(selected_clip.speed_ramp)
-                    )
-                except KeyError:
-                    self.speed_ramp_preview_button.setEnabled(False)
-            else:
-                self.speed_ramp_preview_button.setEnabled(False)
-
-    def _add_speed_ramp_point(self) -> None:
-        clip_id = self.timeline_widget.canvas.selected_clip_id
-        if not clip_id:
-            return
-        try:
-            clip = self.timeline_project.get_clip(clip_id)
-            frame = int(self.speed_ramp_frame_spin.value())
-            rate = float(self.speed_ramp_rate_spin.value())
-            if not 0 <= frame < clip.duration_frames:
-                raise ValueError("فریم Speed Ramp باید داخل محدوده کلیپ باشد.")
-            points = [dict(point) for point in clip.speed_ramp
-                      if int(point["frame"]) != frame]
-            points.append({"frame": frame, "rate": rate})
-            points.sort(key=lambda point: int(point["frame"]))
-            self._push_undo()
-            self.timeline_project.set_clip_speed_ramp(clip_id, points)
-        except (KeyError, ValueError) as exc:
-            if self._undo_stack:
-                self._undo_stack.pop()
-            self._update_history_buttons()
-            self.statusBar().showMessage(f"ثبت Speed Ramp انجام نشد: {exc}")
-            return
-        self._sync_transform_controls()
-        self.timeline_widget.refresh()
-        self.statusBar().showMessage(
-            "نقطه Speed Ramp ذخیره شد و در خروجی نهایی تصویر و صدای همین کلیپ اعمال می‌شود."
-        )
-
-    def _clear_speed_ramp(self) -> None:
-        clip_id = self.timeline_widget.canvas.selected_clip_id
-        if not clip_id:
-            return
-        try:
-            self._push_undo()
-            self.timeline_project.set_clip_speed_ramp(clip_id, [])
-        except (KeyError, ValueError) as exc:
-            if self._undo_stack:
-                self._undo_stack.pop()
-            self._update_history_buttons()
-            self.statusBar().showMessage(f"پاک‌کردن Speed Ramp انجام نشد: {exc}")
-            return
-        self._sync_transform_controls()
-        self.timeline_widget.refresh()
-        self.statusBar().showMessage("منحنی Speed Ramp پاک شد؛ سرعت ثابت کلیپ دوباره استفاده می‌شود.")
-
-    def _transform_keyframe_selected(self, clip_id: str, frame: int) -> None:
-        clip = self.timeline_project.get_clip(clip_id)
-        self.timeline_project.playhead_frame = clip.start_frame + int(frame)
-        self._sync_transform_controls()
-        self.statusBar().showMessage(f"Keyframe فریم {frame} انتخاب شد؛ برای جابه‌جایی آن را بکشید.")
-
-    def _transform_keyframe_moved(self, clip_id: str, old_frame: int, new_frame: int) -> None:
-        try:
-            clip = self.timeline_project.get_clip(clip_id)
-            updated = [dict(item) for item in clip.transform_keyframes]
-            key = next(item for item in updated if int(item["frame"]) == int(old_frame))
-            key["frame"] = int(new_frame)
-            updated.sort(key=lambda item: int(item["frame"]))
-            self.timeline_project.set_clip_transform_keyframes(clip_id, updated)
-            self.timeline_widget.canvas.selected_transform_keyframe_frame = int(new_frame)
-        except (KeyError, ValueError, StopIteration) as exc:
-            self.statusBar().showMessage(f"جابه‌جایی Keyframe انجام نشد: {exc}")
-        self._sync_transform_controls()
-        self.timeline_widget.refresh()
-
-    def _mask_keyframe_selected(self, clip_id: str, frame: int) -> None:
-        clip = self.timeline_project.get_clip(clip_id)
-        self.timeline_project.playhead_frame = clip.start_frame + int(frame)
-        self._sync_transform_controls()
-        self.statusBar().showMessage(f"Mask Keyframe فریم {frame} انتخاب شد؛ برای جابه‌جایی آن را بکشید.")
-
-    def _mask_keyframe_moved(self, clip_id: str, old_frame: int, new_frame: int) -> None:
-        try:
-            clip = self.timeline_project.get_clip(clip_id)
-            updated = [dict(item) for item in clip.mask_keyframes]
-            key = next(item for item in updated if int(item["frame"]) == int(old_frame))
-            key["frame"] = int(new_frame)
-            updated.sort(key=lambda item: int(item["frame"]))
-            clip.mask_keyframes = updated
-            clip.validate()
-            self.timeline_widget.canvas.selected_mask_keyframe_frame = int(new_frame)
-            self.timeline_project.playhead_frame = clip.start_frame + int(new_frame)
-        except (KeyError, ValueError, StopIteration) as exc:
-            self.statusBar().showMessage(f"جابه‌جایی Mask Keyframe انجام نشد: {exc}")
-        self._sync_transform_controls()
-        self.timeline_widget.refresh()
+        except (TypeError, ValueError, KeyError) as exc:
+            self.statusBar().showMessage(f"ویرایش رأس ماسک نامعتبر است: {exc}")
 
     def _delete_transform_keyframe(self) -> None:
         clip_id = self.timeline_widget.canvas.selected_clip_id
