@@ -59,7 +59,8 @@ class ZenithEditor(QMainWindow):
         super().__init__()
         self.project_path: Path | None = None
         self.media_items: list[dict[str, Any]] = []
-        self._probe_pool = QThreadPool.globalInstance()
+        self._probe_pool = QThreadPool(self)
+        self._probe_pool.setMaxThreadCount(2)
         self._probe_tasks: list[MediaProbeTask] = []
         self.timeline_project = TimelineProject()
         self.player = QMediaPlayer(self)
@@ -347,6 +348,7 @@ class ZenithEditor(QMainWindow):
         self.statusBar().showMessage(f"{added} فایل جدید وارد شد")
 
     def _media_probe_finished(self, path: str, metadata: object, error: str) -> None:
+        self._probe_tasks = [task for task in self._probe_tasks if task.path != path]
         for index, item in enumerate(self.media_items):
             if item.get("path") != path:
                 continue
