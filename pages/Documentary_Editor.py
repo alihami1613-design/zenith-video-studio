@@ -7,6 +7,7 @@ from urllib.parse import quote
 import imageio_ffmpeg
 import requests
 from PIL import Image, ImageDraw, ImageFilter
+import numpy as np
 import streamlit as st
 
 st.set_page_config(page_title="ZENITH Documentary Editor", page_icon="🎬", layout="wide")
@@ -86,18 +87,16 @@ SCENES = [
 def make_scene_art(index, label, folder):
     """Create a consistent 1080p cinematic motion-graphics plate; no external stock photos."""
     W, H = 1920, 1080
-    img = Image.new("RGB", (W, H))
-    px = img.load()
-    # Deep navy gradient with a restrained teal light source.
-    for y in range(H):
-        t = y / H
-        for x in range(W):
-            glow = max(0.0, 1 - (((x - 1370) / 1150) ** 2 + ((y - 430) / 850) ** 2) ** 0.5)
-            px[x, y] = (
-                int(5 + 5 * glow),
-                int(10 + 34 * glow + 4 * t),
-                int(22 + 43 * glow + 8 * t),
-            )
+    # Vectorized deep-navy gradient for fast rendering on the cloud server.
+    yy, xx = np.mgrid[0:H, 0:W]
+    glow = np.clip(1 - np.sqrt(((xx - 1370) / 1150) ** 2 + ((yy - 430) / 850) ** 2), 0, 1)
+    t = yy / H
+    arr = np.stack([
+        5 + 5 * glow,
+        10 + 34 * glow + 4 * t,
+        22 + 43 * glow + 8 * t,
+    ], axis=-1).clip(0,255).astype(np.uint8)
+    img = Image.fromarray(arr, "RGB")
     d = ImageDraw.Draw(img, "RGBA")
     # Fine technical grid and framing.
     for x in range(80, W, 80):
@@ -172,7 +171,13 @@ def make_scene_art(index, label, folder):
     # Restrained title treatment and chapter marker.
     d.text((125, 170), "ZENITH BEYOND", fill=(205,220,228,210), stroke_width=0)
     d.text((125, 270), f"{index+1:02d} / 12", fill=(225,190,120,235))
-    d.text((125, 355), label, fill=(240,245,248,245), stroke_width=0)
+    english_titles = [
+        "THE HUMAN MIND", "THE MACHINE", "AI IN DAILY LIFE", "NEURAL NETWORKS",
+        "MACHINE LEARNING", "AI IN MEDICINE", "INTELLIGENT INDUSTRY",
+        "HUMAN + MACHINE", "THE FUTURE OF WORK", "SMART CITIES",
+        "A NEW CONNECTION", "A SHARED FUTURE"
+    ]
+    d.text((125, 355), english_titles[index], fill=(240,245,248,245), stroke_width=0)
     d.line((125, 420, 510, 420), fill=(80,205,205,210), width=4)
     d.text((125, 470), "HUMAN  ×  ARTIFICIAL INTELLIGENCE", fill=(150,185,205,210))
     # Soft vignette, not a zoom or crop.
