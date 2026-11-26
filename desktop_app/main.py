@@ -24,6 +24,7 @@ from waveform_manager import create_waveform, load_waveform
 from audio_render import render_audio_mix
 from audio_meter import estimate_track_peaks, peak_to_dbfs
 from color_preview import create_color_preview
+from speed_ramp_preview import create_speed_ramp_preview
 from video_render import render_timeline_mp4
 
 APP_NAME = "ZENITH Desktop"
@@ -101,6 +102,39 @@ class ColorPreviewTask(QRunnable):
         try:
             result = create_color_preview(
                 self.path, self.source_in, self.duration, self.grade
+            )
+            self.signals.finished.emit(self.clip_id, str(result), "")
+        except Exception as exc:
+            self.signals.finished.emit(self.clip_id, "", str(exc))
+
+
+class SpeedRampPreviewSignals(QObject):
+    finished = Signal(str, str, str)
+
+
+class SpeedRampPreviewTask(QRunnable):
+    """Build a short 480px/15fps Speed Ramp preview off the GUI thread."""
+
+    def __init__(self, clip_id: str, path: str, source_in_frame: int,
+                 duration_frames: int, fps: int, points: list[dict],
+                 preview_start_frame: int, preview_duration_frames: int) -> None:
+        super().__init__()
+        self.clip_id = clip_id
+        self.path = path
+        self.source_in_frame = source_in_frame
+        self.duration_frames = duration_frames
+        self.fps = fps
+        self.points = [dict(point) for point in points]
+        self.preview_start_frame = preview_start_frame
+        self.preview_duration_frames = preview_duration_frames
+        self.signals = SpeedRampPreviewSignals()
+
+    def run(self) -> None:
+        try:
+            result = create_speed_ramp_preview(
+                self.path, self.source_in_frame, self.duration_frames,
+                self.fps, self.points, self.preview_start_frame,
+                self.preview_duration_frames,
             )
             self.signals.finished.emit(self.clip_id, str(result), "")
         except Exception as exc:
@@ -201,6 +235,9 @@ class ZenithEditor(QMainWindow):
         self._color_preview_pool.setMaxThreadCount(1)
         self._color_preview_tasks: list[ColorPreviewTask] = []
         self._graded_preview_clip_id: str | None = None
+        self._speed_ramp_preview_pool = QThreadPool(self)
+        self._speed_ramp_preview_pool.setMaxThreadCount(1)
+        self._speed_ramp_preview_tasks: list[SpeedRampPreviewTask] = []
         self.waveforms: dict[str, list[float]] = {}
         self._undo_stack: list[dict[str, Any]] = []
         self._redo_stack: list[dict[str, Any]] = []
@@ -459,9 +496,13 @@ class ZenithEditor(QMainWindow):
         self.speed_ramp_label = QLabel("Speed Ramp: هنوز نقطه‌ای ثبت نشده")
         self.speed_ramp_label.setWordWrap(True)
         inspector_layout.addWidget(self.speed_ramp_label)
-        self.speed_ramp_status_label = QLabel("Speed Ramp در خروجی نهایی اعمال می‌شود؛ پیش‌نمایش زنده هنوز فعال نیست.")
+        self.speed_ramp_status_label = QLabel("منحنی سرعت در تایم‌لاین نمایش داده می‌شود؛ پیش‌نمایش کوتاه با کیفیت سبک ساخته می‌شود.")
         self.speed_ramp_status_label.setWordWrap(True)
         inspector_layout.addWidget(self.speed_ramp_status_label)
+        self.speed_ramp_preview_button = QPushButton("پیش‌نمایش Speed Ramp (۵ ثانیه)")
+        self.speed_ramp_preview_button.setEnabled(False)
+        self.speed_ramp_preview_button.clicked.connect(self.preview_speed_ramp)
+        inspector_layout.addWidget(self.speed_ramp_preview_button)
 
         color_heading = QLabel("اصلاح رنگ کلیپ")
         color_heading.setObjectName("panel_title")
@@ -858,6 +899,7 @@ class ZenithEditor(QMainWindow):
         self.speed_ramp_rate_spin.setEnabled(enabled)
         self.add_speed_ramp_button.setEnabled(enabled)
         self.clear_speed_ramp_button.setEnabled(enabled and bool(clip.speed_ramp) if enabled else False)
+        self.speed_ramp_preview_button.setEnabled(enabled and bool(clip.speed_ramp) if enabled else False)
         if enabled:
             local_frame_for_ramp = max(0, min(clip.duration_frames - 1,
                 self.timeline_project.playhead_frame - clip.start_frame))
@@ -1003,6 +1045,7 @@ class ZenithEditor(QMainWindow):
             self.statusBar().showMessage(f"ثبت Speed Ramp انجام نشد: {exc}")
             return
         self._sync_transform_controls()
+        self.timeline_widget.refresh()
         self.statusBar().showMessage(
             "نقطه Speed Ramp ذخیره شد و در خروجی نهایی تصویر و صدای همین کلیپ اعمال می‌شود."
         )
@@ -1021,6 +1064,7 @@ class ZenithEditor(QMainWindow):
             self.statusBar().showMessage(f"پاک‌کردن Speed Ramp انجام نشد: {exc}")
             return
         self._sync_transform_controls()
+        self.timeline_widget.refresh()
         self.statusBar().showMessage("منحنی Speed Ramp پاک شد؛ سرعت ثابت کلیپ دوباره استفاده می‌شود.")
 
     def _add_transform_keyframe(self) -> None:
