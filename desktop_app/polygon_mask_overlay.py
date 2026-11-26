@@ -22,6 +22,7 @@ class PolygonMaskOverlay(QWidget):
     pointsChanged = Signal(object)
     geometryChanged = Signal(object)
     rotationChanged = Signal(float)
+    featherChanged = Signal(float)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -31,6 +32,9 @@ class PolygonMaskOverlay(QWidget):
         self._shape = "polygon"
         self._rect = [0.0, 0.0, 1.0, 1.0]
         self._rotation = 0.0
+        self._feather = 0.0
+        self._feather_start = 0.0
+        self._feather_drag_y = 0.0
         self._rotation_start = 0.0
         self._pointer_angle_start = 0.0
         self._drag_kind: str | None = None
@@ -43,12 +47,13 @@ class PolygonMaskOverlay(QWidget):
 
     def set_mask(self, points, frame_width: int, frame_height: int, active: bool,
                  shape: str = "polygon", rect=None, geometry_editable: bool = False,
-                 rotation: float = 0.0):
+                 rotation: float = 0.0, feather: float = 0.0):
         self._points = [[float(p[0]), float(p[1])] for p in points]
         self._frame_size = (max(1, int(frame_width)), max(1, int(frame_height)))
         self._shape = shape if shape in {"rectangle", "ellipse", "polygon"} else "polygon"
         self._rect = [float(v) for v in (rect or [0.0, 0.0, 1.0, 1.0])]
         self._rotation = float(rotation)
+        self._feather = max(0.0, min(40.0, float(feather)))
         self._active = bool(active and (
             (self._shape == "polygon" and len(self._points) >= 3)
             or (self._shape in {"rectangle", "ellipse"} and len(self._rect) == 4)
@@ -114,6 +119,9 @@ class PolygonMaskOverlay(QWidget):
             return "rotate"
         pos = self._local_pos(pos)
         rect = self._rect_widget()
+        feather_handle = QPointF(rect.right() + self._feather * 2.0 + 24.0, rect.top())
+        if (feather_handle - pos).manhattanLength() <= 20:
+            return "feather"
         corners = {
             "nw": rect.topLeft(), "ne": rect.topRight(),
             "sw": rect.bottomLeft(), "se": rect.bottomRight(),
@@ -160,6 +168,16 @@ class PolygonMaskOverlay(QWidget):
                     painter.drawEllipse(point, 6.0, 6.0)
                 painter.setBrush(QBrush(QColor("#D6AE55")))
                 painter.drawEllipse(rect.center(), 4.5, 4.5)
+                feather_handle = QPointF(rect.right() + self._feather * 2.0 + 24.0, rect.top())
+                painter.setPen(QPen(QColor("#D6AE55"), 1.5, Qt.DashLine))
+                painter.drawLine(rect.topRight(), feather_handle)
+                painter.setBrush(QBrush(QColor("#D6AE55")))
+                painter.drawEllipse(feather_handle, 7.0, 7.0)
+                if self._feather > 0:
+                    painter.setPen(QPen(QColor(255, 214, 112, 80), max(1.0, self._feather * 0.4), Qt.DashLine))
+                    painter.setBrush(Qt.NoBrush)
+                    painter.drawRect(rect.adjusted(-self._feather, -self._feather,
+                                                  self._feather, self._feather))
         painter.restore()
         if self._geometry_editable and self._shape in {"rectangle", "ellipse"}:
             handle = self._rotation_handle()
@@ -180,6 +198,9 @@ class PolygonMaskOverlay(QWidget):
                 self._drag_kind, self._drag_index = "point", index
         if self._geometry_editable and self._shape in {"rectangle", "ellipse"}:
             self._drag_kind = self._hit_geometry(event.position())
+            if self._drag_kind == "feather":
+                self._feather_start = self._feather
+                self._feather_drag_y = event.position().y()
             if self._drag_kind == "rotate":
                 from math import atan2, degrees
                 center = self._rect_widget().center()
@@ -199,6 +220,13 @@ class PolygonMaskOverlay(QWidget):
         if self._drag_kind == "point" and self._drag_index is not None:
             self._points[self._drag_index] = list(self._to_normalized(self._local_pos(event.position())))
             self.pointsChanged.emit([[round(x, 6), round(y, 6)] for x, y in self._points])
+            self.update()
+            event.accept()
+            return
+        if self._drag_kind == "feather":
+            delta = (self._feather_drag_y - event.position().y()) / 4.0
+            self._feather = max(0.0, min(40.0, self._feather_start + delta))
+            self.featherChanged.emit(round(self._feather, 2))
             self.update()
             event.accept()
             return
@@ -248,7 +276,7 @@ class PolygonMaskOverlay(QWidget):
             self.setCursor(Qt.OpenHandCursor if self._hit_polygon(event.position()) is not None else Qt.ArrowCursor)
         elif self._geometry_editable:
             hit = self._hit_geometry(event.position())
-            self.setCursor(Qt.SizeAllCursor if hit == "move" else Qt.CrossCursor if hit == "rotate" else Qt.SizeFDiagCursor if hit in {"nw", "se"} else Qt.SizeBDiagCursor if hit else Qt.ArrowCursor)
+            self.setCursor(Qt.SizeAllCursor if hit == "move" else Qt.CrossCursor if hit in {"rotate", "feather"} else Qt.SizeFDiagCursor if hit in {"nw", "se"} else Qt.SizeBDiagCursor if hit else Qt.ArrowCursor)
         event.ignore()
 
     def mouseReleaseEvent(self, event):
