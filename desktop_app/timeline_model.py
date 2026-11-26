@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-PROJECT_SCHEMA_VERSION = 24
+PROJECT_SCHEMA_VERSION = 25
 DEFAULT_FPS = 30
 DEFAULT_VIDEO_TRACKS = ("V1", "V2", "V3", "V4")
 DEFAULT_AUDIO_TRACKS = ("A1", "A2", "A3", "A4")
@@ -137,6 +137,7 @@ class Clip:
     chroma_key_similarity: float = 0.25
     chroma_key_blend: float = 0.08
     mask_enabled: bool = False
+    mask_invert: bool = False
     mask_x: float = 0.0
     mask_y: float = 0.0
     mask_width: float = 1.0
@@ -847,6 +848,7 @@ class TimelineProject:
                 chroma_key_similarity=float(raw.get("chroma_key_similarity", 0.25)),
                 chroma_key_blend=float(raw.get("chroma_key_blend", 0.08)),
                 mask_enabled=bool(raw.get("mask_enabled", False)),
+                mask_invert=bool(raw.get("mask_invert", False)),
                 mask_x=float(raw.get("mask_x", 0.0)),
                 mask_y=float(raw.get("mask_y", 0.0)),
                 mask_width=float(raw.get("mask_width", 1.0)),
