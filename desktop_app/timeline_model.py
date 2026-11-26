@@ -265,8 +265,13 @@ class TimelineProject:
             if value is not None:
                 values[key] = value
         # Reuse project validation to keep the persisted settings canonical.
+        previous = dict(self.audio_ducking)
         self.audio_ducking = values
-        self.__post_init__()
+        try:
+            self.__post_init__()
+        except (TypeError, ValueError):
+            self.audio_ducking = previous
+            raise
         return dict(self.audio_ducking)
 
     def to_dict(self) -> dict[str, Any]:
