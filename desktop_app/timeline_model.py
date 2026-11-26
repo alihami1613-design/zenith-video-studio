@@ -21,6 +21,23 @@ def _new_id() -> str:
     return uuid4().hex[:12]
 
 
+def _transform_value_at(keyframes: list[dict[str, float]], frame: int) -> dict[str, float]:
+    """Evaluate the linear transform curve at a clip-local frame."""
+    defaults = {"x": 0.0, "y": 0.0, "scale": 1.0, "rotation": 0.0}
+    if not keyframes:
+        return defaults
+    if frame <= int(keyframes[0]["frame"]):
+        return {key: float(keyframes[0].get(key, value)) for key, value in defaults.items()}
+    if frame >= int(keyframes[-1]["frame"]):
+        return {key: float(keyframes[-1].get(key, value)) for key, value in defaults.items()}
+    for left, right in zip(keyframes, keyframes[1:]):
+        lf, rf = int(left["frame"]), int(right["frame"])
+        if lf <= frame <= rf:
+            ratio = (frame - lf) / (rf - lf)
+            return {key: float(left.get(key, default)) + (float(right.get(key, default)) - float(left.get(key, default))) * ratio for key, default in defaults.items()}
+    return defaults
+
+
 @dataclass
 class Clip:
     """A timeline clip; all positions and lengths are integer frames."""
