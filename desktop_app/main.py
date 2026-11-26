@@ -426,6 +426,10 @@ class ZenithEditor(QMainWindow):
         self.apply_speed_button.setEnabled(False)
         self.apply_speed_button.clicked.connect(self._apply_clip_speed)
         inspector_layout.addWidget(self.apply_speed_button)
+        self.motion_blur_checkbox = QCheckBox("Motion Blur سبک (۳ فریم)")
+        self.motion_blur_checkbox.setEnabled(False)
+        self.motion_blur_checkbox.toggled.connect(self._toggle_clip_motion_blur)
+        inspector_layout.addWidget(self.motion_blur_checkbox)
 
         color_heading = QLabel("اصلاح رنگ کلیپ")
         color_heading.setObjectName("panel_title")
@@ -816,6 +820,11 @@ class ZenithEditor(QMainWindow):
         self.add_transform_keyframe_button.setEnabled(enabled)
         self.playback_speed_combo.setEnabled(enabled)
         self.apply_speed_button.setEnabled(enabled)
+        self.motion_blur_checkbox.setEnabled(enabled)
+        if enabled:
+            blocker = QSignalBlocker(self.motion_blur_checkbox)
+            self.motion_blur_checkbox.setChecked(bool(getattr(clip, "motion_blur", False)))
+            del blocker
         if enabled:
             index = self.playback_speed_combo.findData(float(getattr(clip, "playback_rate", 1.0)))
             if index >= 0:
@@ -864,6 +873,23 @@ class ZenithEditor(QMainWindow):
                 del blocker
         self.transform_keyframes_label.setText(
             f"{len(clip.transform_keyframes)} Keyframe | فریم فعلی کلیپ: {local_frame}"
+        )
+
+    def _toggle_clip_motion_blur(self, enabled: bool) -> None:
+        clip_id = self.timeline_widget.canvas.selected_clip_id
+        if not clip_id:
+            return
+        try:
+            self._push_undo()
+            self.timeline_project.set_clip_motion_blur(clip_id, enabled)
+        except (KeyError, ValueError) as exc:
+            if self._undo_stack:
+                self._undo_stack.pop()
+            self._update_history_buttons()
+            self.statusBar().showMessage(f"Motion Blur change failed: {exc}")
+            return
+        self.statusBar().showMessage(
+            "Motion Blur enabled for final render." if enabled else "Motion Blur disabled."
         )
 
     def _apply_clip_speed(self) -> None:
