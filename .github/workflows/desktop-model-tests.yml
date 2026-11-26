@@ -38,6 +38,7 @@ on:
       - "desktop_app/bezier_curve_math.py"
       - "desktop_app/test_bezier_curve_math.py"
       - "desktop_app/timeline_widget.py"
+      - "desktop_app/main.py"
       - "desktop_app/video_render.py"
       - "desktop_app/speed_ramp.py"
       - "desktop_app/test_speed_ramp.py"
