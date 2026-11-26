@@ -492,9 +492,12 @@ class ZenithEditor(QMainWindow):
                 if not isinstance(item, dict) or not item.get("path"):
                     continue
                 path = str(item["path"])
+                cached_metadata = item.get("metadata")
                 loaded_media.append({
                     "path": path,
                     "name": str(item.get("name") or Path(path).name),
+                    "metadata": cached_metadata if isinstance(cached_metadata, dict) else None,
+                    "probe_state": "ready" if isinstance(cached_metadata, dict) else "pending",
                 })
         except (OSError, ValueError, TypeError, KeyError) as exc:
             QMessageBox.critical(self, "خطای باز کردن", f"پروژه بارگذاری نشد؛ پروژه فعلی حفظ شد.\n{exc}")
@@ -507,7 +510,20 @@ class ZenithEditor(QMainWindow):
         self.project_path = Path(filename)
         self.media_list.clear()
         for item in self.media_items:
-            self.media_list.addItem(item["name"])
+            metadata = item.get("metadata")
+            if isinstance(metadata, dict):
+                seconds = metadata.get("duration_seconds")
+                details = [format_time(round(seconds * 1000))] if seconds else []
+                if metadata.get("width") and metadata.get("height"):
+                    details.append(f"{metadata['width']}×{metadata['height']}")
+                label = item["name"] + ("  •  " + " | ".join(details) if details else "")
+                self.media_list.addItem(label)
+            else:
+                self.media_list.addItem(item["name"] + "  •  در حال بررسی")
+                task = MediaProbeTask(item["path"])
+                task.signals.finished.connect(self._media_probe_finished)
+                self._probe_tasks.append(task)
+                self._probe_pool.start(task)
         self._refresh_timeline()
         self._set_playhead(self.timeline_project.playhead_frame)
         self.statusBar().showMessage(f"پروژه باز شد: {self.project_path.name}")
