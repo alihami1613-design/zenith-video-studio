@@ -54,25 +54,6 @@ class Clip:
         if self.fade_in_frames > self.duration_frames or self.fade_out_frames > self.duration_frames:
             raise ValueError("Fade duration cannot exceed clip duration")
 
-    def set_audio_ducking(self, *, enabled: bool | None = None,
-                          voice_track: str | None = None,
-                          music_track: str | None = None,
-                          reduction_db: float | None = None,
-                          attack_ms: int | None = None,
-                          release_ms: int | None = None) -> dict[str, Any]:
-        values = dict(self.audio_ducking)
-        for key, value in {
-            "enabled": enabled, "voice_track": voice_track,
-            "music_track": music_track, "reduction_db": reduction_db,
-            "attack_ms": attack_ms, "release_ms": release_ms,
-        }.items():
-            if value is not None:
-                values[key] = value
-        # Reuse project validation to keep the persisted settings canonical.
-        self.audio_ducking = values
-        self.__post_init__()
-        return dict(self.audio_ducking)
-
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
@@ -268,6 +249,25 @@ class TimelineProject:
         if solo is not None:
             settings["solo"] = bool(solo)
         return dict(settings)
+
+    def set_audio_ducking(self, *, enabled: bool | None = None,
+                          voice_track: str | None = None,
+                          music_track: str | None = None,
+                          reduction_db: float | None = None,
+                          attack_ms: int | None = None,
+                          release_ms: int | None = None) -> dict[str, Any]:
+        values = dict(self.audio_ducking)
+        for key, value in {
+            "enabled": enabled, "voice_track": voice_track,
+            "music_track": music_track, "reduction_db": reduction_db,
+            "attack_ms": attack_ms, "release_ms": release_ms,
+        }.items():
+            if value is not None:
+                values[key] = value
+        # Reuse project validation to keep the persisted settings canonical.
+        self.audio_ducking = values
+        self.__post_init__()
+        return dict(self.audio_ducking)
 
     def to_dict(self) -> dict[str, Any]:
         return {
