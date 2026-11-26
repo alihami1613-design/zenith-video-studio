@@ -225,8 +225,14 @@ def build_video_render_command(ffmpeg: str, project: object,
         if fade_out:
             fade_start = clip_duration - _seconds(fade_out, fps)
             chain += f",fade=t=out:st={fade_start:.6f}:d={_seconds(fade_out, fps):.6f}:alpha=1"
-        chain += f",setpts=PTS+{start:.6f}/TB"
         keyframes = list(getattr(clip, "transform_keyframes", []) or [])
+        if keyframes:
+            opacity_expr = _keyframe_expression(keyframes, "opacity", 1.0, fps, "T")
+            chain += (
+                ",geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':"
+                f"a='alpha(X,Y)*({opacity_expr})'"
+            )
+        chain += f",setpts=PTS+{start:.6f}/TB"
         if keyframes:
             scale_expr = _keyframe_expression(keyframes, "scale", 1.0, fps)
             rotation_expr = _keyframe_expression(keyframes, "rotation", 0.0, fps)
