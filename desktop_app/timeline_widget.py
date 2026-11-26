@@ -229,6 +229,17 @@ class TimelineCanvas(QWidget):
                         painter.setBrush(QBrush(QColor("#FFF1B8") if active else QColor("#F2D27A")))
                         painter.setPen(QPen(QColor("#33270D"), 1))
                         painter.drawPolygon(diamond)
+                    for key in clip.mask_keyframes:
+                        mask_frame = int(key["frame"])
+                        mask_x = x1 + int(mask_frame / max(1, clip.duration_frames) * (x2 - x1))
+                        mask_y = rect_y + rect_h - 8
+                        mask_diamond = QPolygonF([
+                            QPoint(mask_x, mask_y - 4), QPoint(mask_x + 4, mask_y),
+                            QPoint(mask_x, mask_y + 4), QPoint(mask_x - 4, mask_y),
+                        ])
+                        painter.setBrush(QBrush(QColor("#75D6C8")))
+                        painter.setPen(QPen(QColor("#123A35"), 1))
+                        painter.drawPolygon(mask_diamond)
                 if selected:
                     painter.fillRect(x1, rect_y, 4, rect_h, QColor("#FFF0C2"))
                     painter.fillRect(x2 - 4, rect_y, 4, rect_h, QColor("#FFF0C2"))
