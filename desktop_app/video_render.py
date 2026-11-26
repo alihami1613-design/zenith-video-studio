@@ -11,7 +11,7 @@ from audio_render import render_audio_mix
 from proxy_manager import find_ffmpeg
 from video_color import build_color_filter
 
-RENDER_VERSION = "timeline-h264-v2"
+RENDER_VERSION = "timeline-h264-v3-visual-fades"
 STILL_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".webp", ".tif", ".tiff"}
 
 
@@ -53,6 +53,9 @@ def validate_render_project(project: object) -> list[object]:
             raise FileNotFoundError(f"فایل رسانه پیدا نشد: {source}")
         if clip.start_frame < 0 or clip.source_in < 0 or clip.duration_frames < 1:
             raise ValueError(f"زمان‌بندی کلیپ معتبر نیست: {clip.name}")
+        visual_fades = (int(getattr(clip, "video_fade_in_frames", 0)), int(getattr(clip, "video_fade_out_frames", 0)))
+        if min(visual_fades) < 0 or max(visual_fades) > clip.duration_frames:
+            raise ValueError(f"مدت Fade تصویری نامعتبر است: {clip.name}")
         if clip.start_frame < previous_end.get(clip.track, 0):
             raise ValueError(
                 f"هم‌پوشانی دو کلیپ روی {clip.track} هنوز پشتیبانی نمی‌شود؛ "
@@ -102,9 +105,16 @@ def build_video_render_command(ffmpeg: str, project: object,
             "setpts=PTS-STARTPTS,"
             f"scale={width}:{height}:force_original_aspect_ratio=decrease,"
             f"format=rgba,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:"
-            "color=black@0,"
-            f"setpts=PTS+{start:.6f}/TB"
+            "color=black@0"
         )
+        fade_in = int(getattr(clip, "video_fade_in_frames", 0))
+        fade_out = int(getattr(clip, "video_fade_out_frames", 0))
+        if fade_in:
+            chain += f",fade=t=in:st=0:d={_seconds(fade_in, fps):.6f}:alpha=1"
+        if fade_out:
+            fade_start = clip_duration - _seconds(fade_out, fps)
+            chain += f",fade=t=out:st={fade_start:.6f}:d={_seconds(fade_out, fps):.6f}:alpha=1"
+        chain += f",setpts=PTS+{start:.6f}/TB"
         grade = build_color_filter(getattr(clip, "color_grade", {}))
         if grade:
             chain += "," + grade
