@@ -387,6 +387,7 @@ class TimelineModelTests(unittest.TestCase):
         left, right = restored.split_clip(clip.clip_id, 50)
         self.assertEqual([point["frame"] for point in left.speed_ramp], [0, 40])
         self.assertEqual([point["frame"] for point in right.speed_ramp], [0, 30])
+        self.assertAlmostEqual(right.speed_ramp[0]["rate"], 2.0)
         project2 = TimelineProject()
         trimmed = project2.add_clip("ramp.mp4", "ramp.mp4", duration_frames=100)
         project2.set_clip_speed_ramp(trimmed.clip_id, [
