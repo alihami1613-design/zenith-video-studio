@@ -517,6 +517,7 @@ class TimelineProject:
         mask_defaults = {
             "x": original.mask_x, "y": original.mask_y,
             "width": original.mask_width, "height": original.mask_height,
+            "rotation": original.mask_rotation,
         }
         split_mask_values = mask_values_at(original.mask_keyframes, split_local_frame, mask_defaults)
         split_mask_points = mask_points_at(original.mask_keyframes, split_local_frame, original.mask_points)
