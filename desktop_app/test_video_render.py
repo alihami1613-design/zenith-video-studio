@@ -54,6 +54,35 @@ class VideoRenderTests(unittest.TestCase):
         self.assertIn("fade=t=in:st=0:d=0.500000:alpha=1", joined)
         self.assertIn("fade=t=out:st=1.000000:d=1.000000:alpha=1", joined)
 
+    def test_cross_dissolve_prerolls_incoming_clip_without_changing_timeline(self):
+        with tempfile.TemporaryDirectory() as folder:
+            project = self.project(folder)
+            project.clips[1].start_frame = 60
+            project.clips[1].end_frame = 90
+            project.clips[1].transition_in_frames = 15
+            command = build_video_render_command("ffmpeg", project, "out.mp4")
+        joined = " ".join(command)
+        self.assertIn("fade=t=in:st=0:d=0.500000:alpha=1", joined)
+        self.assertIn("setpts=PTS+1.500000/TB", joined)
+        self.assertEqual(project.duration_frames, 90)
+
+    def test_rejects_cross_dissolve_without_adjacent_previous_clip(self):
+        with tempfile.TemporaryDirectory() as folder:
+            project = self.project(folder)
+            project.clips[1].transition_in_frames = 15
+            with self.assertRaisesRegex(ValueError, "چسبیده"):
+                validate_render_project(project)
+
+    def test_rejects_cross_dissolve_when_visual_fade_in_also_enabled(self):
+        with tempfile.TemporaryDirectory() as folder:
+            project = self.project(folder)
+            project.clips[1].start_frame = 60
+            project.clips[1].end_frame = 90
+            project.clips[1].transition_in_frames = 15
+            project.clips[1].video_fade_in_frames = 10
+            with self.assertRaisesRegex(ValueError, "هم‌زمان"):
+                validate_render_project(project)
+
     def test_rejects_visual_fade_longer_than_clip(self):
         with tempfile.TemporaryDirectory() as folder:
             project = self.project(folder)
