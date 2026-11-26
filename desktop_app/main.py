@@ -62,6 +62,9 @@ class ZenithEditor(QMainWindow):
         self._probe_pool = QThreadPool(self)
         self._probe_pool.setMaxThreadCount(2)
         self._probe_tasks: list[MediaProbeTask] = []
+        self._undo_stack: list[dict[str, Any]] = []
+        self._redo_stack: list[dict[str, Any]] = []
+        self._history_limit = 50
         self.timeline_project = TimelineProject()
         self.player = QMediaPlayer(self)
         self.audio_output = QAudioOutput(self)
@@ -87,6 +90,8 @@ class ZenithEditor(QMainWindow):
             ("باز کردن پروژه", "Ctrl+O", self.open_project),
             ("ذخیره پروژه", "Ctrl+S", self.save_project),
             ("وارد کردن رسانه", "Ctrl+I", self.import_media),
+            ("بازگشت", "Ctrl+Z", self.undo),
+            ("انجام دوباره", "Ctrl+Y", self.redo),
         ]
         for title, shortcut, callback in actions:
             action = QAction(title, self)
@@ -174,6 +179,12 @@ class ZenithEditor(QMainWindow):
         self.split_button.clicked.connect(self.split_selected_clip)
         self.remove_button = QPushButton("حذف کلیپ")
         self.remove_button.clicked.connect(self.remove_selected_from_timeline)
+        self.undo_button = QPushButton("↶ بازگشت")
+        self.undo_button.clicked.connect(self.undo)
+        self.redo_button = QPushButton("↷ انجام دوباره")
+        self.redo_button.clicked.connect(self.redo)
+        controls.addWidget(self.undo_button)
+        controls.addWidget(self.redo_button)
         controls.addWidget(self.split_button)
         controls.addWidget(self.remove_button)
         timeline_layout.addLayout(controls)
@@ -182,6 +193,8 @@ class ZenithEditor(QMainWindow):
         self.timeline_widget.clipSelected.connect(self._select_timeline_clip)
         self.timeline_widget.playheadChanged.connect(self._set_playhead)
         self.timeline_widget.clipMoved.connect(self._clip_moved)
+        self.timeline_widget.clipTrimmed.connect(self._clip_trimmed)
+        self.timeline_widget.editStarted.connect(self._push_undo)
         timeline_layout.addWidget(self.timeline_widget, 1)
         outer.addWidget(timeline_panel, 2)
 
@@ -276,6 +289,45 @@ class ZenithEditor(QMainWindow):
         self.playhead_label.setText(f"مکان‌نما: {seconds // 60:02d}:{seconds % 60:02d}")
         self.timeline_widget.refresh()
 
+    def _push_undo(self) -> None:
+        self._undo_stack.append(self.timeline_project.to_dict())
+        if len(self._undo_stack) > self._history_limit:
+            self._undo_stack.pop(0)
+        self._redo_stack.clear()
+        self._update_history_buttons()
+
+    def _update_history_buttons(self) -> None:
+        if hasattr(self, "undo_button"):
+            self.undo_button.setEnabled(bool(self._undo_stack))
+            self.redo_button.setEnabled(bool(self._redo_stack))
+
+    def undo(self) -> None:
+        if not self._undo_stack:
+            return
+        self._redo_stack.append(self.timeline_project.to_dict())
+        self.timeline_project = TimelineProject.from_dict(self._undo_stack.pop())
+        self._refresh_timeline()
+        self._update_history_buttons()
+        self.statusBar().showMessage("آخرین تغییر برگشت داده شد")
+
+    def redo(self) -> None:
+        if not self._redo_stack:
+            return
+        self._undo_stack.append(self.timeline_project.to_dict())
+        self.timeline_project = TimelineProject.from_dict(self._redo_stack.pop())
+        self._refresh_timeline()
+        self._update_history_buttons()
+        self.statusBar().showMessage("تغییر دوباره اعمال شد")
+
+    def _clip_trimmed(self, clip_id: str, start_frame: int, end_frame: int) -> None:
+        try:
+            clip = self.timeline_project.get_clip(clip_id)
+            self.timeline_project.trim_clip(clip_id, new_start_frame=start_frame, new_end_frame=end_frame)
+        except (KeyError, ValueError) as exc:
+            self.statusBar().showMessage(f"کوتاه‌کردن کلیپ انجام نشد: {exc}")
+        self._refresh_timeline()
+        self.statusBar().showMessage("لبه کلیپ تنظیم شد؛ فایل اصلی تغییری نکرد")
+
     def _clip_moved(self, clip_id: str, start_frame: int, track: str) -> None:
         try:
             self.timeline_project.move_clip(clip_id, start_frame, track)
@@ -317,6 +369,9 @@ class ZenithEditor(QMainWindow):
         self.project_path = None
         self.media_items = []
         self.timeline_project = TimelineProject()
+        self._undo_stack.clear()
+        self._redo_stack.clear()
+        self._update_history_buttons()
         self.media_list.clear()
         self.media_info.setText("برای پیش‌نمایش، یک فایل را از فهرست رسانه‌ها انتخاب کنید.")
         self._refresh_timeline()
@@ -396,6 +451,7 @@ class ZenithEditor(QMainWindow):
                 return
         existing = self.timeline_project.clips_on_track(track)
         start = max((clip.end_frame for clip in existing), default=0)
+        self._push_undo()
         try:
             self.timeline_project.add_clip(
                 path=source["path"], name=source["name"], track=track,
@@ -419,6 +475,7 @@ class ZenithEditor(QMainWindow):
         if not clip_id:
             self.statusBar().showMessage("ابتدا یک کلیپ را در تایم‌لاین انتخاب کنید")
             return
+        self._push_undo()
         try:
             self.timeline_project.remove_clip(clip_id, ripple=False)
         except KeyError:
@@ -432,6 +489,7 @@ class ZenithEditor(QMainWindow):
         if not clip_id:
             self.statusBar().showMessage("ابتدا کلیپ موردنظر را انتخاب کنید")
             return
+        self._push_undo()
         try:
             left, right = self.timeline_project.split_clip(
                 clip_id, self.timeline_project.playhead_frame
@@ -508,6 +566,9 @@ class ZenithEditor(QMainWindow):
         self.player.stop()
         self.player.setSource(QUrl())
         self.timeline_project = loaded_timeline
+        self._undo_stack.clear()
+        self._redo_stack.clear()
+        self._update_history_buttons()
         self.media_items = loaded_media
         self.project_path = Path(filename)
         self.media_list.clear()
