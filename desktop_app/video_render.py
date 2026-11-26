@@ -177,8 +177,9 @@ def build_video_render_command(ffmpeg: str, project: object,
         filters.append(chain)
         out_label = f"base{index + 1}"
         if keyframes:
-            x_expr = _keyframe_expression(keyframes, "x", 0.0, fps).replace("T", f"(t-{start:.6f})")
-            y_expr = _keyframe_expression(keyframes, "y", 0.0, fps).replace("T", f"(t-{start:.6f})")
+            clip_time = f"(t-{start:.6f})"
+            x_expr = _keyframe_expression(keyframes, "x", 0.0, fps, clip_time)
+            y_expr = _keyframe_expression(keyframes, "y", 0.0, fps, clip_time)
             overlay_filter = (
                 f"[{previous}][v{index}]overlay="
                 f"x='(W-w)/2+W*({x_expr})':y='(H-h)/2+H*({y_expr})':"
