@@ -486,7 +486,19 @@ class ZenithEditor(QMainWindow):
         self.transform_easing_combo.addItem("Ease In", "ease_in")
         self.transform_easing_combo.addItem("Ease Out", "ease_out")
         self.transform_easing_combo.addItem("Ease In-Out", "ease_in_out")
+        self.transform_easing_combo.addItem("Cubic Bezier", "bezier")
         inspector_layout.addWidget(self.transform_easing_combo)
+        self.bezier_controls: dict[str, QDoubleSpinBox] = {}
+        for key, title, default in (("bezier_y1", "Bezier Handle 1 (Y)", 0.0),
+                                    ("bezier_y2", "Bezier Handle 2 (Y)", 1.0)):
+            inspector_layout.addWidget(QLabel(title))
+            spin = QDoubleSpinBox()
+            spin.setRange(0.0, 1.0)
+            spin.setSingleStep(0.05)
+            spin.setDecimals(2)
+            spin.setValue(default)
+            self.bezier_controls[key] = spin
+            inspector_layout.addWidget(spin)
         self.add_transform_keyframe_button = QPushButton("ثبت Keyframe در محل Playhead")
         self.add_transform_keyframe_button.setEnabled(False)
         self.add_transform_keyframe_button.clicked.connect(self._add_transform_keyframe)
@@ -1033,6 +1045,8 @@ class ZenithEditor(QMainWindow):
                 del blocker
         for control in self.transform_controls.values():
             control.setEnabled(enabled)
+        for control in self.bezier_controls.values():
+            control.setEnabled(enabled)
         if not enabled:
             self.transform_keyframes_label.setText("Keyframe: —")
             return
@@ -1070,6 +1084,10 @@ class ZenithEditor(QMainWindow):
             if index >= 0:
                 blocker = QSignalBlocker(self.transform_easing_combo)
                 self.transform_easing_combo.setCurrentIndex(index)
+                del blocker
+            for key, control in self.bezier_controls.items():
+                blocker = QSignalBlocker(control)
+                control.setValue(float(active_key.get(key, 0.0 if key.endswith("y1") else 1.0)))
                 del blocker
         self.transform_keyframes_label.setText(
             f"{len(clip.transform_keyframes)} Keyframe | فریم فعلی کلیپ: {local_frame}"
@@ -1299,6 +1317,7 @@ class ZenithEditor(QMainWindow):
             "frame": local_frame,
             **{key: control.value() for key, control in self.transform_controls.items()},
             "ease": self.transform_easing_combo.currentData() or "linear",
+            **{key: control.value() for key, control in self.bezier_controls.items()},
         })
         keys.sort(key=lambda item: int(item["frame"]))
         try:
