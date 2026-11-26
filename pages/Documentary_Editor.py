@@ -339,10 +339,11 @@ if create:
                         if not usable:
                             return -1
                         return max((min(f.get("width", 0), 1080) * min(f.get("height", 0), 1920) for f in usable))
+                    results = [v for v in results if rank_video(v) >= 0]
+                    if not results:
+                        raise RuntimeError(f"فایل MP4 برای سکانس {i+1} پیدا نشد.")
                     chosen = max(results, key=rank_video)
                     candidates = [f for f in chosen.get("video_files", []) if f.get("file_type") == "video/mp4" and f.get("link")]
-                    if not candidates:
-                        raise RuntimeError(f"فایل MP4 برای سکانس {i+1} پیدا نشد.")
                     portrait = [f for f in candidates if f.get("height", 0) >= f.get("width", 0)]
                     selected = max(portrait or candidates, key=lambda f: min(f.get("width", 0),1080) * min(f.get("height",0),1920))
                     clip_response = requests.get(selected["link"], stream=True, timeout=(30,180))
