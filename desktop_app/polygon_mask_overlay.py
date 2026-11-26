@@ -2,29 +2,12 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal, QPointF, QRectF
-from PySide6.QtGui import QColor, QBrush, QPen, QPolygonF
+from PySide6.QtGui import QColor, QBrush, QPen, QPolygonF, QPainter
 from PySide6.QtWidgets import QWidget
 
-
-def fitted_video_rect(width: float, height: float, frame_width: float, frame_height: float) -> QRectF:
-    """Return the centered letterboxed frame rectangle in widget coordinates."""
-    if min(width, height, frame_width, frame_height) <= 0:
-        return QRectF()
-    scale = min(width / frame_width, height / frame_height)
-    w, h = frame_width * scale, frame_height * scale
-    return QRectF((width - w) / 2.0, (height - h) / 2.0, w, h)
-
-
-def normalized_point_to_widget(point: list[float], rect: QRectF) -> QPointF:
-    return QPointF(rect.left() + float(point[0]) * rect.width(),
-                   rect.top() + float(point[1]) * rect.height())
-
-
-def widget_point_to_normalized(point: QPointF, rect: QRectF) -> list[float]:
-    if rect.width() <= 0 or rect.height() <= 0:
-        return [0.0, 0.0]
-    return [max(0.0, min(1.0, (point.x() - rect.left()) / rect.width())),
-            max(0.0, min(1.0, (point.y() - rect.top()) / rect.height()))]
+from polygon_mask_math import (
+    fitted_video_rect, normalized_point_to_widget, widget_point_to_normalized,
+)
 
 
 class PolygonMaskOverlay(QWidget):
@@ -53,14 +36,14 @@ class PolygonMaskOverlay(QWidget):
         self.update()
 
     def _video_rect(self) -> QRectF:
-        return fitted_video_rect(self.width(), self.height(), *self._frame_size)
+        return QRectF(*fitted_video_rect(self.width(), self.height(), *self._frame_size))
 
     def _handle_at(self, pos: QPointF) -> int | None:
         rect = self._video_rect()
         nearest, nearest_distance = None, 14.0
         for index, point in enumerate(self._points):
-            target = normalized_point_to_widget(point, rect)
-            distance = ((target.x() - pos.x()) ** 2 + (target.y() - pos.y()) ** 2) ** 0.5
+            x, y = normalized_point_to_widget(point, (rect.x(), rect.y(), rect.width(), rect.height()))
+            distance = ((x - pos.x()) ** 2 + (y - pos.y()) ** 2) ** 0.5
             if distance <= nearest_distance:
                 nearest, nearest_distance = index, distance
         return nearest
@@ -68,16 +51,19 @@ class PolygonMaskOverlay(QWidget):
     def paintEvent(self, _event):
         if not self._active or len(self._points) < 3:
             return
-        from PySide6.QtGui import QPainter
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing, True)
         rect = self._video_rect()
-        polygon = QPolygonF([normalized_point_to_widget(p, rect) for p in self._points])
+        geometry = (rect.x(), rect.y(), rect.width(), rect.height())
+        polygon = QPolygonF([
+            QPointF(*normalized_point_to_widget(point, geometry))
+            for point in self._points
+        ])
         painter.setPen(QPen(QColor(255, 214, 112, 230), 2))
         painter.setBrush(QBrush(QColor(255, 214, 112, 35)))
         painter.drawPolygon(polygon)
         for index, point in enumerate(self._points):
-            center = normalized_point_to_widget(point, rect)
+            center = QPointF(*normalized_point_to_widget(point, geometry))
             painter.setPen(QPen(QColor("#241B08"), 1))
             painter.setBrush(QBrush(QColor("#FFF0B5" if index == self._drag_index else "#D6AE55")))
             painter.drawEllipse(center, 6.0, 6.0)
@@ -96,8 +82,10 @@ class PolygonMaskOverlay(QWidget):
 
     def mouseMoveEvent(self, event):
         if self._drag_index is not None:
+            rect = self._video_rect()
             self._points[self._drag_index] = widget_point_to_normalized(
-                event.position(), self._video_rect()
+                (event.position().x(), event.position().y()),
+                (rect.x(), rect.y(), rect.width(), rect.height())
             )
             self.pointsChanged.emit([[round(x, 6), round(y, 6)] for x, y in self._points])
             self.update()
