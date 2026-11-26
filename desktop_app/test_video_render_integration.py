@@ -28,7 +28,7 @@ class TransformRenderIntegrationTests(unittest.TestCase):
                 path=str(source), name="generated test", track="V1",
                 clip_id="integration", media_type="video", start_frame=0,
                 source_in=0, duration_frames=50, end_frame=50, color_grade={},
-                anchor_x=0.25, anchor_y=0.75,
+                anchor_x=0.25, anchor_y=0.75, playback_rate=0.5,
                 transform_keyframes=[
                     {"frame": 0, "x": -0.1, "y": 0.0, "scale": 1.0, "rotation": 0.0, "ease": "ease_in_out"},
                     {"frame": 25, "x": 0.1, "y": 0.05, "scale": 1.35, "rotation": 12.0, "ease": "linear"},
