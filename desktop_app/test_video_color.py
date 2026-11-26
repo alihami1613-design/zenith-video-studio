@@ -37,6 +37,30 @@ class VideoColorTests(unittest.TestCase):
         self.assertIn("0.000/", result)
         self.assertIn("1.000/", result)
 
+    def test_builds_three_way_color_wheel_balance(self):
+        result = build_color_filter({
+            "wheel_shadows_r": 0.4,
+            "wheel_midtones_g": -0.25,
+            "wheel_highlights_b": 0.6,
+        })
+        self.assertIn("colorbalance=", result)
+        self.assertIn("rs=0.060", result)
+        self.assertIn("gm=-0.037", result)
+        self.assertIn("bh=0.090", result)
+
+    def test_three_way_wheels_are_accepted_by_ffmpeg(self):
+        ffmpeg = find_ffmpeg()
+        command = [
+            ffmpeg, "-hide_banner", "-loglevel", "error",
+            "-f", "lavfi", "-i", "testsrc2=size=64x64:rate=10:duration=0.3",
+            "-vf", build_color_filter({
+                "wheel_shadows_r": 0.4, "wheel_midtones_g": -0.25,
+                "wheel_highlights_b": 0.6,
+            }),
+            "-frames:v", "3", "-f", "null", "-",
+        ]
+        subprocess.run(command, check=True, capture_output=True, text=True, timeout=30)
+
     def test_tonal_curve_rejects_out_of_range_values(self):
         with self.assertRaises(ValueError):
             build_color_filter({"highlights": 1.1})
