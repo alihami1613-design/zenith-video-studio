@@ -394,6 +394,23 @@ class ZenithEditor(QMainWindow):
             spin.setValue(value)
             self.transform_controls[key] = spin
             inspector_layout.addWidget(spin)
+        self.anchor_controls: dict[str, QDoubleSpinBox] = {}
+        for key, title in (("anchor_x", "Anchor X (0 تا 1)"), ("anchor_y", "Anchor Y (0 تا 1)")):
+            inspector_layout.addWidget(QLabel(title))
+            spin = QDoubleSpinBox()
+            spin.setRange(0.0, 1.0)
+            spin.setSingleStep(0.05)
+            spin.setDecimals(2)
+            spin.setValue(0.5)
+            self.anchor_controls[key] = spin
+            inspector_layout.addWidget(spin)
+        inspector_layout.addWidget(QLabel("نوع حرکت تا Keyframe بعدی"))
+        self.transform_easing_combo = QComboBox()
+        self.transform_easing_combo.addItem("Linear", "linear")
+        self.transform_easing_combo.addItem("Ease In", "ease_in")
+        self.transform_easing_combo.addItem("Ease Out", "ease_out")
+        self.transform_easing_combo.addItem("Ease In-Out", "ease_in_out")
+        inspector_layout.addWidget(self.transform_easing_combo)
         self.add_transform_keyframe_button = QPushButton("ثبت Keyframe در محل Playhead")
         self.add_transform_keyframe_button.setEnabled(False)
         self.add_transform_keyframe_button.clicked.connect(self._add_transform_keyframe)
@@ -817,6 +834,17 @@ class ZenithEditor(QMainWindow):
             blocker = QSignalBlocker(control)
             control.setValue(values[key])
             del blocker
+        for key, control in self.anchor_controls.items():
+            blocker = QSignalBlocker(control)
+            control.setValue(float(getattr(clip, key, 0.5)))
+            del blocker
+        active_key = before or after
+        if active_key:
+            index = self.transform_easing_combo.findData(active_key.get("ease", "linear"))
+            if index >= 0:
+                blocker = QSignalBlocker(self.transform_easing_combo)
+                self.transform_easing_combo.setCurrentIndex(index)
+                del blocker
         self.transform_keyframes_label.setText(
             f"{len(clip.transform_keyframes)} Keyframe | فریم فعلی کلیپ: {local_frame}"
         )
@@ -832,9 +860,12 @@ class ZenithEditor(QMainWindow):
             return
         self._push_undo()
         keys = [dict(item) for item in clip.transform_keyframes if int(item["frame"]) != local_frame]
+        clip.anchor_x = self.anchor_controls["anchor_x"].value()
+        clip.anchor_y = self.anchor_controls["anchor_y"].value()
         keys.append({
             "frame": local_frame,
             **{key: control.value() for key, control in self.transform_controls.items()},
+            "ease": self.transform_easing_combo.currentData() or "linear",
         })
         keys.sort(key=lambda item: int(item["frame"]))
         try:
@@ -843,7 +874,7 @@ class ZenithEditor(QMainWindow):
             self.statusBar().showMessage(f"ثبت Keyframe انجام نشد: {exc}")
             return
         self._sync_transform_controls()
-        self.statusBar().showMessage("Keyframe ثبت شد؛ حرکت بین نقاط به‌صورت خطی در خروجی MP4 محاسبه می‌شود.")
+        self.statusBar().showMessage("Keyframe ثبت شد؛ منحنی حرکتی انتخاب‌شده در خروجی MP4 اعمال می‌شود.")
 
     def _sync_color_controls(self) -> None:
         clip_id = self.timeline_widget.canvas.selected_clip_id
