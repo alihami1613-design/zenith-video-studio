@@ -184,22 +184,30 @@ class TimelineProject:
             raw_clips = data.get("timeline", [])
 
         clips: list[Clip] = []
+        legacy_track_cursor: dict[str, int] = {}
         for raw in raw_clips:
             path = str(raw.get("path", ""))
             name = str(raw.get("name") or path.rsplit("/", 1)[-1].rsplit("\\\\", 1)[-1] or "Untitled")
             track = str(raw.get("track", "V1"))
             if track not in DEFAULT_VIDEO_TRACKS + DEFAULT_AUDIO_TRACKS:
                 track = "V1"
-            # Legacy projects stored no timing. Give each legacy item a safe,
-            # editable five-second placeholder rather than failing to load.
-            duration = int(raw.get("duration_frames", 150) or 150)
+            # Legacy projects stored no timing. Place those clips sequentially
+            # on their track using a five-second editable placeholder.
+            duration = max(1, int(raw.get("duration_frames", 150) or 150))
+            if "start_frame" in raw:
+                start_frame = max(0, int(raw.get("start_frame", 0) or 0))
+            else:
+                start_frame = legacy_track_cursor.get(track, 0)
+            legacy_track_cursor[track] = max(
+                legacy_track_cursor.get(track, 0), start_frame + duration
+            )
             clips.append(Clip(
                 path=path,
                 name=name,
                 track=track,
-                start_frame=max(0, int(raw.get("start_frame", 0) or 0)),
+                start_frame=start_frame,
                 source_in=max(0, int(raw.get("source_in", 0) or 0)),
-                duration_frames=max(1, duration),
+                duration_frames=duration,
                 clip_id=str(raw.get("clip_id") or _new_id()),
                 media_type=str(raw.get("media_type", "audio" if track.startswith("A") else "video")),
             ))
