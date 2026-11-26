@@ -321,7 +321,6 @@ class ZenithEditor(QMainWindow):
 
     def _clip_trimmed(self, clip_id: str, start_frame: int, end_frame: int) -> None:
         try:
-            clip = self.timeline_project.get_clip(clip_id)
             self.timeline_project.trim_clip(clip_id, new_start_frame=start_frame, new_end_frame=end_frame)
         except (KeyError, ValueError) as exc:
             self.statusBar().showMessage(f"کوتاه‌کردن کلیپ انجام نشد: {exc}")
