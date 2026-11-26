@@ -707,11 +707,13 @@ class ZenithEditor(QMainWindow):
                          source_handles, self.timeline_project.fps * 5)
         self.cross_dissolve_slider.setRange(0, max(max_frames, clip.transition_in_frames))
         self.cross_dissolve_slider.setValue(clip.transition_in_frames)
-        self.cross_dissolve_slider.setEnabled(adjacent or clip.transition_in_frames > 0)
+        self.cross_dissolve_slider.setEnabled((adjacent and max_frames > 0) or clip.transition_in_frames > 0)
         del blockers
         fps = max(1, self.timeline_project.fps)
         if not adjacent and clip.transition_in_frames == 0:
             self.cross_dissolve_label.setText("Cross Dissolve: نیازمند کلیپ قبلی چسبیده")
+        elif adjacent and max_frames == 0 and clip.transition_in_frames == 0:
+            self.cross_dissolve_label.setText("Cross Dissolve: نیازمند فریم قبل از In")
         else:
             self.cross_dissolve_label.setText(f"Cross Dissolve In: {clip.transition_in_frames / fps:.1f} ثانیه")
 
