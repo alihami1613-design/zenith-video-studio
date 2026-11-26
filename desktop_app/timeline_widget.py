@@ -10,7 +10,7 @@ from PySide6.QtCore import Qt, Signal, QPoint, QSize
 from PySide6.QtGui import QColor, QFont, QPainter, QPen, QBrush
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QScrollArea, QSlider,
+    QScrollArea, QSlider, QFrame,
 )
 
 TRACKS = ("V4", "V3", "V2", "V1", "A1", "A2", "A3", "A4")
@@ -152,8 +152,8 @@ class TimelineCanvas(QWidget):
             self.clipSelected.emit(clip.clip_id)
         else:
             self.selected_clip_id = None
-            if point.y() >= RULER_HEIGHT:
-                self.playheadChanged.emit(self._x_frame(point.x()))
+            # Clicking the ruler or an empty track seeks the playhead.
+            self.playheadChanged.emit(self._x_frame(point.x()))
         self.update()
 
     def mouseMoveEvent(self, event):
@@ -211,7 +211,7 @@ class TimelineWidget(QWidget):
 
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(False)
-        self.scroll.setFrameShape(QScrollArea.NoFrame)
+        self.scroll.setFrameShape(QFrame.NoFrame)
         self.canvas = TimelineCanvas(project)
         self.scroll.setWidget(self.canvas)
         root.addWidget(self.scroll, 1)
