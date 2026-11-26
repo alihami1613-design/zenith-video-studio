@@ -92,7 +92,7 @@ class TimelineModelTests(unittest.TestCase):
         project = TimelineProject()
         project.add_clip("a.mp4", "a", start_frame=0, duration_frames=90)
         second = project.add_clip("b.mp4", "b", start_frame=90, duration_frames=90)
-        with self.assertRaisesRegex(ValueError, "فریم‌های اضافه"):
+        with self.assertRaisesRegex(ValueError, "source handle"):
             project.set_clip_transition(second.clip_id, dissolve_in_frames=15)
 
     def test_cross_dissolve_duration_cannot_exceed_clip(self):
