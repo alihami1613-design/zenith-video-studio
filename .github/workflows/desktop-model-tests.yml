@@ -25,6 +25,7 @@ on:
       - "desktop_app/timeline_widget.py"
       - "desktop_app/video_render.py"
       - "desktop_app/test_video_render.py"
+      - "desktop_app/test_video_render_integration.py"
       - ".github/workflows/desktop-model-tests.yml"
   pull_request:
     paths:
@@ -44,6 +45,7 @@ on:
       - "desktop_app/timeline_widget.py"
       - "desktop_app/video_render.py"
       - "desktop_app/test_video_render.py"
+      - "desktop_app/test_video_render_integration.py"
       - ".github/workflows/desktop-model-tests.yml"
 
 jobs:
