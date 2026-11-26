@@ -214,6 +214,40 @@ class ZenithEditor(QMainWindow):
         self.media_info.setWordWrap(True)
         self.media_info.setObjectName("muted")
         inspector_layout.addWidget(self.media_info)
+
+        audio_heading = QLabel("کنترل صدای کلیپ انتخاب‌شده")
+        audio_heading.setObjectName("panel_title")
+        inspector_layout.addWidget(audio_heading)
+
+        self.volume_value_label = QLabel("حجم صدا: 100٪")
+        inspector_layout.addWidget(self.volume_value_label)
+        self.volume_slider = QSlider(Qt.Horizontal)
+        self.volume_slider.setRange(0, 200)
+        self.volume_slider.setValue(100)
+        self.volume_slider.setToolTip("تنظیم حجم کلیپ از صفر تا ۲۰۰ درصد")
+        self.volume_slider.sliderPressed.connect(self._push_undo)
+        self.volume_slider.valueChanged.connect(self._audio_controls_changed)
+        inspector_layout.addWidget(self.volume_slider)
+
+        self.fade_in_label = QLabel("Fade In: 0.0 ثانیه")
+        inspector_layout.addWidget(self.fade_in_label)
+        self.fade_in_slider = QSlider(Qt.Horizontal)
+        self.fade_in_slider.setRange(0, 300)
+        self.fade_in_slider.setValue(0)
+        self.fade_in_slider.setToolTip("مدت محوشدن تدریجی صدای ابتدا")
+        self.fade_in_slider.sliderPressed.connect(self._push_undo)
+        self.fade_in_slider.valueChanged.connect(self._audio_controls_changed)
+        inspector_layout.addWidget(self.fade_in_slider)
+
+        self.fade_out_label = QLabel("Fade Out: 0.0 ثانیه")
+        inspector_layout.addWidget(self.fade_out_label)
+        self.fade_out_slider = QSlider(Qt.Horizontal)
+        self.fade_out_slider.setRange(0, 300)
+        self.fade_out_slider.setValue(0)
+        self.fade_out_slider.setToolTip("مدت محوشدن تدریجی صدای انتها")
+        self.fade_out_slider.sliderPressed.connect(self._push_undo)
+        self.fade_out_slider.valueChanged.connect(self._audio_controls_changed)
+        inspector_layout.addWidget(self.fade_out_slider)
         inspector_layout.addStretch(1)
 
         top_split.addWidget(media_panel)
@@ -307,6 +341,7 @@ class ZenithEditor(QMainWindow):
         except KeyError:
             return
         self.media_info.setText(f"کلیپ انتخاب‌شده: {clip.name}\nمسیر: {clip.track}")
+        self._sync_audio_controls()
         if Path(clip.path).exists():
             position_ms = int(clip.source_in * 1000 / self.timeline_project.fps)
             preview_path = Path(clip.path)
@@ -326,6 +361,60 @@ class ZenithEditor(QMainWindow):
                     del blocker
                     break
             self._load_preview_source(preview_path, position_ms)
+
+    def _sync_audio_controls(self) -> None:
+        clip_id = self.timeline_widget.canvas.selected_clip_id
+        clip = None
+        if clip_id:
+            try:
+                clip = self.timeline_project.get_clip(clip_id)
+            except KeyError:
+                clip = None
+        enabled = bool(clip and clip.media_type == "audio")
+        for control in (self.volume_slider, self.fade_in_slider, self.fade_out_slider):
+            control.setEnabled(enabled)
+        if not enabled:
+            self.volume_value_label.setText("حجم صدا: —")
+            self.fade_in_label.setText("Fade In: —")
+            self.fade_out_label.setText("Fade Out: —")
+            return
+        blockers = [QSignalBlocker(control) for control in
+                    (self.volume_slider, self.fade_in_slider, self.fade_out_slider)]
+        self.volume_slider.setValue(round(clip.volume * 100))
+        max_fade = min(clip.duration_frames, self.timeline_project.fps * 10)
+        self.fade_in_slider.setRange(0, max_fade)
+        self.fade_out_slider.setRange(0, max_fade)
+        self.fade_in_slider.setValue(min(clip.fade_in_frames, max_fade))
+        self.fade_out_slider.setValue(min(clip.fade_out_frames, max_fade))
+        del blockers
+        self.volume_value_label.setText(f"حجم صدا: {round(clip.volume * 100)}٪")
+        fps = max(1, self.timeline_project.fps)
+        self.fade_in_label.setText(f"Fade In: {clip.fade_in_frames / fps:.1f} ثانیه")
+        self.fade_out_label.setText(f"Fade Out: {clip.fade_out_frames / fps:.1f} ثانیه")
+
+    def _audio_controls_changed(self, *_: Any) -> None:
+        clip_id = self.timeline_widget.canvas.selected_clip_id
+        if not clip_id:
+            return
+        try:
+            clip = self.timeline_project.get_clip(clip_id)
+            if clip.media_type != "audio":
+                return
+            self.timeline_project.set_clip_audio(
+                clip_id,
+                volume=self.volume_slider.value() / 100.0,
+                fade_in_frames=self.fade_in_slider.value(),
+                fade_out_frames=self.fade_out_slider.value(),
+            )
+        except (KeyError, ValueError) as exc:
+            self.statusBar().showMessage(f"تنظیم صدای کلیپ اعمال نشد: {exc}")
+            self._sync_audio_controls()
+            return
+        self.volume_value_label.setText(f"حجم صدا: {round(clip.volume * 100)}٪")
+        fps = max(1, self.timeline_project.fps)
+        self.fade_in_label.setText(f"Fade In: {clip.fade_in_frames / fps:.1f} ثانیه")
+        self.fade_out_label.setText(f"Fade Out: {clip.fade_out_frames / fps:.1f} ثانیه")
+        self.timeline_widget.refresh()
 
     def create_proxy_for_selected_media(self) -> None:
         row = self.media_list.currentRow()
@@ -474,6 +563,7 @@ class ZenithEditor(QMainWindow):
     def _refresh_timeline(self) -> None:
         self.timeline_widget.set_project(self.timeline_project)
         self.timeline_widget.set_waveforms(self.waveforms)
+        self._sync_audio_controls()
 
     def _start_waveform(self, path: str) -> None:
         if path in self.waveforms or any(task.path == path for task in self._waveform_tasks):
