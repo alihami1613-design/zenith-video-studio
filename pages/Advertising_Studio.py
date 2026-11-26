@@ -19,31 +19,6 @@ html, body, [class*="css"] { direction: rtl; text-align: right; }
 st.title("🎬 ADVERTISING STUDIO")
 st.caption("استودیوی ساخت تیزر تبلیغاتی | Luxury • Cinematic • High Energy")
 st.info("این بخش مستقل است؛ فایل‌ها و پروژه‌های LUNAVERA و ZENITH را تغییر نمی‌دهد.")
-st.markdown("### 🤖 AI AD DIRECTOR — کارگردان هوشمند تبلیغات")
-st.caption("AI برای ایده، ساختار تیزر، سبک تدوین، متن تبلیغ و پیشنهاد صحنه‌ها. این بخش از API سازگار با OpenAI استفاده می‌کند؛ کلید فقط در نشست فعلی وارد می‌شود و در فایل پروژه ذخیره نمی‌شود.")
-with st.expander("🧠 طراحی تدوین با هوش مصنوعی", expanded=True):
-    ai_brief = st.text_area("محصول / هدف / مخاطب / حس موردنظر را توضیح بده", placeholder="مثلاً تبلیغ مبل تخت‌خواب‌شو، مخاطب خانواده‌ها، سبک لوکس و مدرن، هدف فروش ...", height=110, key="ai_ad_brief")
-    ai_key = st.text_input("API Key (ارائه‌دهنده سازگار با OpenAI)", type="password", key="ai_ad_api_key")
-    ai_endpoint = st.text_input("API Base URL", value="https://api.openai.com/v1", key="ai_ad_endpoint")
-    ai_model = st.text_input("Model", value="gpt-4o-mini", key="ai_ad_model")
-    if st.button("✨ طراحی برنامه تدوین با AI", key="ai_ad_plan_btn", use_container_width=True):
-        if not ai_brief.strip() or not ai_key.strip():
-            st.warning("شرح تبلیغ و API Key را وارد کن.")
-        else:
-            try:
-                ai_url = ai_endpoint.strip().rstrip("/") + "/chat/completions"
-                ai_prompt = """You are an expert commercial video editor and creative director. Create a practical edit plan for an advertising video based on the user's brief. Respond in Persian, compact but useful, with these sections: concept, shot-by-shot timeline (time ranges, shot type, camera movement, transition), color grade, motion graphics and exact on-screen copy, sound design/music mixing, editing notes. Make a clean professional plan. Do not claim to analyze footage that was not provided. Brief: """ + ai_brief.strip()
-                ai_response = requests.post(ai_url, headers={"Authorization": "Bearer " + ai_key.strip(), "Content-Type": "application/json"}, json={"model": ai_model.strip(), "messages":[{"role":"system","content":"You are a professional advertising director and editor. Provide executable, realistic advice. Answer in Persian."},{"role":"user","content":ai_prompt}],"temperature":0.7}, timeout=90)
-                ai_response.raise_for_status()
-                ai_text = ai_response.json()["choices"][0]["message"]["content"]
-                st.session_state["ai_ad_plan_result"] = ai_text
-                st.success("برنامه تدوین AI آماده شد.")
-            except Exception as ai_err:
-                st.error("دریافت پاسخ AI ناموفق بود.")
-                st.code(str(ai_err)[:1500])
-    if st.session_state.get("ai_ad_plan_result"):
-        st.markdown("#### برنامه تدوین پیشنهادی")
-        st.markdown(st.session_state["ai_ad_plan_result"])
 
 
 st.markdown("### ۱. ویدئوهای تبلیغاتی")
@@ -125,6 +100,74 @@ else:
     st.caption("اگر موسیقی بارگذاری نکنی، برنامه موسیقی تبلیغاتی پیش‌فرض را از Wikimedia Commons دریافت می‌کند.")
 if narration:
     st.audio(narration)
+
+st.markdown("### 🤖 AI AD DIRECTOR — کارگردان هوشمند تبلیغات")
+st.caption("علاوه بر شرح پروژه، هوش مصنوعی می‌تواند یک فریم نمونه از عکس‌ها و کلیپ‌های انتخاب‌شده را بررسی کند. این تحلیل، بررسی فریم نمونه است و نه بازبینی کامل تمام ثانیه‌های ویدئو.")
+with st.expander("🧠 تحلیل هوشمند فوتیج و طراحی تدوین", expanded=True):
+    ai_brief = st.text_area("محصول / هدف / مخاطب / حس موردنظر را توضیح بده", placeholder="مثلاً تبلیغ مبل تخت‌خواب‌شو، مخاطب خانواده‌ها، سبک لوکس و مدرن، هدف فروش ...", height=100, key="ai_ad_brief")
+    ai_key = st.text_input("API Key (ارائه‌دهنده سازگار با OpenAI)", type="password", key="ai_ad_api_key")
+    ai_endpoint = st.text_input("API Base URL", value="https://api.openai.com/v1", key="ai_ad_endpoint")
+    ai_model = st.text_input("مدل دارای قابلیت بینایی (Vision)", value="gpt-4o-mini", key="ai_ad_model")
+    if st.button("✨ تحلیل فوتیج و طراحی برنامه تدوین", key="ai_ad_plan_btn", use_container_width=True):
+        if not ai_brief.strip() or not ai_key.strip():
+            st.warning("شرح تبلیغ و API Key را وارد کن.")
+        elif not (videos or photos):
+            st.warning("برای تحلیل تصویری، ابتدا حداقل یک عکس یا کلیپ بارگذاری کن.")
+        else:
+            try:
+                import base64
+                ai_ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
+                visual_parts = []
+                asset_list = [(item, "video") for item in (videos or [])] + [(item, "photo") for item in (photos or [])]
+                with tempfile.TemporaryDirectory() as ai_td:
+                    ai_work = Path(ai_td)
+                    for asset_index, (asset, asset_type) in enumerate(asset_list[:8]):
+                        asset_suffix = Path(asset.name).suffix.lower() or (".mp4" if asset_type == "video" else ".jpg")
+                        asset_path = ai_work / f"asset_{asset_index}{asset_suffix}"
+                        frame_path = ai_work / f"sample_{asset_index}.jpg"
+                        asset_path.write_bytes(asset.getbuffer())
+                        if asset_type == "video":
+                            frame_cmd = [ai_ffmpeg, "-y", "-ss", "1", "-i", str(asset_path), "-frames:v", "1", "-vf", "scale=640:-2", "-q:v", "5", str(frame_path)]
+                        else:
+                            frame_cmd = [ai_ffmpeg, "-y", "-i", str(asset_path), "-frames:v", "1", "-vf", "scale=640:-2", "-q:v", "5", str(frame_path)]
+                        frame_proc = subprocess.run(frame_cmd, capture_output=True, text=True, timeout=60)
+                        if frame_proc.returncode == 0 and frame_path.exists() and frame_path.stat().st_size:
+                            encoded = base64.b64encode(frame_path.read_bytes()).decode("ascii")
+                            visual_parts.append({"type":"text","text":f"Asset {asset_index+1}: {asset.name} ({'video representative frame at approx. 1 second' if asset_type == 'video' else 'photo'})"})
+                            visual_parts.append({"type":"image_url","image_url":{"url":"data:image/jpeg;base64,"+encoded,"detail":"low"}})
+                if not visual_parts:
+                    raise RuntimeError("از فایل‌های انتخاب‌شده فریم قابل‌خواندن استخراج نشد.")
+                ai_prompt = f"""You are a senior commercial film director, editor and post-production supervisor. Analyze the supplied representative frames and the brief. Build a practical, executable edit plan. Clearly distinguish visual observations from assumptions because only one representative frame per video is supplied. Do not claim to have watched full clips.
+Brief: {ai_brief.strip()}
+Requested duration: {duration} seconds.
+Aspect ratio: {orientation}.
+Color mood: {style}.
+Editing preset: {edit_preset}.
+Transition preference: {transition}.
+VFX strength: {vfx_strength}/100.
+Motion graphic title: {mg_title}; subtitle: {mg_subtitle}; CTA: {mg_cta}.
+Return in Persian with: (1) visual analysis of each asset by filename, (2) recommended asset order with reasons, (3) shot-by-shot timeline that totals exactly {duration} seconds, (4) crop/framing advice for {orientation}, (5) color grade, (6) motion graphics, (7) sound design and mix, (8) final quality-control checklist. Avoid generic advice; be specific to the visible frames."""
+                visual_parts.insert(0, {"type":"text","text":ai_prompt})
+                ai_url = ai_endpoint.strip().rstrip("/") + "/chat/completions"
+                ai_response = requests.post(
+                    ai_url,
+                    headers={"Authorization":"Bearer "+ai_key.strip(),"Content-Type":"application/json"},
+                    json={"model":ai_model.strip(),"messages":[
+                        {"role":"system","content":"You are a professional advertising director and editor. Analyze only the supplied images and user-provided facts. Answer in Persian. Never claim to have inspected unseen footage."},
+                        {"role":"user","content":visual_parts}
+                    ],"temperature":0.5},
+                    timeout=150
+                )
+                ai_response.raise_for_status()
+                ai_text = ai_response.json()["choices"][0]["message"]["content"]
+                st.session_state["ai_ad_plan_result"] = ai_text
+                st.success(f"تحلیل {len(visual_parts)//2} نمونه تصویری انجام شد و برنامه تدوین آماده است.")
+            except Exception as ai_err:
+                st.error("تحلیل AI انجام نشد؛ رندر عادی برنامه تغییری نکرده است.")
+                st.code(str(ai_err)[:1500])
+    if st.session_state.get("ai_ad_plan_result"):
+        st.markdown("#### گزارش تحلیل و برنامه تدوین")
+        st.markdown(st.session_state["ai_ad_plan_result"])
 
 st.caption("خروجی: MP4 / H.264 / 1080p / 24fps. قالب عمودی 9:16 برای نمایش تمام‌صفحه Reels یا افقی 16:9.")
 st.caption("موسیقی پیش‌فرض: Soft Corporate — MusicLFiles | مجوز CC BY 4.0؛ در انتشار ویدئو نام سازنده و پیوند منبع را ذکر کن: https://commons.wikimedia.org/wiki/File:Soft_Corporate_by_MusicLFiles.ogg")
