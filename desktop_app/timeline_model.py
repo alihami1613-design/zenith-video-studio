@@ -302,6 +302,11 @@ class TimelineProject:
         ):
             retained_keys.insert(0, {"frame": 0, **_transform_value_at(original_keys, removed_from_left)})
         clip.transform_keyframes = retained_keys
+        clip.speed_ramp = [
+            dict(point, frame=int(point["frame"]) - removed_from_left)
+            for point in clip.speed_ramp
+            if removed_from_left <= int(point["frame"]) < removed_from_left + clip.duration_frames
+        ]
         clip.validate()
         return clip
 
@@ -429,6 +434,15 @@ class TimelineProject:
             for key in clip.transform_keyframes
         ]
         clip.transform_keyframes.sort(key=lambda item: int(item["frame"]))
+        clip.speed_ramp = [
+            dict(point, frame=min(new_duration - 1, round(int(point["frame"]) * ratio)))
+            for point in clip.speed_ramp
+        ]
+        clip.speed_ramp.sort(key=lambda item: int(item["frame"]))
+        clip.speed_ramp = [
+            point for index, point in enumerate(clip.speed_ramp)
+            if index == 0 or point["frame"] > clip.speed_ramp[index - 1]["frame"]
+        ]
         clip.transform_keyframes = [
             key for index, key in enumerate(clip.transform_keyframes)
             if index == 0 or key["frame"] > clip.transform_keyframes[index - 1]["frame"]
