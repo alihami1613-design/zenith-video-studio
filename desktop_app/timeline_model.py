@@ -187,7 +187,7 @@ class TimelineProject:
         legacy_track_cursor: dict[str, int] = {}
         for raw in raw_clips:
             path = str(raw.get("path", ""))
-            name = str(raw.get("name") or path.rsplit("/", 1)[-1].rsplit("\\\\", 1)[-1] or "Untitled")
+            name = str(raw.get("name") or path.replace(chr(92), "/").rsplit("/", 1)[-1] or "Untitled")
             track = str(raw.get("track", "V1"))
             if track not in DEFAULT_VIDEO_TRACKS + DEFAULT_AUDIO_TRACKS:
                 track = "V1"
