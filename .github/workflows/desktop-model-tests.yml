@@ -13,8 +13,6 @@ on:
       - "desktop_app/test_audio_meter.py"
       - "desktop_app/test_audio_render.py"
       - "desktop_app/waveform_manager.py"
-      - "desktop_app/audio_render.py"
-      - "desktop_app/test_audio_render.py"
       - "desktop_app/test_waveform_manager.py"
       - "desktop_app/test_proxy_manager.py"
       - "desktop_app/test_media_probe.py"
