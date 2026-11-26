@@ -90,8 +90,8 @@ def validate_render_project(project: object) -> list[object]:
 
 
 
-def _keyframe_expression(keyframes: list[dict[str, float]], field: str, default: float, fps: int) -> str:
-    """Build a piecewise-linear FFmpeg expression using clip-local T."""
+def _keyframe_expression(keyframes: list[dict[str, float]], field: str, default: float, fps: int, time_expr: str = "t") -> str:
+    """Build a piecewise-linear FFmpeg expression using the supplied clip-local time expression."""
     if not keyframes:
         return f"{default:.6f}"
     points = [(int(item["frame"]) / fps, float(item.get(field, default))) for item in keyframes]
