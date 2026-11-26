@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
     QListWidgetItem, QSplitter, QFrame, QStatusBar, QSlider, QCheckBox, QComboBox, QProgressBar, QDoubleSpinBox, QLineEdit, QSpinBox
 )
 
-from timeline_model import TimelineProject, transform_eased_progress
+from timeline_model import TimelineProject, mask_values_at, transform_eased_progress
 from timeline_widget import TimelineWidget
 from media_probe import probe_media, duration_to_frames
 from proxy_manager import create_proxy
@@ -1246,9 +1246,16 @@ class ZenithEditor(QMainWindow):
             blocker = QSignalBlocker(self.mask_checkbox)
             self.mask_checkbox.setChecked(bool(clip.mask_enabled))
             del blocker
+            local_frame = max(0, min(clip.duration_frames - 1,
+                self.timeline_project.playhead_frame - clip.start_frame))
+            mask_values = mask_values_at(
+                clip.mask_keyframes, local_frame,
+                {"x": clip.mask_x, "y": clip.mask_y,
+                 "width": clip.mask_width, "height": clip.mask_height},
+            )
             for key, control in self.mask_controls.items():
                 blocker = QSignalBlocker(control)
-                control.setValue(float(getattr(clip, key)))
+                control.setValue(float(mask_values[key.removeprefix("mask_")]))
                 del blocker
             blocker = QSignalBlocker(self.mask_shape_combo)
             shape_index = self.mask_shape_combo.findData(str(clip.mask_shape))
