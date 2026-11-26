@@ -44,7 +44,7 @@ class TimelineModelTests(unittest.TestCase):
         self.assertAlmostEqual(saved.volume, 0.8)
         self.assertEqual(saved.fade_in_frames, 30)
         self.assertEqual(saved.fade_out_frames, 45)
-        self.assertEqual(project.to_dict()["schema_version"], 4)
+        self.assertEqual(project.to_dict()["schema_version"], 5)
 
     def test_audio_track_mixer_round_trip(self):
         project = TimelineProject()
@@ -61,6 +61,27 @@ class TimelineModelTests(unittest.TestCase):
             project.set_audio_track("A1", volume=2.5)
         with self.assertRaises(ValueError):
             project.set_audio_track("V1", muted=True)
+
+    def test_audio_ducking_settings_round_trip(self):
+        project = TimelineProject()
+        project.set_audio_ducking(
+            enabled=True, voice_track="A1", music_track="A2",
+            reduction_db=16, attack_ms=35, release_ms=650,
+        )
+        restored = TimelineProject.from_dict(project.to_dict())
+        self.assertTrue(restored.audio_ducking["enabled"])
+        self.assertEqual(restored.audio_ducking["voice_track"], "A1")
+        self.assertEqual(restored.audio_ducking["music_track"], "A2")
+        self.assertEqual(restored.audio_ducking["reduction_db"], 16)
+        self.assertEqual(restored.audio_ducking["attack_ms"], 35)
+        self.assertEqual(restored.audio_ducking["release_ms"], 650)
+
+    def test_audio_ducking_rejects_invalid_routing_and_amount(self):
+        project = TimelineProject()
+        with self.assertRaises(ValueError):
+            project.set_audio_ducking(voice_track="A1", music_track="A1")
+        with self.assertRaises(ValueError):
+            project.set_audio_ducking(reduction_db=30)
 
     def test_legacy_projects_receive_default_track_mixer(self):
         restored = TimelineProject.from_dict({"clips": []})
