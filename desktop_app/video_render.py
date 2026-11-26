@@ -10,8 +10,9 @@ from typing import Iterable
 from audio_render import render_audio_mix
 from proxy_manager import find_ffmpeg
 from video_color import build_color_filter
+from speed_ramp import build_speed_segments
 
-RENDER_VERSION = "timeline-h264-v9-reverse"
+RENDER_VERSION = "timeline-h264-v10-speed-ramp"
 STILL_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".webp", ".tif", ".tiff"}
 
 
@@ -58,7 +59,16 @@ def validate_render_project(project: object) -> list[object]:
         if min(visual_fades) < 0 or max(visual_fades) > clip.duration_frames:
             raise ValueError(f"مدت Fade تصویری نامعتبر است: {clip.name}")
         transition = int(getattr(clip, "transition_in_frames", 0))
+        speed_ramp = list(getattr(clip, "speed_ramp", []) or [])
+        if speed_ramp:
+            if _is_still(clip):
+                raise ValueError(f"Speed Ramp برای عکس ثابت لازم نیست: {clip.name}")
+            if bool(getattr(clip, "reverse_playback", False)):
+                raise ValueError(f"Speed Ramp و Reverse هم‌زمان فعلاً پشتیبانی نمی‌شوند: {clip.name}")
+            if transition:
+                raise ValueError(f"برای استفاده از Speed Ramp، Cross Dissolve کلیپ را ابتدا غیرفعال کنید: {clip.name}")
         if transition:
+
             previous = previous_clip.get(clip.track)
             if previous is None or previous.end_frame != clip.start_frame:
                 raise ValueError(f"Cross Dissolve کلیپ {clip.name} به کلیپ قبلی چسبیده در همان ترک نیاز دارد.")
@@ -125,7 +135,12 @@ def build_video_render_command(ffmpeg: str, project: object,
         transition = int(getattr(clip, "transition_in_frames", 0))
         playback_rate = float(getattr(clip, "playback_rate", 1.0))
         clip_duration = _seconds(clip.duration_frames + transition, fps)
-        source_duration = clip_duration * playback_rate
+        ramp_points = list(getattr(clip, "speed_ramp", []) or [])
+        speed_segments = build_speed_segments(clip.duration_frames, fps, ramp_points) if ramp_points else []
+        source_duration = (
+            sum(float(segment["source_duration_frames"]) for segment in speed_segments) / fps
+            if speed_segments else clip_duration * playback_rate
+        )
         if _is_still(clip):
             command.extend([
                 "-loop", "1", "-framerate", str(fps),
@@ -147,12 +162,42 @@ def build_video_render_command(ffmpeg: str, project: object,
         transition = int(getattr(clip, "transition_in_frames", 0))
         playback_rate = float(getattr(clip, "playback_rate", 1.0))
         clip_duration = _seconds(clip.duration_frames + transition, fps)
-        source_duration = clip_duration * playback_rate
+        ramp_points = list(getattr(clip, "speed_ramp", []) or [])
+        speed_segments = build_speed_segments(clip.duration_frames, fps, ramp_points) if ramp_points else []
+        source_duration = (
+            sum(float(segment["source_duration_frames"]) for segment in speed_segments) / fps
+            if speed_segments else clip_duration * playback_rate
+        )
         start = _seconds(clip.start_frame - transition, fps)
+        if speed_segments:
+            split_labels = "".join(f"[sr{index}_{part}]" for part in range(len(speed_segments)))
+            filters.append(f"[{index}:v:0]split={len(speed_segments)}{split_labels}")
+            segment_outputs = []
+            for part, segment in enumerate(speed_segments):
+                label = f"srout{index}_{part}"
+                segment_outputs.append(f"[{label}]")
+                filters.append(
+                    f"[sr{index}_{part}]trim=start={float(segment['source_start_frames']) / fps:.6f}:"
+                    f"duration={float(segment['source_duration_frames']) / fps:.6f},"
+                    f"setpts=(PTS-STARTPTS)/{float(segment['rate']):.6f}[{label}]"
+                )
+            ramp_label = f"speedramp{index}"
+            filters.append(
+                f"{''.join(segment_outputs)}concat=n={len(speed_segments)}:v=1:a=0,"
+                f"fps={fps},trim=duration={_seconds(clip.duration_frames, fps):.6f},"
+                f"setpts=PTS-STARTPTS[{ramp_label}]"
+            )
+            video_source_label = f"[{ramp_label}]"
+            source_timing = f"trim=duration={_seconds(clip.duration_frames, fps):.6f},setpts=PTS-STARTPTS,"
+        else:
+            video_source_label = f"[{index}:v:0]"
+            source_timing = (
+                f"trim=duration={source_duration:.6f},"
+                + ("reverse," if bool(getattr(clip, "reverse_playback", False)) else "")
+                + f"setpts=(PTS-STARTPTS)/{playback_rate:.6f},"
+            )
         chain = (
-            f"[{index}:v:0]trim=duration={source_duration:.6f},"
-            + ("reverse," if bool(getattr(clip, "reverse_playback", False)) else "")
-            + f"setpts=(PTS-STARTPTS)/{playback_rate:.6f},"
+            f"{video_source_label}{source_timing}"
 
             f"scale={width}:{height}:force_original_aspect_ratio=decrease,"
             f"format=rgba,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:"
