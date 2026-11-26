@@ -190,9 +190,8 @@ def build_animated_mask_shape_expression(shape: str, x_expr: str, y_expr: str,
         transformed.append((tx, ty))
     for index, (x1, y1) in enumerate(transformed):
         x2, y2 = transformed[(index + 1) % len(transformed)]
-        if abs(float(points[index][1]) - float(points[(index + 1) % len(points)][1])) < 1e-9:
-            continue
-        crossings.append(f"if(gt(Y\,{y1})*lte(Y\,{y2})*lt(X\,({x1}+((Y-{y1})*({x2}-{x1})/({y2}-{y1}))))\,1\,0)")
+        denominator = f"if(eq(({y2})\\,{y1})\\,0.000000001\\,(({y2})-({y1})))"
+        crossings.append(f"if(gt(Y\\,{y1})*lte(Y\\,{y2})*lt(X\\,({x1}+((Y-{y1})*({x2}-{x1})/{denominator})))\\,1\\,0)")
     if not crossings:
         raise ValueError("Animated polygon mask cannot contain only horizontal edges")
     count = "+".join(crossings)
