@@ -434,6 +434,34 @@ class ZenithEditor(QMainWindow):
         self.reverse_checkbox.setEnabled(False)
         self.reverse_checkbox.toggled.connect(self._toggle_clip_reverse)
         inspector_layout.addWidget(self.reverse_checkbox)
+        inspector_layout.addWidget(QLabel("Speed Ramp — تنظیم سرعت در فریم کلیپ"))
+        self.speed_ramp_frame_spin = QDoubleSpinBox()
+        self.speed_ramp_frame_spin.setDecimals(0)
+        self.speed_ramp_frame_spin.setRange(0, 1000000)
+        self.speed_ramp_frame_spin.setPrefix("Frame ")
+        self.speed_ramp_frame_spin.setEnabled(False)
+        inspector_layout.addWidget(self.speed_ramp_frame_spin)
+        self.speed_ramp_rate_spin = QDoubleSpinBox()
+        self.speed_ramp_rate_spin.setRange(0.25, 4.0)
+        self.speed_ramp_rate_spin.setSingleStep(0.25)
+        self.speed_ramp_rate_spin.setDecimals(2)
+        self.speed_ramp_rate_spin.setSuffix("x")
+        self.speed_ramp_rate_spin.setEnabled(False)
+        inspector_layout.addWidget(self.speed_ramp_rate_spin)
+        self.add_speed_ramp_button = QPushButton("ثبت نقطه سرعت")
+        self.add_speed_ramp_button.setEnabled(False)
+        self.add_speed_ramp_button.clicked.connect(self._add_speed_ramp_point)
+        inspector_layout.addWidget(self.add_speed_ramp_button)
+        self.clear_speed_ramp_button = QPushButton("پاک‌کردن منحنی سرعت")
+        self.clear_speed_ramp_button.setEnabled(False)
+        self.clear_speed_ramp_button.clicked.connect(self._clear_speed_ramp)
+        inspector_layout.addWidget(self.clear_speed_ramp_button)
+        self.speed_ramp_label = QLabel("Speed Ramp: هنوز نقطه‌ای ثبت نشده")
+        self.speed_ramp_label.setWordWrap(True)
+        inspector_layout.addWidget(self.speed_ramp_label)
+        self.speed_ramp_status_label = QLabel("فعلاً ذخیره‌سازی منحنی؛ رندر تدریجی در مرحله بعد")
+        self.speed_ramp_status_label.setWordWrap(True)
+        inspector_layout.addWidget(self.speed_ramp_status_label)
 
         color_heading = QLabel("اصلاح رنگ کلیپ")
         color_heading.setObjectName("panel_title")
@@ -826,6 +854,24 @@ class ZenithEditor(QMainWindow):
         self.apply_speed_button.setEnabled(enabled)
         self.motion_blur_checkbox.setEnabled(enabled)
         self.reverse_checkbox.setEnabled(enabled)
+        self.speed_ramp_frame_spin.setEnabled(enabled)
+        self.speed_ramp_rate_spin.setEnabled(enabled)
+        self.add_speed_ramp_button.setEnabled(enabled)
+        self.clear_speed_ramp_button.setEnabled(enabled and bool(clip.speed_ramp) if enabled else False)
+        if enabled:
+            local_frame_for_ramp = max(0, min(clip.duration_frames - 1,
+                self.timeline_project.playhead_frame - clip.start_frame))
+            self.speed_ramp_frame_spin.setMaximum(max(0, clip.duration_frames - 1))
+            self.speed_ramp_frame_spin.setValue(local_frame_for_ramp)
+            ramp_points = sorted(clip.speed_ramp, key=lambda point: int(point["frame"]))
+            self.speed_ramp_label.setText(
+                "Speed Ramp: " + (" | ".join(
+                    f'{int(point["frame"])}f → {float(point["rate"]):.2f}x'
+                    for point in ramp_points
+                ) if ramp_points else "هنوز نقطه‌ای ثبت نشده")
+            )
+        else:
+            self.speed_ramp_label.setText("Speed Ramp: —")
         if enabled:
             blocker = QSignalBlocker(self.reverse_checkbox)
             self.reverse_checkbox.setChecked(bool(getattr(clip, "reverse_playback", False)))
@@ -933,6 +979,49 @@ class ZenithEditor(QMainWindow):
         self.statusBar().showMessage(
             f"Speed {rate:g}x applied; clip length is now {clip.duration_frames} frames. Check for overlaps."
         )
+
+    def _add_speed_ramp_point(self) -> None:
+        clip_id = self.timeline_widget.canvas.selected_clip_id
+        if not clip_id:
+            return
+        try:
+            clip = self.timeline_project.get_clip(clip_id)
+            frame = int(self.speed_ramp_frame_spin.value())
+            rate = float(self.speed_ramp_rate_spin.value())
+            if not 0 <= frame < clip.duration_frames:
+                raise ValueError("فریم Speed Ramp باید داخل محدوده کلیپ باشد.")
+            points = [dict(point) for point in clip.speed_ramp
+                      if int(point["frame"]) != frame]
+            points.append({"frame": frame, "rate": rate})
+            points.sort(key=lambda point: int(point["frame"]))
+            self._push_undo()
+            self.timeline_project.set_clip_speed_ramp(clip_id, points)
+        except (KeyError, ValueError) as exc:
+            if self._undo_stack:
+                self._undo_stack.pop()
+            self._update_history_buttons()
+            self.statusBar().showMessage(f"ثبت Speed Ramp انجام نشد: {exc}")
+            return
+        self._sync_transform_controls()
+        self.statusBar().showMessage(
+            "نقطه Speed Ramp در پروژه ذخیره شد؛ اعمال آن در رندر نهایی هنوز در دست توسعه است."
+        )
+
+    def _clear_speed_ramp(self) -> None:
+        clip_id = self.timeline_widget.canvas.selected_clip_id
+        if not clip_id:
+            return
+        try:
+            self._push_undo()
+            self.timeline_project.set_clip_speed_ramp(clip_id, [])
+        except (KeyError, ValueError) as exc:
+            if self._undo_stack:
+                self._undo_stack.pop()
+            self._update_history_buttons()
+            self.statusBar().showMessage(f"پاک‌کردن Speed Ramp انجام نشد: {exc}")
+            return
+        self._sync_transform_controls()
+        self.statusBar().showMessage("منحنی Speed Ramp از کلیپ پاک شد.")
 
     def _add_transform_keyframe(self) -> None:
         clip_id = self.timeline_widget.canvas.selected_clip_id
