@@ -43,6 +43,8 @@ def validate_render_project(project: object) -> list[object]:
     for clip in clips:
         if getattr(clip, "media_type", "video") != "video":
             raise ValueError(f"نوع رسانه در خروجی تصویر پشتیبانی نمی‌شود: {clip.name}")
+        if Path(clip.path).suffix.lower() in {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"}:
+            raise ValueError("تصویر ثابت هنوز در خروجی MP4 پشتیبانی نمی‌شود؛ فقط فایل ویدیویی وارد V1 کنید.")
         source = Path(clip.path).expanduser()
         if not source.is_file():
             raise FileNotFoundError(f"فایل ویدیویی پیدا نشد: {source}")
@@ -90,12 +92,13 @@ def build_video_render_command(ffmpeg: str, project: object,
         out_label = f"base{index + 1}"
         filters.append(
             f"[{previous}][v{index}]overlay=0:0:"
-            f"enable='between(t,{start:.6f},{end:.6f})':"
+            f"enable='gte(t,{start:.6f})*lt(t,{end:.6f})':"
             f"eof_action=pass:repeatlast=0[{out_label}]"
         )
         previous = out_label
 
     command.extend([
+        "-filter_complex_threads", "1",
         "-filter_complex", ";".join(filters),
         "-map", f"[{previous}]",
         "-an", "-t", f"{duration:.6f}",
