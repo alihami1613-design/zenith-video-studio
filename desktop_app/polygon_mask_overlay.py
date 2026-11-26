@@ -219,6 +219,9 @@ class PolygonMaskOverlay(QWidget):
             frame = self._video_rect()
             if frame.width() <= 0 or frame.height() <= 0:
                 return
+            if self._drag_kind != "move":
+                local_delta = self._rotate_vector(QPointF(dx, dy), -self._rotation)
+                dx, dy = local_delta.x(), local_delta.y()
             nx, ny = dx / frame.width(), dy / frame.height()
             x, y, width, height = self._rect
             if self._drag_kind == "move":
@@ -245,7 +248,7 @@ class PolygonMaskOverlay(QWidget):
             self.setCursor(Qt.OpenHandCursor if self._hit_polygon(event.position()) is not None else Qt.ArrowCursor)
         elif self._geometry_editable:
             hit = self._hit_geometry(event.position())
-            self.setCursor(Qt.SizeAllCursor if hit == "move" else Qt.SizeFDiagCursor if hit in {"nw", "se"} else Qt.SizeBDiagCursor if hit else Qt.ArrowCursor)
+            self.setCursor(Qt.SizeAllCursor if hit == "move" else Qt.CrossCursor if hit == "rotate" else Qt.SizeFDiagCursor if hit in {"nw", "se"} else Qt.SizeBDiagCursor if hit else Qt.ArrowCursor)
         event.ignore()
 
     def mouseReleaseEvent(self, event):
