@@ -6,10 +6,11 @@ so timeline editing logic can be tested without opening the GUI.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
+import math
 from typing import Any
 from uuid import uuid4
 
-PROJECT_SCHEMA_VERSION = 2
+PROJECT_SCHEMA_VERSION = 3
 DEFAULT_FPS = 30
 DEFAULT_VIDEO_TRACKS = ("V1", "V2", "V3", "V4")
 DEFAULT_AUDIO_TRACKS = ("A1", "A2", "A3", "A4")
@@ -31,6 +32,9 @@ class Clip:
     duration_frames: int = 150
     clip_id: str = field(default_factory=_new_id)
     media_type: str = "video"
+    volume: float = 1.0
+    fade_in_frames: int = 0
+    fade_out_frames: int = 0
 
     @property
     def end_frame(self) -> int:
@@ -43,6 +47,12 @@ class Clip:
             raise ValueError("Clip duration must be at least one frame")
         if not self.track:
             raise ValueError("Clip track cannot be empty")
+        if not math.isfinite(float(self.volume)) or not 0.0 <= float(self.volume) <= 2.0:
+            raise ValueError("Clip volume must be between 0.0 and 2.0")
+        if self.fade_in_frames < 0 or self.fade_out_frames < 0:
+            raise ValueError("Fade durations cannot be negative")
+        if self.fade_in_frames > self.duration_frames or self.fade_out_frames > self.duration_frames:
+            raise ValueError("Fade duration cannot exceed clip duration")
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -133,7 +143,11 @@ class TimelineProject:
             raise ValueError("Trim must leave a positive clip duration")
         clip.source_in += start - clip.start_frame
         clip.start_frame = start
+        removed_from_left = start - clip.start_frame
         clip.duration_frames = end - start
+        clip.fade_in_frames = max(0, clip.fade_in_frames - removed_from_left)
+        clip.fade_in_frames = min(clip.fade_in_frames, clip.duration_frames)
+        clip.fade_out_frames = min(clip.fade_out_frames, clip.duration_frames)
         clip.validate()
         return clip
 
@@ -149,10 +163,28 @@ class TimelineProject:
             source_in=original.source_in + (at_frame - original.start_frame),
             duration_frames=original.end_frame - at_frame,
             media_type=original.media_type,
+            volume=original.volume,
+            fade_out_frames=original.fade_out_frames,
         )
         original.duration_frames = at_frame - original.start_frame
+        original.fade_out_frames = 0
+        original.fade_in_frames = min(original.fade_in_frames, original.duration_frames)
         self.clips.append(right)
         return original, right
+
+    def set_clip_audio(self, clip_id: str, *, volume: float | None = None,
+                        fade_in_frames: int | None = None,
+                        fade_out_frames: int | None = None) -> Clip:
+        """Set non-destructive clip gain and frame-accurate audio fades."""
+        clip = self.get_clip(clip_id)
+        if volume is not None:
+            clip.volume = float(volume)
+        if fade_in_frames is not None:
+            clip.fade_in_frames = int(fade_in_frames)
+        if fade_out_frames is not None:
+            clip.fade_out_frames = int(fade_out_frames)
+        clip.validate()
+        return clip
 
     def remove_clip(self, clip_id: str, ripple: bool = False) -> Clip:
         clip = self.get_clip(clip_id)
@@ -177,7 +209,7 @@ class TimelineProject:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "TimelineProject":
-        """Load schema v2 and migrate the original path/name/track list format."""
+        """Load schema v3 and migrate older path/name/track list projects."""
         fps = int(data.get("fps", DEFAULT_FPS) or DEFAULT_FPS)
         raw_clips = data.get("clips")
         if raw_clips is None:
@@ -210,6 +242,9 @@ class TimelineProject:
                 duration_frames=duration,
                 clip_id=str(raw.get("clip_id") or _new_id()),
                 media_type=str(raw.get("media_type", "audio" if track.startswith("A") else "video")),
+                volume=float(raw.get("volume", 1.0)),
+                fade_in_frames=max(0, int(raw.get("fade_in_frames", 0) or 0)),
+                fade_out_frames=max(0, int(raw.get("fade_out_frames", 0) or 0)),
             ))
         return cls(
             fps=fps,
