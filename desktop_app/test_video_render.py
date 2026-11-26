@@ -201,5 +201,20 @@ class VideoRenderTests(unittest.TestCase):
                 validate_render_project(project)
 
 
+    def test_easing_expression_and_anchor_offsets_are_rendered(self):
+        with tempfile.TemporaryDirectory() as folder:
+            project = self.project(folder)
+            clip = project.clips[0]
+            clip.anchor_x = 0.25
+            clip.anchor_y = 0.75
+            clip.transform_keyframes = [
+                {"frame": 0, "scale": 1.0, "x": 0.0, "y": 0.0, "ease": "ease_in_out"},
+                {"frame": 30, "scale": 2.0, "x": 0.2, "y": -0.1, "ease": "linear"},
+            ]
+            command = build_video_render_command("ffmpeg", project, "out.mp4")
+        joined = " ".join(command)
+        self.assertIn("3-2*", joined)
+        self.assertIn("0.250000-0.5", joined)
+        self.assertIn("0.750000-0.5", joined)
 if __name__ == "__main__":
     unittest.main()
