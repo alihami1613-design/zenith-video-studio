@@ -795,13 +795,27 @@ class ZenithEditor(QMainWindow):
             return
         local_frame = max(0, min(clip.duration_frames - 1,
                                  self.timeline_project.playhead_frame - clip.start_frame))
-        current = max((key for key in clip.transform_keyframes if key["frame"] <= local_frame),
-                      key=lambda item: item["frame"], default=None)
+        keys = sorted(clip.transform_keyframes, key=lambda item: int(item["frame"]))
         defaults = {"x": 0.0, "y": 0.0, "scale": 1.0, "rotation": 0.0}
-        values = current or defaults
+        before = max((key for key in keys if int(key["frame"]) <= local_frame),
+                     key=lambda item: int(item["frame"]), default=None)
+        after = min((key for key in keys if int(key["frame"]) > local_frame),
+                    key=lambda item: int(item["frame"]), default=None)
+        if before and after:
+            span = int(after["frame"]) - int(before["frame"])
+            ratio = (local_frame - int(before["frame"])) / max(1, span)
+            values = {key: float(before.get(key, defaults[key])) +
+                      (float(after.get(key, defaults[key])) - float(before.get(key, defaults[key]))) * ratio
+                      for key in defaults}
+        elif before:
+            values = {key: float(before.get(key, defaults[key])) for key in defaults}
+        elif after:
+            values = {key: float(after.get(key, defaults[key])) for key in defaults}
+        else:
+            values = defaults
         for key, control in self.transform_controls.items():
             blocker = QSignalBlocker(control)
-            control.setValue(float(values.get(key, defaults[key])))
+            control.setValue(values[key])
             del blocker
         self.transform_keyframes_label.setText(
             f"{len(clip.transform_keyframes)} Keyframe | فریم فعلی کلیپ: {local_frame}"
