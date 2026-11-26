@@ -28,6 +28,35 @@ class TimelineModelTests(unittest.TestCase):
         self.assertFalse(legacy.clips[0].has_audio)
         self.assertEqual(legacy.clips[0].audio_track, "A1")
 
+
+    def test_transform_keyframes_round_trip_split_and_validate(self):
+        project = TimelineProject()
+        clip = project.add_clip("motion.mp4", "motion.mp4", duration_frames=120)
+        project.set_clip_transform_keyframes(clip.clip_id, [
+            {"frame": 0, "x": -0.5, "y": 0.0, "scale": 1.0, "rotation": 0.0},
+            {"frame": 90, "x": 0.5, "y": 0.25, "scale": 1.8, "rotation": 25.0},
+        ])
+        restored = TimelineProject.from_dict(project.to_dict())
+        saved = restored.get_clip(clip.clip_id)
+        self.assertEqual(len(saved.transform_keyframes), 2)
+        self.assertEqual(restored.to_dict()["schema_version"], 11)
+        left, right = restored.split_clip(clip.clip_id, 60)
+        self.assertEqual(left.transform_keyframes[0]["frame"], 0)
+        self.assertEqual(right.transform_keyframes[0]["frame"], 30)
+        self.assertIsNot(left.transform_keyframes, right.transform_keyframes)
+
+    def test_transform_keyframes_reject_invalid_order_and_bounds(self):
+        project = TimelineProject()
+        clip = project.add_clip("motion.mp4", "motion.mp4", duration_frames=60)
+        with self.assertRaisesRegex(ValueError, "ordered inside"):
+            project.set_clip_transform_keyframes(clip.clip_id, [
+                {"frame": 20}, {"frame": 10},
+            ])
+        with self.assertRaisesRegex(ValueError, "scale"):
+            project.set_clip_transform_keyframes(clip.clip_id, [
+                {"frame": 0, "scale": 5.0},
+            ])
+
     def test_color_grade_round_trip_and_split(self):
         project = TimelineProject()
         clip = project.add_clip("shot.mp4", "shot.mp4", duration_frames=120)
@@ -73,7 +102,7 @@ class TimelineModelTests(unittest.TestCase):
         ]})
         self.assertEqual(project.clips[0].video_fade_in_frames, 0)
         self.assertEqual(project.clips[0].video_fade_out_frames, 0)
-        self.assertEqual(project.to_dict()["schema_version"], 10)
+        self.assertEqual(project.to_dict()["schema_version"], 11)
 
     def test_cross_dissolve_persists_and_split_does_not_duplicate_it(self):
         project = TimelineProject()
@@ -157,7 +186,7 @@ class TimelineModelTests(unittest.TestCase):
         self.assertAlmostEqual(saved.volume, 0.8)
         self.assertEqual(saved.fade_in_frames, 30)
         self.assertEqual(saved.fade_out_frames, 45)
-        self.assertEqual(project.to_dict()["schema_version"], 10)
+        self.assertEqual(project.to_dict()["schema_version"], 11)
 
     def test_audio_track_mixer_round_trip(self):
         project = TimelineProject()
