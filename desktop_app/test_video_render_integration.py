@@ -66,7 +66,7 @@ class TransformRenderIntegrationTests(unittest.TestCase):
                     source_in=0, duration_frames=25, end_frame=25,
                     color_grade={}, mask_enabled=True, mask_shape=shape,
                     mask_x=0.1, mask_y=0.1, mask_width=0.8, mask_height=0.8,
-                    mask_feather_px=2.0,
+                    mask_feather_px=2.0, mask_rotation=18.0,
                     mask_points=[[0.5, 0.05], [0.95, 0.9], [0.05, 0.9]],
                 )
                 project = SimpleNamespace(
@@ -105,8 +105,10 @@ class TransformRenderIntegrationTests(unittest.TestCase):
                     mask_feather_px=1.5,
                     mask_points=[[0.5, 0.1], [0.9, 0.9], [0.1, 0.9]],
                     mask_keyframes=[
-                        {"frame": 0, "x": 0.0, "y": 0.0, "width": 1.0, "height": 1.0},
-                        {"frame": 20, "x": 0.1, "y": 0.1, "width": 0.8, "height": 0.8},
+                        {"frame": 0, "x": 0.0, "y": 0.0, "width": 1.0, "height": 1.0,
+                         "rotation": -8.0},
+                        {"frame": 20, "x": 0.1, "y": 0.1, "width": 0.8, "height": 0.8,
+                         "rotation": 27.0},
                     ],
                 )
                 project = SimpleNamespace(
