@@ -29,6 +29,21 @@ class VideoRenderTests(unittest.TestCase):
             clips=[a, b],
         )
 
+
+    def test_builds_keyframed_position_scale_and_rotation(self):
+        with tempfile.TemporaryDirectory() as folder:
+            project = self.project(folder)
+            project.clips[0].transform_keyframes = [
+                {"frame": 0, "x": -0.25, "y": 0.0, "scale": 1.0, "rotation": 0.0},
+                {"frame": 30, "x": 0.25, "y": 0.1, "scale": 1.5, "rotation": 15.0},
+            ]
+            command = build_video_render_command("ffmpeg", project, "out.mp4")
+        joined = " ".join(command)
+        self.assertIn("scale=w='iw*(if(lt(T", joined)
+        self.assertIn("rotate=angle=", joined)
+        self.assertIn("overlay=x='(W-w)/2+W*", joined)
+        self.assertIn("y='(H-h)/2+H*", joined)
+
     def test_builds_1080p_h264_with_grade_and_black_gap(self):
         with tempfile.TemporaryDirectory() as folder:
             project = self.project(folder)
