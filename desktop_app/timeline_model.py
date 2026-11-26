@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-PROJECT_SCHEMA_VERSION = 14
+PROJECT_SCHEMA_VERSION = 15
 DEFAULT_FPS = 30
 DEFAULT_VIDEO_TRACKS = ("V1", "V2", "V3", "V4")
 DEFAULT_AUDIO_TRACKS = ("A1", "A2", "A3", "A4")
@@ -64,6 +64,7 @@ class Clip:
     anchor_y: float = 0.5
     playback_rate: float = 1.0
     motion_blur: bool = False
+    reverse_playback: bool = False
     color_grade: dict[str, float] = field(default_factory=lambda: {
         "exposure": 0.0, "contrast": 1.0, "saturation": 1.0,
         "temperature": 0.0, "tint": 0.0,
@@ -263,7 +264,11 @@ class TimelineProject:
         if start < 0 or end <= start:
             raise ValueError("Trim must leave a positive clip duration")
         removed_from_left = start - clip.start_frame
-        clip.source_in += round(removed_from_left * clip.playback_rate)
+        if clip.reverse_playback:
+            removed_from_right = old_end - end
+            clip.source_in += round(removed_from_right * clip.playback_rate)
+        else:
+            clip.source_in += round(removed_from_left * clip.playback_rate)
         clip.start_frame = start
         clip.duration_frames = end - start
         clip.fade_in_frames = max(0, clip.fade_in_frames - removed_from_left)
@@ -296,7 +301,7 @@ class TimelineProject:
             name=original.name,
             track=original.track,
             start_frame=at_frame,
-            source_in=original.source_in + round((at_frame - original.start_frame) * original.playback_rate),
+            source_in=original.source_in + (0 if original.reverse_playback else round((at_frame - original.start_frame) * original.playback_rate)),
             duration_frames=original.end_frame - at_frame,
             media_type=original.media_type,
             has_audio=original.has_audio,
@@ -313,6 +318,8 @@ class TimelineProject:
             ],
         )
         original.duration_frames = at_frame - original.start_frame
+        if original.reverse_playback:
+            original.source_in += round(right.duration_frames * original.playback_rate)
         original.fade_out_frames = 0
         original.video_fade_out_frames = 0
         original.video_fade_in_frames = min(original.video_fade_in_frames, original.duration_frames)
@@ -354,6 +361,15 @@ class TimelineProject:
             clip.fade_in_frames = int(fade_in_frames)
         if fade_out_frames is not None:
             clip.fade_out_frames = int(fade_out_frames)
+        clip.validate()
+        return clip
+
+    def set_clip_reverse(self, clip_id: str, enabled: bool) -> Clip:
+        """Reverse video and its embedded audio in the final render."""
+        clip = self.get_clip(clip_id)
+        if clip.media_type != "video" or not clip.track.startswith("V"):
+            raise ValueError("Reverse requires a video-track clip")
+        clip.reverse_playback = bool(enabled)
         clip.validate()
         return clip
 
@@ -549,6 +565,7 @@ class TimelineProject:
                 anchor_y=float(raw.get("anchor_y", 0.5)),
                 playback_rate=float(raw.get("playback_rate", 1.0)),
                 motion_blur=bool(raw.get("motion_blur", False)),
+                reverse_playback=bool(raw.get("reverse_playback", False)),
                 color_grade=dict(raw.get("color_grade") or {}),
             ))
         return cls(
