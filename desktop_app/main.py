@@ -488,7 +488,7 @@ class ZenithEditor(QMainWindow):
                 clip = self.timeline_project.get_clip(clip_id)
             except KeyError:
                 clip = None
-        enabled = bool(clip and clip.media_type == "audio")
+        enabled = bool(clip and (clip.media_type == "audio" or (clip.media_type == "video" and clip.has_audio)))
         for control in (self.volume_slider, self.fade_in_slider, self.fade_out_slider):
             control.setEnabled(enabled)
         if not enabled:
@@ -516,7 +516,7 @@ class ZenithEditor(QMainWindow):
             return
         try:
             clip = self.timeline_project.get_clip(clip_id)
-            if clip.media_type != "audio":
+            if not (clip.media_type == "audio" or (clip.media_type == "video" and clip.has_audio)):
                 return
             self.timeline_project.set_clip_audio(
                 clip_id,
@@ -807,6 +807,8 @@ class ZenithEditor(QMainWindow):
                 path=source["path"], name=source["name"], track=track,
                 start_frame=start, duration_frames=duration_frames,
                 media_type="audio" if track.startswith("A") else "video",
+                has_audio=bool((metadata or {}).get("has_audio")) if track.startswith("V") else True,
+                audio_track="A1" if track.startswith("V") else track,
             )
         except ValueError as exc:
             QMessageBox.warning(self, "افزودن کلیپ", str(exc))
@@ -931,9 +933,12 @@ class ZenithEditor(QMainWindow):
         if self._audio_render_task is not None:
             self.statusBar().showMessage("خروجی میکس صوتی در حال انجام است")
             return
-        audio_clips = [clip for clip in self.timeline_project.clips if clip.media_type == "audio"]
+        audio_clips = [
+            clip for clip in self.timeline_project.clips
+            if clip.media_type == "audio" or (clip.media_type == "video" and clip.has_audio)
+        ]
         if not audio_clips:
-            QMessageBox.information(self, "خروجی صدا", "ابتدا حداقل یک کلیپ صوتی به ترک‌های A1 تا A4 اضافه کنید.")
+            QMessageBox.information(self, "خروجی صدا", "ابتدا یک کلیپ صوتی یا ویدیوی دارای صدا به تایم‌لاین اضافه کنید.")
             return
         filename, _ = QFileDialog.getSaveFileName(self, "ذخیره میکس صوتی", "ZENITH_Audio_Mix.wav", "WAV Audio (*.wav)")
         if not filename:
