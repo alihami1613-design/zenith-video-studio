@@ -513,6 +513,10 @@ class ZenithEditor(QMainWindow):
         self.add_transform_keyframe_button.setEnabled(False)
         self.add_transform_keyframe_button.clicked.connect(self._add_transform_keyframe)
         inspector_layout.addWidget(self.add_transform_keyframe_button)
+        self.delete_transform_keyframe_button = QPushButton("حذف Keyframe انتخاب‌شده")
+        self.delete_transform_keyframe_button.setEnabled(False)
+        self.delete_transform_keyframe_button.clicked.connect(self._delete_transform_keyframe)
+        inspector_layout.addWidget(self.delete_transform_keyframe_button)
         self.transform_keyframes_label = QLabel("Keyframe: —")
         inspector_layout.addWidget(self.transform_keyframes_label)
         inspector_layout.addWidget(QLabel("Playback speed"))
@@ -786,6 +790,8 @@ class ZenithEditor(QMainWindow):
         self.timeline_widget.clipTrimmed.connect(self._clip_trimmed)
         self.timeline_widget.editStarted.connect(self._push_undo)
         self.timeline_widget.speedRampChanged.connect(self._speed_ramp_changed)
+        self.timeline_widget.transformKeyframeMoved.connect(self._transform_keyframe_moved)
+        self.timeline_widget.transformKeyframeSelected.connect(self._transform_keyframe_selected)
         timeline_layout.addWidget(self.timeline_widget, 1)
         outer.addWidget(timeline_panel, 2)
 
@@ -1017,6 +1023,8 @@ class ZenithEditor(QMainWindow):
                 pass
         enabled = bool(clip and clip.media_type == "video" and clip.track.startswith("V"))
         self.add_transform_keyframe_button.setEnabled(enabled)
+        selected_frame = self.timeline_widget.canvas.selected_transform_keyframe_frame
+        self.delete_transform_keyframe_button.setEnabled(bool(enabled and selected_frame is not None and any(int(item['frame']) == selected_frame for item in clip.transform_keyframes)))
         self.playback_speed_combo.setEnabled(enabled)
         self.apply_speed_button.setEnabled(enabled)
         self.motion_blur_checkbox.setEnabled(enabled)
@@ -1105,8 +1113,10 @@ class ZenithEditor(QMainWindow):
             float((before or {}).get("bezier_y2", 1.0)),
         )
         self._sync_bezier_graph_visibility()
+        selected_frame = self.timeline_widget.canvas.selected_transform_keyframe_frame
+        selected_text = f" | انتخاب: {selected_frame}f" if selected_frame is not None else ""
         self.transform_keyframes_label.setText(
-            f"{len(clip.transform_keyframes)} Keyframe | فریم فعلی کلیپ: {local_frame}"
+            f"{len(clip.transform_keyframes)} Keyframe | فریم فعلی کلیپ: {local_frame}{selected_text}"
         )
 
     def _active_bezier_key(self):
@@ -1370,6 +1380,42 @@ class ZenithEditor(QMainWindow):
         self._sync_transform_controls()
         self.timeline_widget.refresh()
         self.statusBar().showMessage("منحنی Speed Ramp پاک شد؛ سرعت ثابت کلیپ دوباره استفاده می‌شود.")
+
+    def _transform_keyframe_selected(self, clip_id: str, frame: int) -> None:
+        clip = self.timeline_project.get_clip(clip_id)
+        self.timeline_project.playhead_frame = clip.start_frame + int(frame)
+        self._sync_transform_controls()
+        self.statusBar().showMessage(f"Keyframe فریم {frame} انتخاب شد؛ برای جابه‌جایی آن را بکشید.")
+
+    def _transform_keyframe_moved(self, clip_id: str, old_frame: int, new_frame: int) -> None:
+        try:
+            clip = self.timeline_project.get_clip(clip_id)
+            updated = [dict(item) for item in clip.transform_keyframes]
+            key = next(item for item in updated if int(item["frame"]) == int(old_frame))
+            key["frame"] = int(new_frame)
+            updated.sort(key=lambda item: int(item["frame"]))
+            self.timeline_project.set_clip_transform_keyframes(clip_id, updated)
+            self.timeline_widget.canvas.selected_transform_keyframe_frame = int(new_frame)
+        except (KeyError, ValueError, StopIteration) as exc:
+            self.statusBar().showMessage(f"جابه‌جایی Keyframe انجام نشد: {exc}")
+        self._sync_transform_controls()
+        self.timeline_widget.refresh()
+
+    def _delete_transform_keyframe(self) -> None:
+        clip_id = self.timeline_widget.canvas.selected_clip_id
+        frame = self.timeline_widget.canvas.selected_transform_keyframe_frame
+        if not clip_id or frame is None:
+            return
+        clip = self.timeline_project.get_clip(clip_id)
+        updated = [dict(item) for item in clip.transform_keyframes if int(item["frame"]) != int(frame)]
+        if len(updated) == len(clip.transform_keyframes):
+            return
+        self._push_undo()
+        self.timeline_project.set_clip_transform_keyframes(clip_id, updated)
+        self.timeline_widget.canvas.selected_transform_keyframe_frame = None
+        self._sync_transform_controls()
+        self.timeline_widget.refresh()
+        self.statusBar().showMessage("Keyframe حذف شد؛ با Undo قابل بازگشت است.")
 
     def _add_transform_keyframe(self) -> None:
         clip_id = self.timeline_widget.canvas.selected_clip_id
