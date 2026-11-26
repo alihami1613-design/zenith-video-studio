@@ -30,7 +30,9 @@ def build_audio_mix_command(
     if fps < 1:
         raise ValueError("FPS must be positive")
     audio_clips = sorted(
-        (clip for clip in clips if getattr(clip, "media_type", "") == "audio"),
+        (clip for clip in clips
+         if getattr(clip, "media_type", "") == "audio"
+         or (getattr(clip, "media_type", "") == "video" and getattr(clip, "has_audio", False))),
         key=lambda clip: (clip.start_frame, clip.track, clip.clip_id),
     )
     if not audio_clips:
