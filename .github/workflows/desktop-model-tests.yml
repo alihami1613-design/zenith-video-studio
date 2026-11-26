@@ -13,8 +13,6 @@ on:
       - "desktop_app/video_color.py"
       - "desktop_app/test_video_color.py"
       - "desktop_app/color_preview.py"
-      - "desktop_app/video_render.py"
-      - "desktop_app/test_video_render.py"
       - "desktop_app/test_color_preview.py"
       - "desktop_app/test_audio_meter.py"
       - "desktop_app/test_audio_render.py"
@@ -44,6 +42,8 @@ on:
       - "desktop_app/test_color_preview.py"
       - "desktop_app/main.py"
       - "desktop_app/timeline_widget.py"
+      - "desktop_app/video_render.py"
+      - "desktop_app/test_video_render.py"
       - ".github/workflows/desktop-model-tests.yml"
 
 jobs:
