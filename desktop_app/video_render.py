@@ -227,11 +227,16 @@ def build_video_render_command(ffmpeg: str, project: object,
             chain += f",fade=t=out:st={fade_start:.6f}:d={_seconds(fade_out, fps):.6f}:alpha=1"
         keyframes = list(getattr(clip, "transform_keyframes", []) or [])
         if keyframes:
-            opacity_expr = _keyframe_expression(keyframes, "opacity", 1.0, fps, "T")
-            chain += (
-                ",geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':"
-                f"a='alpha(X,Y)*({opacity_expr})'"
-            )
+            opacity_values = [float(item.get("opacity", 1.0)) for item in keyframes]
+            if any(abs(value - 1.0) > 1e-9 for value in opacity_values):
+                if max(opacity_values) - min(opacity_values) <= 1e-9:
+                    chain += f",colorchannelmixer=aa={opacity_values[0]:.6f}"
+                else:
+                    opacity_expr = _keyframe_expression(keyframes, "opacity", 1.0, fps, "T")
+                    chain += (
+                        ",geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':"
+                        f"a='alpha(X,Y)*({opacity_expr})'"
+                    )
         chain += f",setpts=PTS+{start:.6f}/TB"
         if keyframes:
             scale_expr = _keyframe_expression(keyframes, "scale", 1.0, fps)
