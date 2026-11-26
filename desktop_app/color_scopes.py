@@ -5,21 +5,25 @@ import subprocess
 from pathlib import Path
 
 from proxy_manager import find_ffmpeg
+from video_color import build_color_filter
 
 
 SCOPE_WIDTH = 256
 SCOPE_HEIGHT = 144
 
 
-def build_histogram_command(ffmpeg: str, source: str | Path, timestamp: float) -> list[str]:
+def build_histogram_command(ffmpeg: str, source: str | Path, timestamp: float, grade: dict[str, float] | None = None) -> list[str]:
     if timestamp < 0:
         raise ValueError("Histogram timestamp cannot be negative")
+    video_filters = ["scale=256:144:force_original_aspect_ratio=decrease", "pad=256:144:(ow-iw)/2:(oh-ih)/2", "setsar=1"]
+    color_filter = build_color_filter(grade)
+    if color_filter:
+        video_filters.append(color_filter)
     return [
         str(ffmpeg), "-hide_banner", "-loglevel", "error", "-threads", "1",
         "-ss", f"{timestamp:.6f}", "-i", str(Path(source)),
         "-frames:v", "1", "-an",
-        "-vf", "scale=256:144:force_original_aspect_ratio=decrease,"
-               "pad=256:144:(ow-iw)/2:(oh-ih)/2,setsar=1",
+        "-vf", ",".join(video_filters),
         "-pix_fmt", "rgb24", "-f", "rawvideo", "pipe:1",
     ]
 
@@ -37,11 +41,12 @@ def calculate_rgb_histogram(rgb24: bytes) -> tuple[tuple[int, ...], tuple[int, .
 
 
 def extract_rgb_histogram(source: str | Path, timestamp: float = 0.0,
+                          grade: dict[str, float] | None = None,
                           timeout_seconds: int = 30) -> tuple[tuple[int, ...], tuple[int, ...], tuple[int, ...]]:
     path = Path(source).expanduser().resolve()
     if not path.is_file():
         raise FileNotFoundError(str(path))
-    command = build_histogram_command(find_ffmpeg(), path, timestamp)
+    command = build_histogram_command(find_ffmpeg(), path, timestamp, grade)
     try:
         result = subprocess.run(command, capture_output=True, timeout=timeout_seconds, check=True)
     except subprocess.TimeoutExpired as exc:
