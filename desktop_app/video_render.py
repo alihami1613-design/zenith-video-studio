@@ -12,7 +12,7 @@ from proxy_manager import find_ffmpeg
 from video_color import build_color_filter
 from speed_ramp import build_speed_segments
 
-RENDER_VERSION = "timeline-h264-v16-animated-mask-rotation"
+RENDER_VERSION = "timeline-h264-v17-mask-invert"
 STILL_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".webp", ".tif", ".tiff"}
 
 
@@ -285,6 +285,7 @@ def build_video_render_command(ffmpeg: str, project: object,
             key_blend = float(getattr(clip, "chroma_key_blend", 0.08))
             chain += f",colorkey=0x{key_color}:{similarity:.4f}:{key_blend:.4f}"
         if bool(getattr(clip, "mask_enabled", False)):
+            mask_invert = bool(getattr(clip, "mask_invert", False))
             mask_x = float(getattr(clip, "mask_x", 0.0))
             mask_y = float(getattr(clip, "mask_y", 0.0))
             mask_w = float(getattr(clip, "mask_width", 1.0))
@@ -327,7 +328,7 @@ def build_video_render_command(ffmpeg: str, project: object,
                 )
                 chain += (
                     f",geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':"
-                    f"a='if({mask_expr}\\,alpha(X,Y)\\,0)'"
+                    f"a='if({mask_invert}\\,if({mask_expr}\\,0\\,alpha(X,Y))\\,if({mask_expr}\\,alpha(X,Y)\\,0))'"
                 )
             elif mask_shape == "rectangle":
                 chain += (
