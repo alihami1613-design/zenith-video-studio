@@ -8,6 +8,8 @@ on:
       - "desktop_app/timeline_model.py"
       - "desktop_app/media_probe.py"
       - "desktop_app/proxy_manager.py"
+      - "desktop_app/waveform_manager.py"
+      - "desktop_app/test_waveform_manager.py"
       - "desktop_app/test_proxy_manager.py"
       - "desktop_app/test_media_probe.py"
       - "desktop_app/test_timeline_model.py"
@@ -18,6 +20,8 @@ on:
     paths:
       - "desktop_app/proxy_manager.py"
       - "desktop_app/test_proxy_manager.py"
+      - "desktop_app/waveform_manager.py"
+      - "desktop_app/test_waveform_manager.py"
       - "desktop_app/timeline_model.py"
       - "desktop_app/test_timeline_model.py"
       - "desktop_app/main.py"
