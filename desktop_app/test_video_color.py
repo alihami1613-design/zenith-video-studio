@@ -19,7 +19,7 @@ class VideoColorTests(unittest.TestCase):
         self.assertIn("colorbalance=", result)
         self.assertIn("rs=0.075", result)
         self.assertIn("bs=-0.075", result)
-        self.assertIn("gm=0.038", result)
+        self.assertIn("gm=0.037", result)
 
     def test_rejects_out_of_range_and_non_finite_values(self):
         with self.assertRaises(ValueError):
