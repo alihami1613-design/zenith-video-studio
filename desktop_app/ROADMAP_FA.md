@@ -1,0 +1,152 @@
+# نقشه راه جامع ZENITH Desktop
+
+## هدف محصول
+ساخت یک تدوینگر دسکتاپ واقعی برای Windows 11 با رابط فارسی/انگلیسی، طراحی مشکی و طلایی، تمرکز بر تدوین حرفه‌ای و جلوه‌های ویژه، بدون قربانی‌کردن پایداری روی سخت‌افزار متوسط.
+
+**پروفایل سخت‌افزاری هدف:** Intel Celeron G5925 دو هسته، RAM 16GB، Radeon RX 580، SSD 256GB. گردش‌کار پیش‌فرض 1920×1080، 25/30fps، Proxy-first و رندر نهایی H.264؛ 4K هدف نسخه اولیه نیست.
+
+## اصول غیرقابل‌مذاکره
+- نسخه Streamlit آنلاین موجود حفظ شود؛ توسعه دسکتاپ فقط در همین شاخه مستقل ادامه یابد.
+- هیچ قابلیت نمایشی یا دکمه بی‌عمل به‌عنوان ویژگی کامل معرفی نشود.
+- پروژه‌ها نسخه‌بندی و ذخیره‌سازی امن داشته باشند؛ مسیر رسانه‌ها قابل Relink باشد.
+- عملیات سنگین در worker/background انجام شود و رابط قفل نشود.
+- ذخیره خودکار، بازیابی پس از بسته‌شدن ناگهانی و هشدار رسانه گم‌شده وجود داشته باشد.
+- تنظیمات کیفیت پیش‌نمایش مستقل از کیفیت خروجی باشد.
+- تمام قابلیت‌ها با نمونه پروژه و تست رگرسیون بررسی شوند.
+
+## 1. مدیریت پروژه و رسانه
+- پروژه‌های چندگانه، ذخیره/بازکردن، Save As، Auto-save و بازیابی.
+- پنل Media Bin با پوشه‌بندی، جست‌وجو، برچسب، مرتب‌سازی و اطلاعات فایل.
+- تشخیص رسانه آفلاین و Relink گروهی.
+- واردکردن ویدیو، صدا، تصویر، GIF و توالی تصویر؛ نمایش waveform و thumbnail.
+- مدیریت نرخ فریم، نسبت تصویر، رزولوشن و فضای رنگی منبع.
+- Proxy و Optimized Media با انتخاب رزولوشن و کدک سبک، اتصال خودکار به فایل اصلی برای خروجی.
+- پاک‌سازی امن cache و مدیریت فضای دیسک.
+
+## 2. تایم‌لاین حرفه‌ای
+- تایم‌لاین زمان‌محور چندترکه: V1–V4 و A1–A4 در نسخه پایه؛ افزودن ترک نامحدود با توجه به RAM.
+- نمایش ruler، timecode، playhead، zoom، scroll، snapping و markers.
+- انتخاب چند کلیپ، جابه‌جایی، drag/drop، trim سر/ته، split/razor، حذف، duplicate و ripple delete.
+- جابه‌جایی و درج با حفظ یا شکستن هم‌زمانی صدا/تصویر.
+- قفل، مخفی‌سازی، mute/solo، ارتفاع و رنگ ترک.
+- گروه‌بندی، لینک/ unlink صدا و تصویر، nested sequence و sequenceهای چندگانه.
+- undo/redo واقعی برای تمام عملیات.
+- keyframe روی پارامترها با interpolation خطی، Bezier و Ease In/Out.
+- مدیریت نرخ فریم پروژه و نمایش دقیق فریم؛ جلوگیری از drift صوتی.
+
+## 3. مانیتور و پخش
+- Source Monitor و Program Monitor.
+- پخش، مکث، توقف، فریم قبل/بعد، رفتن به ابتدا/انتها، loop و shuttle.
+- seek دقیق فریم و timecode؛ انتخاب رزولوشن پیش‌نمایش و حالت proxy.
+- نمایش safe margins، guides، grid، histogram و اطلاعات dropped frames.
+- مدیریت خطاهای codec/decoder با پیام قابل فهم.
+- پیش‌نمایش کم‌کیفیت و proxy برای جلوگیری از فشار روی CPU.
+
+## 4. تدوین و ترنزیشن
+- برش دقیق، trim، slip، slide، roll و ripple.
+- ترنزیشن‌های dissolve، fade، dip to color، wipe و push با کنترل مدت و easing.
+- کنترل سرعت، reverse، freeze frame و speed ramp با منحنی.
+- تثبیت لرزش تصویر در حد توان سیستم و ابزارهای crop/scale/position/rotation/anchor.
+- تنظیم aspect ratio و reframing برای 16:9، 9:16 و 1:1.
+
+## 5. اصلاح رنگ و ظاهر سینمایی
+- کنترل‌های پایه: exposure، contrast، highlights، shadows، whites، blacks، saturation، temperature و tint.
+- Curves، color wheels، HSL qualifier، hue vs hue/sat/luma و vignette.
+- LUT import/export و مدیریت LUT؛ scopes شامل waveform، RGB parade، vectorscope و histogram.
+- اصلاح رنگ اولیه و گرید خلاقانه به‌صورت مرحله‌ای و قابل bypass.
+- تطبیق رنگ کلیپ‌ها و کپی/چسباندن تنظیمات.
+- پردازش با عمق رنگ مناسب و جلوگیری از clipping در pipeline پشتیبانی‌شده.
+
+## 6. جلوه‌های ویژه و کامپوزیت
+- لایه‌بندی تصویر/ویدیو و blend modes.
+- opacity، transform، crop، feather و maskهای مستطیلی/بیضی/رسم آزاد.
+- keyframe ماسک و tracking در مراحل بعد.
+- chroma key/green screen با spill suppression و تنظیمات edge.
+- luma key، matte، garbage mask و alpha channel.
+- blur، sharpen، glow، vignette، grain، noise، pixelate و distortion.
+- drop shadow، outline، light leak و lens effects با کنترل شدت.
+- compositing و pre-compose/nested compositions.
+- ابزارهای tracking نقطه‌ای و planar در فاز پیشرفته، با هشدار محدودیت عملکرد.
+- افکت‌های سنگین اختیاری و خاموش به‌صورت پیش‌فرض؛ پیش‌نمایش proxy/half-resolution.
+
+## 7. موشن گرافیک و عنوان
+- متن چندخطی، فونت، وزن، اندازه، رنگ، stroke، shadow، پس‌زمینه و alignment.
+- پشتیبانی کامل فارسی/RTL و فونت‌های نصب‌شده.
+- lower thirds، عنوان آغاز/پایان، زیرنویس و credits.
+- انیمیشن position، scale، rotation، opacity و tracking با keyframe.
+- presetهای قابل ذخیره و استفاده مجدد.
+- shapeها، خطوط، مستطیل، دایره و مسیرهای ساده؛ واردکردن SVG/PNG شفاف.
+
+## 8. صدا و میکس
+- ترک‌های صوتی مستقل، waveform، gain، pan، mute/solo و volume automation.
+- fade in/out، crossfade، keyframe volume و ducking زیر گویندگی.
+- ابزارهای پایه EQ، compressor، limiter، noise reduction و de-esser در حد قابل اتکا.
+- کنترل peak meter، جلوگیری از clipping و loudness target.
+- پشتیبانی از WAV/MP3/AAC و خروجی AAC؛ sample rate و channel mapping.
+- جداسازی و sync صدای دوربین و گویندگی.
+
+## 9. زیرنویس و متن
+- ساخت، ویرایش و زمان‌بندی زیرنویس SRT و WebVTT.
+- import/export، فونت فارسی، راست‌چین، outline و background.
+- تبدیل زیرنویس به متن چسبیده به تصویر هنگام خروجی، با امکان حفظ فایل جداگانه.
+- ابزار caption و safe area برای شبکه‌های اجتماعی.
+
+## 10. خروجی و رندر
+- صف رندر با چند job، توقف/ادامه در صورت امکان، لغو و گزارش خطا.
+- H.264 MP4 با presetهای شبکه اجتماعی، کیفیت و bitrate قابل تنظیم.
+- H.265 در صورت پشتیبانی encoder سیستم؛ ProRes/DNxHR فقط در صورت فراهم‌بودن encoder.
+- انتخاب رزولوشن، FPS، aspect ratio، audio codec، bitrate و محدوده In/Out.
+- رندر فقط محدوده انتخابی، نام‌گذاری نسخه‌ها و تخمین حجم فایل.
+- استفاده از FFmpeg با مسیر اجرایی قابل تشخیص؛ تست encoderها در شروع.
+- خروجی 1080p پیش‌فرض؛ 4K تنها در صورت انتخاب آگاهانه و هشدار عملکرد.
+
+## 11. ابزارهای کمکی و کیفیت محصول
+- میانبرهای قابل شخصی‌سازی و command search.
+- پنجره تنظیمات پروژه، cache، proxy، playback و render.
+- autosave، crash recovery، log قابل ارسال و گزارش مشخصات رسانه.
+- localization فارسی/انگلیسی، راهنمای درون‌برنامه‌ای و onboarding.
+- تست فایل‌های متنوع و رسانه خراب؛ پیام خطای انسانی و نه traceback خام.
+- بسته نصب ویندوز و بررسی وابستگی‌ها؛ بدون نیاز به اینترنت برای تدوین پس از نصب.
+
+## معماری پیشنهادی
+- PySide6 برای رابط؛ جداسازی مدل پروژه از UI.
+- مدل timeline مستقل از widgets؛ واحد زمان بر پایه frame/timebase و نه مختصات پیکسلی.
+- FFmpeg/ffprobe برای probe، proxy، thumbnail، waveform و render.
+- Qt Multimedia صرفاً برای preview اولیه؛ لایه پخش قابل تعویض در صورت محدودیت codec.
+- پردازش‌های سنگین در QThread/worker؛ ارتباط امن با UI از طریق signals.
+- OpenCV فقط به‌صورت وابستگی اختیاری برای tracking/stabilization؛ عدم تحميله على كل کاربر.
+- پروژه JSON نسخه‌بندی‌شده با مهاجرت schema و ذخیره مسیر نسبی در صورت امکان.
+
+## ترتیب اجرا و معیار تکمیل
+### فاز A — هسته قابل استفاده
+1. مدل پروژه و media bin پایدار، relink و autosave.
+2. preview پایدار و probe اطلاعات رسانه.
+3. تایم‌لاین واقعی frame-based با ترک، clip، playhead، zoom، seek و انتخاب.
+4. عملیات split/trim/move/ripple و undo/redo.
+5. ذخیره و بازخوانی دقیق timeline و تست round-trip.
+
+**معیار عبور:** ساخت یک پروژه 1080p، واردکردن چند ویدیو و صدا، چیدن در چند ترک، ذخیره، بستن و بازکردن بدون جابه‌جایی یا گم‌شدن زمان‌بندی.
+
+### فاز B — تدوین و خروجی
+1. ترنزیشن، speed، transform و keyframe.
+2. صدا، waveform، gain و fade.
+3. FFmpeg render queue و خروجی H.264 1080p.
+4. proxy workflow و بازیابی پروژه.
+
+**معیار عبور:** تولید یک ویدیوی کامل 1080p با تصویر و صدای sync و گزارش رندر.
+
+### فاز C — رنگ و جلوه‌های ویژه
+1. اصلاح رنگ پایه و LUT.
+2. masks، chroma key، blend modes و compositing.
+3. عنوان و موشن گرافیک.
+4. افکت‌ها، tracking و ابزارهای پیشرفته به‌صورت تدریجی.
+
+**معیار عبور:** ساخت یک سکانس واقعی با green screen، ماسک، عنوان متحرک و گرید رنگی؛ بدون قفل‌شدن UI.
+
+### فاز D — حرفه‌ای‌سازی
+1. scopes پیشرفته، ابزار صوتی تکمیلی و caption workflow.
+2. presetها، میانبرها، تست عملکرد و سازگاری.
+3. installer ویندوز، مستندات و نمونه پروژه.
+
+## محدودیت واقع‌بینانه
+«همه امکانات» در سطح نرم‌افزارهای عظیم تدوین و VFX سال‌ها توسعه و تیم تخصصی می‌خواهد. بنابراین این پروژه با معماری درست و فازهای قابل تست جلو می‌رود. امکانات سنگینی مانند 3D compositing کامل، rotoscoping پیشرفته، AI generative tools و tracking سطح بالا باید فازهای مستقل داشته باشند؛ تا وقتی پیاده‌سازی و آزمایش نشده‌اند، به‌عنوان قابلیت آماده معرفی نمی‌شوند.
