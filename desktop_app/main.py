@@ -23,6 +23,7 @@ from proxy_manager import create_proxy
 from waveform_manager import create_waveform, load_waveform
 from audio_render import render_audio_mix
 from audio_meter import estimate_track_peaks, peak_to_dbfs
+from color_preview import create_color_preview
 
 APP_NAME = "ZENITH Desktop"
 PROJECT_VERSION = 2
@@ -76,6 +77,33 @@ class ProxyTask(QRunnable):
             self.signals.finished.emit(self.path, str(result), "")
         except Exception as exc:
             self.signals.finished.emit(self.path, "", str(exc))
+
+
+class ColorPreviewSignals(QObject):
+    finished = Signal(str, str, str)
+
+
+class ColorPreviewTask(QRunnable):
+    """Render one graded clip preview away from the GUI thread."""
+
+    def __init__(self, clip_id: str, path: str, source_in: float,
+                 duration: float, grade: dict[str, float]) -> None:
+        super().__init__()
+        self.clip_id = clip_id
+        self.path = path
+        self.source_in = source_in
+        self.duration = duration
+        self.grade = dict(grade)
+        self.signals = ColorPreviewSignals()
+
+    def run(self) -> None:
+        try:
+            result = create_color_preview(
+                self.path, self.source_in, self.duration, self.grade
+            )
+            self.signals.finished.emit(self.clip_id, str(result), "")
+        except Exception as exc:
+            self.signals.finished.emit(self.clip_id, "", str(exc))
 
 
 class WaveformTaskSignals(QObject):
@@ -143,6 +171,10 @@ class ZenithEditor(QMainWindow):
         self._audio_render_pool = QThreadPool(self)
         self._audio_render_pool.setMaxThreadCount(1)
         self._audio_render_task: AudioRenderTask | None = None
+        self._color_preview_pool = QThreadPool(self)
+        self._color_preview_pool.setMaxThreadCount(1)
+        self._color_preview_tasks: list[ColorPreviewTask] = []
+        self._graded_preview_clip_id: str | None = None
         self.waveforms: dict[str, list[float]] = {}
         self._undo_stack: list[dict[str, Any]] = []
         self._redo_stack: list[dict[str, Any]] = []
@@ -303,6 +335,14 @@ class ZenithEditor(QMainWindow):
             slider.valueChanged.connect(self._color_controls_changed)
             inspector_layout.addWidget(slider)
             self.color_controls[key] = (slider, label, scale)
+
+        self.color_preview_button = QPushButton("ساخت پیش‌نمایش رنگ کلیپ")
+        self.color_preview_button.setToolTip(
+            "رندر یک پیش‌نمایش کم‌حجم از کلیپ انتخاب‌شده با تنظیمات رنگ فعلی"
+        )
+        self.color_preview_button.setEnabled(False)
+        self.color_preview_button.clicked.connect(self.create_color_preview_for_selected_clip)
+        inspector_layout.addWidget(self.color_preview_button)
 
         mixer_heading = QLabel("میکسر ترک‌ها")
         mixer_heading.setObjectName("panel_title")
@@ -544,6 +584,7 @@ class ZenithEditor(QMainWindow):
             except KeyError:
                 pass
         enabled = bool(clip and clip.media_type == "video")
+        self.color_preview_button.setEnabled(enabled)
         for slider, label, scale in self.color_controls.values():
             slider.setEnabled(enabled)
             if not enabled:
@@ -577,7 +618,59 @@ class ZenithEditor(QMainWindow):
         for key, (_, label, _) in self.color_controls.items():
             label.setText(f"{key.title()}: {clip.color_grade[key]:.2f}")
         self.timeline_widget.refresh()
-        self.statusBar().showMessage("تنظیمات اصلاح رنگ کلیپ تغییر کرد؛ در پروژه ذخیره می‌شود.")
+        self.color_preview_button.setText("به‌روزرسانی پیش‌نمایش رنگ")
+        self.statusBar().showMessage("تنظیمات رنگ ذخیره شد؛ برای مشاهده تصویر اصلاح‌شده، پیش‌نمایش رنگ را به‌روزرسانی کن.")
+
+    def create_color_preview_for_selected_clip(self) -> None:
+        clip_id = self.timeline_widget.canvas.selected_clip_id
+        if not clip_id:
+            self.statusBar().showMessage("ابتدا یک کلیپ ویدیویی را انتخاب کن")
+            return
+        try:
+            clip = self.timeline_project.get_clip(clip_id)
+        except KeyError:
+            return
+        if clip.media_type != "video":
+            self.statusBar().showMessage("پیش‌نمایش اصلاح رنگ فقط برای کلیپ ویدیویی است")
+            return
+        if not Path(clip.path).is_file():
+            self.statusBar().showMessage("فایل اصلی کلیپ پیدا نشد")
+            return
+        if any(task.clip_id == clip_id for task in self._color_preview_tasks):
+            self.statusBar().showMessage("ساخت پیش‌نمایش رنگ این کلیپ در حال انجام است")
+            return
+        task = ColorPreviewTask(
+            clip.clip_id, clip.path,
+            clip.source_in / max(1, self.timeline_project.fps),
+            clip.duration_frames / max(1, self.timeline_project.fps),
+            dict(clip.color_grade),
+        )
+        task.signals.finished.connect(self._color_preview_finished)
+        self._color_preview_tasks.append(task)
+        self.color_preview_button.setEnabled(False)
+        self.statusBar().showMessage(
+            "در حال ساخت پیش‌نمایش رنگ ۹۶۰ پیکسلی در پس‌زمینه؛ فایل اصلی تغییر نمی‌کند..."
+        )
+        self._color_preview_pool.start(task)
+
+    def _color_preview_finished(self, clip_id: str, preview_path: str, error: str) -> None:
+        self._color_preview_tasks = [
+            task for task in self._color_preview_tasks if task.clip_id != clip_id
+        ]
+        selected_id = self.timeline_widget.canvas.selected_clip_id
+        if preview_path and Path(preview_path).is_file():
+            if selected_id == clip_id:
+                self._graded_preview_clip_id = clip_id
+                self._load_preview_source(Path(preview_path), 0)
+                self.statusBar().showMessage(
+                    "پیش‌نمایش اصلاح رنگ آماده شد؛ نسخه اصلی دست‌نخورده باقی ماند."
+                )
+            else:
+                self.statusBar().showMessage("پیش‌نمایش رنگ در Cache ذخیره شد.")
+        else:
+            self.statusBar().showMessage(f"ساخت پیش‌نمایش رنگ ناموفق بود: {error}")
+        if selected_id == clip_id:
+            self.color_preview_button.setEnabled(True)
 
     def _audio_controls_changed(self, *_: Any) -> None:
         clip_id = self.timeline_widget.canvas.selected_clip_id
