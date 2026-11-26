@@ -24,8 +24,10 @@ from waveform_manager import create_waveform, load_waveform
 from audio_render import render_audio_mix
 from audio_meter import estimate_track_peaks, peak_to_dbfs
 from color_preview import create_color_preview
-from color_scopes import extract_rgb_histogram
+from color_scopes import extract_rgb_frame, extract_rgb_histogram
 from color_scope_widget import RGBHistogramWidget
+from advanced_scopes import calculate_luma_waveform, calculate_rgb_parade
+from advanced_scope_widget import ScopeMatrixWidget
 from speed_ramp_preview import create_speed_ramp_preview
 from video_render import render_timeline_mp4
 
@@ -117,17 +119,22 @@ class RGBHistogramSignals(QObject):
 class RGBHistogramTask(QRunnable):
     """Sample one tiny RGB frame off the GUI thread for the Color scope."""
 
-    def __init__(self, clip_id: str, path: str, timestamp: float, grade: dict[str, float]) -> None:
+    def __init__(self, clip_id: str, path: str, timestamp: float, grade: dict[str, float], scope_kind: str = "histogram") -> None:
         super().__init__()
         self.clip_id = clip_id
         self.path = path
         self.timestamp = timestamp
         self.grade = dict(grade)
+        self.scope_kind = scope_kind
         self.signals = RGBHistogramSignals()
 
     def run(self) -> None:
         try:
-            result = extract_rgb_histogram(self.path, self.timestamp, self.grade)
+            if self.scope_kind == "histogram":
+                result = extract_rgb_histogram(self.path, self.timestamp, self.grade)
+            else:
+                frame = extract_rgb_frame(self.path, self.timestamp, self.grade)
+                result = calculate_luma_waveform(frame) if self.scope_kind == "waveform" else calculate_rgb_parade(frame)
             self.signals.finished.emit(self.clip_id, result, "")
         except Exception as exc:
             self.signals.finished.emit(self.clip_id, None, str(exc))
@@ -588,6 +595,20 @@ class ZenithEditor(QMainWindow):
         self.rgb_histogram_button.setEnabled(False)
         self.rgb_histogram_button.clicked.connect(self.analyze_rgb_histogram)
         inspector_layout.addWidget(self.rgb_histogram_button)
+
+        self.waveform_widget = ScopeMatrixWidget("waveform")
+        inspector_layout.addWidget(self.waveform_widget)
+        self.waveform_button = QPushButton("تحلیل Waveform")
+        self.waveform_button.setEnabled(False)
+        self.waveform_button.clicked.connect(lambda: self.analyze_video_scope("waveform"))
+        inspector_layout.addWidget(self.waveform_button)
+
+        self.rgb_parade_widget = ScopeMatrixWidget("parade")
+        inspector_layout.addWidget(self.rgb_parade_widget)
+        self.rgb_parade_button = QPushButton("تحلیل RGB Parade")
+        self.rgb_parade_button.setEnabled(False)
+        self.rgb_parade_button.clicked.connect(lambda: self.analyze_video_scope("parade"))
+        inspector_layout.addWidget(self.rgb_parade_button)
 
         mixer_heading = QLabel("میکسر ترک‌ها")
         mixer_heading.setObjectName("panel_title")
@@ -1271,9 +1292,13 @@ class ZenithEditor(QMainWindow):
         enabled = bool(clip and clip.media_type == "video")
         if self._scope_clip_id != clip_id:
             self.rgb_histogram_widget.set_histogram(None)
+            self.waveform_widget.set_data(None)
+            self.rgb_parade_widget.set_data(None)
             self._scope_clip_id = clip_id
         self.color_preview_button.setEnabled(enabled)
         self.rgb_histogram_button.setEnabled(enabled)
+        self.waveform_button.setEnabled(enabled)
+        self.rgb_parade_button.setEnabled(enabled)
         for slider, label, scale in self.color_controls.values():
             slider.setEnabled(enabled)
             if not enabled:
@@ -1312,6 +1337,60 @@ class ZenithEditor(QMainWindow):
         self.rgb_histogram_button.setEnabled(False)
         self.statusBar().showMessage("در حال نمونه‌برداری یک فریم ۲۵۶×۱۴۴ برای هیستوگرام RGB...")
         self._scope_pool.start(task)
+
+    def analyze_video_scope(self, scope_kind: str) -> None:
+        clip_id = self.timeline_widget.canvas.selected_clip_id
+        if not clip_id:
+            self.statusBar().showMessage("ابتدا یک کلیپ ویدیویی انتخاب کن")
+            return
+        try:
+            clip = self.timeline_project.get_clip(clip_id)
+        except KeyError:
+            return
+        if clip.media_type != "video" or not clip.track.startswith("V"):
+            self.statusBar().showMessage("این Scope فقط برای کلیپ ویدیویی قابل محاسبه است")
+            return
+        if not Path(clip.path).is_file():
+            self.statusBar().showMessage("فایل اصلی کلیپ پیدا نشد")
+            return
+        if any(task.clip_id == clip_id for task in self._scope_tasks):
+            self.statusBar().showMessage("تحلیل دیگری برای این کلیپ در حال انجام است")
+            return
+        timestamp = clip.source_in / max(1, self.timeline_project.fps)
+        task = RGBHistogramTask(clip_id, clip.path, timestamp, dict(clip.color_grade), scope_kind)
+        task.signals.finished.connect(lambda cid, data, error: self._video_scope_finished(cid, scope_kind, data, error))
+        self._scope_tasks.append(task)
+        self._set_scope_buttons_enabled(False)
+        self.statusBar().showMessage(f"در حال محاسبه {scope_kind} از یک فریم کوچک در پس‌زمینه...")
+        self._scope_pool.start(task)
+
+    def _set_scope_buttons_enabled(self, enabled: bool) -> None:
+        clip_id = self.timeline_widget.canvas.selected_clip_id
+        try:
+            clip = self.timeline_project.get_clip(clip_id) if clip_id else None
+        except KeyError:
+            clip = None
+        ready = bool(enabled and clip and clip.media_type == "video")
+        self.rgb_histogram_button.setEnabled(ready)
+        self.waveform_button.setEnabled(ready)
+        self.rgb_parade_button.setEnabled(ready)
+
+    def _video_scope_finished(self, clip_id: str, scope_kind: str, data: object, error: str) -> None:
+        self._scope_tasks = [task for task in self._scope_tasks if task.clip_id != clip_id]
+        if self.timeline_widget.canvas.selected_clip_id != clip_id:
+            return
+        self._set_scope_buttons_enabled(True)
+        if data is None:
+            self.statusBar().showMessage(f"محاسبه {scope_kind} ناموفق بود: {error}")
+            return
+        if scope_kind == "waveform":
+            self.waveform_widget.set_data(data)
+        elif scope_kind == "parade":
+            self.rgb_parade_widget.set_data(data)
+        else:
+            self.rgb_histogram_widget.set_histogram(data)
+        self._scope_clip_id = clip_id
+        self.statusBar().showMessage(f"{scope_kind} فریم نمونه با Grade فعلی محاسبه شد؛ تصویر اصلی تغییر نکرد.")
 
     def _rgb_histogram_finished(self, clip_id: str, histogram: object, error: str) -> None:
         self._scope_tasks = [task for task in self._scope_tasks if task.clip_id != clip_id]
