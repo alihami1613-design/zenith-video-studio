@@ -519,6 +519,15 @@ class ZenithEditor(QMainWindow):
             ("shadows", "Shadows", -100, 100, 0.01, 0, "جزئیات نواحی سایه"),
             ("whites", "Whites", -100, 100, 0.01, 0, "سطح سفید و روشن‌ترین نقاط"),
             ("blacks", "Blacks", -100, 100, 0.01, 0, "سطح سیاه و عمیق‌ترین سایه‌ها"),
+            ("wheel_shadows_r", "Shadows Wheel · Red", -100, 100, 0.01, 0, "افزودن یا کاهش قرمز در سایه‌ها"),
+            ("wheel_shadows_g", "Shadows Wheel · Green", -100, 100, 0.01, 0, "افزودن یا کاهش سبز در سایه‌ها"),
+            ("wheel_shadows_b", "Shadows Wheel · Blue", -100, 100, 0.01, 0, "افزودن یا کاهش آبی در سایه‌ها"),
+            ("wheel_midtones_r", "Midtones Wheel · Red", -100, 100, 0.01, 0, "افزودن یا کاهش قرمز در تون‌های میانی"),
+            ("wheel_midtones_g", "Midtones Wheel · Green", -100, 100, 0.01, 0, "افزودن یا کاهش سبز در تون‌های میانی"),
+            ("wheel_midtones_b", "Midtones Wheel · Blue", -100, 100, 0.01, 0, "افزودن یا کاهش آبی در تون‌های میانی"),
+            ("wheel_highlights_r", "Highlights Wheel · Red", -100, 100, 0.01, 0, "افزودن یا کاهش قرمز در روشنایی‌ها"),
+            ("wheel_highlights_g", "Highlights Wheel · Green", -100, 100, 0.01, 0, "افزودن یا کاهش سبز در روشنایی‌ها"),
+            ("wheel_highlights_b", "Highlights Wheel · Blue", -100, 100, 0.01, 0, "افزودن یا کاهش آبی در روشنایی‌ها"),
         ]
         for key, title, low, high, scale, initial, tooltip in color_specs:
             label = QLabel(f"{title}: {initial * scale:.2f}")
