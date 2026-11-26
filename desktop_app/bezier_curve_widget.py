@@ -5,6 +5,8 @@ from PySide6.QtCore import Qt, Signal, QPointF
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import QWidget
 
+from bezier_curve_math import nearest_handle_index
+
 
 class BezierCurveWidget(QWidget):
     valuesChanged = Signal(float, float)
@@ -42,7 +44,7 @@ class BezierCurveWidget(QWidget):
         start, end = self._plot()
         span = max(1.0, start.y() - end.y())
         value = min(1.0, max(0.0, (start.y() - point.y()) / span))
-        if self._drag_index == 1:
+        if self._drag_index == 0:
             self._y1 = value
         else:
             self._y2 = value
@@ -52,7 +54,10 @@ class BezierCurveWidget(QWidget):
     def mousePressEvent(self, event) -> None:  # noqa: N802
         if event.button() == Qt.LeftButton:
             points = self._handle_points()
-            self._drag_index = 1 if (event.position() - points[0]).manhattanLength() > (event.position() - points[1]).manhattanLength() else 0
+            self._drag_index = nearest_handle_index(
+                event.position().x(), event.position().y(),
+                points[0].x(), points[0].y(), points[1].x(), points[1].y(),
+            )
             self.editingStarted.emit()
             self._set_handle_from_mouse(event.position())
             event.accept()
