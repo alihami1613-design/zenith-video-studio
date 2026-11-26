@@ -417,6 +417,15 @@ class ZenithEditor(QMainWindow):
         inspector_layout.addWidget(self.add_transform_keyframe_button)
         self.transform_keyframes_label = QLabel("Keyframe: —")
         inspector_layout.addWidget(self.transform_keyframes_label)
+        inspector_layout.addWidget(QLabel("Playback speed"))
+        self.playback_speed_combo = QComboBox()
+        for label, rate in (("0.25x — Slow", 0.25), ("0.5x — Half", 0.5), ("0.75x", 0.75), ("1x — Normal", 1.0), ("1.25x", 1.25), ("1.5x", 1.5), ("2x — Fast", 2.0), ("3x", 3.0), ("4x", 4.0)):
+            self.playback_speed_combo.addItem(label, rate)
+        inspector_layout.addWidget(self.playback_speed_combo)
+        self.apply_speed_button = QPushButton("Apply speed and resize clip")
+        self.apply_speed_button.setEnabled(False)
+        self.apply_speed_button.clicked.connect(self._apply_clip_speed)
+        inspector_layout.addWidget(self.apply_speed_button)
 
         color_heading = QLabel("اصلاح رنگ کلیپ")
         color_heading.setObjectName("panel_title")
@@ -805,6 +814,14 @@ class ZenithEditor(QMainWindow):
                 pass
         enabled = bool(clip and clip.media_type == "video" and clip.track.startswith("V"))
         self.add_transform_keyframe_button.setEnabled(enabled)
+        self.playback_speed_combo.setEnabled(enabled)
+        self.apply_speed_button.setEnabled(enabled)
+        if enabled:
+            index = self.playback_speed_combo.findData(float(getattr(clip, "playback_rate", 1.0)))
+            if index >= 0:
+                blocker = QSignalBlocker(self.playback_speed_combo)
+                self.playback_speed_combo.setCurrentIndex(index)
+                del blocker
         for control in self.transform_controls.values():
             control.setEnabled(enabled)
         if not enabled:
@@ -847,6 +864,26 @@ class ZenithEditor(QMainWindow):
                 del blocker
         self.transform_keyframes_label.setText(
             f"{len(clip.transform_keyframes)} Keyframe | فریم فعلی کلیپ: {local_frame}"
+        )
+
+    def _apply_clip_speed(self) -> None:
+        clip_id = self.timeline_widget.canvas.selected_clip_id
+        if not clip_id:
+            return
+        rate = float(self.playback_speed_combo.currentData() or 1.0)
+        try:
+            self._push_undo()
+            clip = self.timeline_project.set_clip_speed(clip_id, rate)
+        except (KeyError, ValueError) as exc:
+            if self._undo_stack:
+                self._undo_stack.pop()
+            self._update_history_buttons()
+            self.statusBar().showMessage(f"Speed change failed: {exc}")
+            return
+        self._refresh_timeline()
+        self._sync_transform_controls()
+        self.statusBar().showMessage(
+            f"Speed {rate:g}x applied; clip length is now {clip.duration_frames} frames. Check for overlaps."
         )
 
     def _add_transform_keyframe(self) -> None:
