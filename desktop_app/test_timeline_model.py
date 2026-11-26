@@ -471,6 +471,22 @@ class TimelineModelTests(unittest.TestCase):
         self.assertEqual(transform_eased_progress({"ease": "ease_in"}, -1), 0.0)
         self.assertEqual(transform_eased_progress({"ease": "ease_out"}, 2), 1.0)
 
+    def test_transform_keyframe_opacity_round_trip_and_validation(self):
+        project = TimelineProject()
+        clip = project.add_clip("opacity.mp4", "opacity.mp4", duration_frames=60)
+        project.set_clip_transform_keyframes(clip.clip_id, [
+            {"frame": 0, "opacity": 1.0},
+            {"frame": 30, "opacity": 0.25},
+        ])
+        restored = TimelineProject.from_dict(project.to_dict())
+        saved = restored.get_clip(clip.clip_id)
+        self.assertAlmostEqual(saved.transform_keyframes[1]["opacity"], 0.25)
+        self.assertAlmostEqual(saved.transform_keyframes[0]["opacity"], 1.0)
+        with self.assertRaisesRegex(ValueError, "opacity"):
+            project.set_clip_transform_keyframes(clip.clip_id, [
+                {"frame": 0, "opacity": 1.2},
+            ])
+
 
 if __name__ == "__main__":
     unittest.main()
