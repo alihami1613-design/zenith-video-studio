@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Iterable
 
 from proxy_manager import find_ffmpeg
+from speed_ramp import build_speed_segments
 
 
 def _seconds(frames: int, fps: int) -> float:
@@ -82,17 +83,44 @@ def build_audio_mix_command(
             raise ValueError(f"مدت Fade از طول کلیپ بیشتر است: {clip.name}")
 
         command.extend(["-i", str(source)])
-        playback_rate = float(getattr(clip, "playback_rate", 1.0)) if getattr(clip, "media_type", "") == "video" else 1.0
+        is_embedded_video_audio = getattr(clip, "media_type", "") == "video"
+        playback_rate = float(getattr(clip, "playback_rate", 1.0)) if is_embedded_video_audio else 1.0
         duration = _seconds(clip.duration_frames, fps)
-        source_duration = duration * playback_rate
         source_start = _seconds(clip.source_in, fps)
-        chain = [
-            f"atrim=start={source_start:.6f}:duration={source_duration:.6f}",
-            "asetpts=PTS-STARTPTS",
-            *_atempo_chain(playback_rate),
-            *(["areverse"] if bool(getattr(clip, "reverse_playback", False)) and getattr(clip, "media_type", "") == "video" else []),
-            f"volume={clip.volume:.4f}",
-        ]
+        ramp_points = list(getattr(clip, "speed_ramp", []) or []) if is_embedded_video_audio else []
+        speed_segments = build_speed_segments(clip.duration_frames, fps, ramp_points) if ramp_points else []
+        if speed_segments:
+            if bool(getattr(clip, "reverse_playback", False)):
+                raise ValueError(f"Speed Ramp و Reverse هم‌زمان فعلاً برای صدای کلیپ پشتیبانی نمی‌شوند: {clip.name}")
+            split_labels = "".join(f"[ar{index}_{part}]" for part in range(len(speed_segments)))
+            filters.append(f"{audio_source_label}{','.join(chain)}[{label}]")
+            segment_outputs = []
+            for part, segment in enumerate(speed_segments):
+                label = f"arout{index}_{part}"
+                segment_outputs.append(f"[{label}]")
+                segment_chain = [
+                    f"atrim=start={float(segment['source_start_frames']) / fps:.6f}:"
+                    f"duration={float(segment['source_duration_frames']) / fps:.6f}",
+                    "asetpts=PTS-STARTPTS",
+                    *_atempo_chain(float(segment["rate"])),
+                ]
+                filters.append(f"[ar{index}_{part}]{','.join(segment_chain)}[{label}]")
+            ramp_label = f"audioramp{index}"
+            filters.append(
+                f"{''.join(segment_outputs)}concat=n={len(speed_segments)}:v=0:a=1[{ramp_label}]"
+            )
+            audio_source_label = f"[{ramp_label}]"
+            chain = [f"volume={clip.volume:.4f}"]
+        else:
+            source_duration = duration * playback_rate
+            audio_source_label = f"[{index}:a:0]"
+            chain = [
+                f"atrim=start={source_start:.6f}:duration={source_duration:.6f}",
+                "asetpts=PTS-STARTPTS",
+                *_atempo_chain(playback_rate),
+                *(["areverse"] if bool(getattr(clip, "reverse_playback", False)) and is_embedded_video_audio else []),
+                f"volume={clip.volume:.4f}",
+            ]
         if clip.fade_in_frames:
             fade_in = _seconds(clip.fade_in_frames, fps)
             chain.append(f"afade=t=in:st=0:d={fade_in:.6f}")
