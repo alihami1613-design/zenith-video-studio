@@ -38,6 +38,23 @@ def _transform_value_at(keyframes: list[dict[str, float]], frame: int) -> dict[s
     return defaults
 
 
+
+def _speed_rate_at(points: list[dict[str, float]], frame: int) -> float:
+    """Evaluate a linear speed curve at a clip-local frame."""
+    if not points:
+        return 1.0
+    if frame <= int(points[0]["frame"]):
+        return float(points[0]["rate"])
+    if frame >= int(points[-1]["frame"]):
+        return float(points[-1]["rate"])
+    for left, right in zip(points, points[1:]):
+        lf, rf = int(left["frame"]), int(right["frame"])
+        if lf <= frame <= rf:
+            ratio = (frame - lf) / (rf - lf)
+            return float(left["rate"]) + (float(right["rate"]) - float(left["rate"])) * ratio
+    return 1.0
+
+
 @dataclass
 class Clip:
     """A timeline clip; all positions and lengths are integer frames."""
@@ -302,11 +319,20 @@ class TimelineProject:
         ):
             retained_keys.insert(0, {"frame": 0, **_transform_value_at(original_keys, removed_from_left)})
         clip.transform_keyframes = retained_keys
-        clip.speed_ramp = [
+        original_ramp = [dict(point) for point in clip.speed_ramp]
+        retained_ramp = [
             dict(point, frame=int(point["frame"]) - removed_from_left)
-            for point in clip.speed_ramp
+            for point in original_ramp
             if removed_from_left <= int(point["frame"]) < removed_from_left + clip.duration_frames
         ]
+        if removed_from_left > 0 and original_ramp and (
+            not retained_ramp or retained_ramp[0]["frame"] > 0
+        ):
+            retained_ramp.insert(0, {
+                "frame": 0,
+                "rate": _speed_rate_at(original_ramp, removed_from_left),
+            })
+        clip.speed_ramp = retained_ramp
         clip.validate()
         return clip
 
@@ -329,9 +355,14 @@ class TimelineProject:
             anchor_y=original.anchor_y,
             playback_rate=original.playback_rate,
             motion_blur=original.motion_blur,
-            speed_ramp=[dict(point, frame=int(point['frame']) - (at_frame - original.start_frame))
-                        for point in original.speed_ramp
-                        if int(point['frame']) >= (at_frame - original.start_frame)],
+            speed_ramp=(
+                [{"frame": 0, "rate": _speed_rate_at(original.speed_ramp, at_frame - original.start_frame)}]
+                if original.speed_ramp else []
+            ) + [
+                dict(point, frame=int(point["frame"]) - (at_frame - original.start_frame))
+                for point in original.speed_ramp
+                if int(point["frame"]) > (at_frame - original.start_frame)
+            ],
             reverse_playback=original.reverse_playback,
             volume=original.volume,
             fade_out_frames=original.fade_out_frames,
