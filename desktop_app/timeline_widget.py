@@ -153,7 +153,22 @@ class TimelineCanvas(QWidget):
                         if sample_index >= len(waveform):
                             break
                         amplitude = waveform[sample_index]
-                        bar_height = max(1, int(amplitude * half_height))
+                        relative_frame = (
+                            pixel_offset / max(1, self.pixels_per_second)
+                        ) * self.project.fps
+                        envelope = min(1.0, max(0.0, clip.volume))
+                        if clip.fade_in_frames:
+                            envelope = min(
+                                envelope,
+                                relative_frame / max(1, clip.fade_in_frames),
+                            )
+                        if clip.fade_out_frames:
+                            remaining = clip.duration_frames - relative_frame
+                            envelope = min(
+                                envelope,
+                                remaining / max(1, clip.fade_out_frames),
+                            )
+                        bar_height = max(1, int(amplitude * half_height * max(0.0, envelope)))
                         px = x1 + 4 + pixel_offset
                         painter.setPen(QPen(QColor("#B7D8E5"), 1))
                         painter.drawLine(px, center_y - bar_height, px, center_y + bar_height)
