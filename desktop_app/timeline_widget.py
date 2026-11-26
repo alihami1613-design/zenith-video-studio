@@ -21,6 +21,10 @@ class TimelineCanvas(QWidget):
     speedRampChanged = Signal(str, list)
     transformKeyframeMoved = Signal(str, int, int)
     transformKeyframeSelected = Signal(str, int)
+    maskKeyframeMoved = Signal(str, int, int)
+    maskKeyframeSelected = Signal(str, int)
+    maskKeyframeMoved = Signal(str, int, int)
+    maskKeyframeSelected = Signal(str, int)
 
     def __init__(self, project, parent=None):
         super().__init__(parent)
@@ -39,6 +43,9 @@ class TimelineCanvas(QWidget):
         self._drag_transform_keyframe_frame = None
         self._preview_transform_keyframe_frame = None
         self.selected_transform_keyframe_frame = None
+        self._drag_mask_keyframe_frame = None
+        self._preview_mask_keyframe_frame = None
+        self.selected_mask_keyframe_frame = None
         self._preview_ramp_points = None
         self._playhead_dragging = False
         self.waveforms = {}
@@ -231,13 +238,18 @@ class TimelineCanvas(QWidget):
                         painter.drawPolygon(diamond)
                     for key in clip.mask_keyframes:
                         mask_frame = int(key["frame"])
-                        mask_x = x1 + int(mask_frame / max(1, clip.duration_frames) * (x2 - x1))
+                        shown_mask_frame = (self._preview_mask_keyframe_frame
+                                            if self._drag_mask_keyframe_frame == mask_frame
+                                            and self._preview_mask_keyframe_frame is not None
+                                            else mask_frame)
+                        mask_x = x1 + int(shown_mask_frame / max(1, clip.duration_frames) * (x2 - x1))
                         mask_y = rect_y + rect_h - 8
                         mask_diamond = QPolygonF([
                             QPoint(mask_x, mask_y - 4), QPoint(mask_x + 4, mask_y),
                             QPoint(mask_x, mask_y + 4), QPoint(mask_x - 4, mask_y),
                         ])
-                        painter.setBrush(QBrush(QColor("#75D6C8")))
+                        active_mask = mask_frame == self.selected_mask_keyframe_frame
+                        painter.setBrush(QBrush(QColor("#D1FFF6") if active_mask else QColor("#75D6C8")))
                         painter.setPen(QPen(QColor("#123A35"), 1))
                         painter.drawPolygon(mask_diamond)
                 if selected:
@@ -288,6 +300,22 @@ class TimelineCanvas(QWidget):
                 nearest, distance_min = frame, distance
         return nearest
 
+    def _mask_keyframe_at(self, clip, point):
+        if clip.media_type != "video" or not clip.track.startswith("V"):
+            return None
+        left, right = self._frame_x(clip.start_frame), self._frame_x(clip.end_frame)
+        width = max(1, right - left)
+        track_y = RULER_HEIGHT + TRACKS.index(clip.track) * TRACK_HEIGHT + 5
+        marker_y = track_y + (TRACK_HEIGHT - 10) - 8
+        nearest, distance_min = None, 81
+        for key in clip.mask_keyframes:
+            frame = int(key["frame"])
+            x = left + int(frame / max(1, clip.duration_frames) * width)
+            distance = (point.x() - x) ** 2 + (point.y() - marker_y) ** 2
+            if distance < distance_min:
+                nearest, distance_min = frame, distance
+        return nearest
+
     def mousePressEvent(self, event):
         if event.button() != Qt.LeftButton:
             return
@@ -308,7 +336,21 @@ class TimelineCanvas(QWidget):
                 self.transformKeyframeSelected.emit(clip.clip_id, keyframe_frame)
                 self.update()
                 return
+            mask_frame = self._mask_keyframe_at(clip, point)
+            if mask_frame is not None:
+                self.selected_mask_keyframe_frame = mask_frame
+                self._drag_clip_id = clip.clip_id
+                self._drag_mode = "mask_keyframe"
+                self._drag_mask_keyframe_frame = mask_frame
+                self._preview_mask_keyframe_frame = mask_frame
+                self._drag_origin = point
+                self.editStarted.emit()
+                self.clipSelected.emit(clip.clip_id)
+                self.maskKeyframeSelected.emit(clip.clip_id, mask_frame)
+                self.update()
+                return
             self.selected_transform_keyframe_frame = None
+            self.selected_mask_keyframe_frame = None
             self._drag_clip_id = clip.clip_id
             self._drag_origin = point
             self._drag_start_frame = clip.start_frame
@@ -352,6 +394,16 @@ class TimelineCanvas(QWidget):
                 low = int(keys[index - 1]["frame"]) + 1 if index else 0
                 high = int(keys[index + 1]["frame"]) - 1 if index + 1 < len(keys) else clip.duration_frames - 1
                 self._preview_transform_keyframe_frame = max(low, min(high, local))
+        elif self._drag_mode == "mask_keyframe":
+            keys = sorted(clip.mask_keyframes, key=lambda item: int(item["frame"]))
+            index = next((i for i, item in enumerate(keys) if int(item["frame"]) == self._drag_mask_keyframe_frame), -1)
+            if index >= 0:
+                left = self._frame_x(clip.start_frame)
+                width = max(1, self._frame_x(clip.end_frame) - left)
+                local = int(round((event.position().toPoint().x() - left) / width * clip.duration_frames))
+                low = int(keys[index - 1]["frame"]) + 1 if index else 0
+                high = int(keys[index + 1]["frame"]) - 1 if index + 1 < len(keys) else clip.duration_frames - 1
+                self._preview_mask_keyframe_frame = max(low, min(high, local))
         elif self._drag_mode == "ramp":
             index = self._drag_ramp_index
             if index is not None and self._preview_ramp_points:
@@ -418,7 +470,11 @@ class TimelineCanvas(QWidget):
             return
         clip = self.project.get_clip(self._drag_clip_id)
         preview = self._preview_state
-        if self._drag_mode == "transform_keyframe":
+        if self._drag_mode == "mask_keyframe":
+            if (self._drag_mask_keyframe_frame is not None and self._preview_mask_keyframe_frame is not None
+                    and self._preview_mask_keyframe_frame != self._drag_mask_keyframe_frame):
+                self.maskKeyframeMoved.emit(clip.clip_id, self._drag_mask_keyframe_frame, self._preview_mask_keyframe_frame)
+        elif self._drag_mode == "transform_keyframe":
             if (self._drag_transform_keyframe_frame is not None and self._preview_transform_keyframe_frame is not None
                     and self._preview_transform_keyframe_frame != self._drag_transform_keyframe_frame):
                 self.transformKeyframeMoved.emit(clip.clip_id, self._drag_transform_keyframe_frame, self._preview_transform_keyframe_frame)
@@ -438,6 +494,8 @@ class TimelineCanvas(QWidget):
         self._drag_ramp_index = None
         self._drag_transform_keyframe_frame = None
         self._preview_transform_keyframe_frame = None
+        self._drag_mask_keyframe_frame = None
+        self._preview_mask_keyframe_frame = None
         self._drag_clip_id = None
         self.update_geometry_for_project()
 
@@ -487,6 +545,8 @@ class TimelineWidget(QWidget):
         self.canvas.speedRampChanged.connect(self.speedRampChanged)
         self.canvas.transformKeyframeMoved.connect(self.transformKeyframeMoved)
         self.canvas.transformKeyframeSelected.connect(self.transformKeyframeSelected)
+        self.canvas.maskKeyframeMoved.connect(self.maskKeyframeMoved)
+        self.canvas.maskKeyframeSelected.connect(self.maskKeyframeSelected)
 
     def set_project(self, project):
         self.project = project
