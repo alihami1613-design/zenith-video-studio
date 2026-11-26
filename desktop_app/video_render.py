@@ -11,7 +11,7 @@ from audio_render import render_audio_mix
 from proxy_manager import find_ffmpeg
 from video_color import build_color_filter
 
-RENDER_VERSION = "timeline-h264-v8-motion-blur"
+RENDER_VERSION = "timeline-h264-v9-reverse"
 STILL_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".webp", ".tif", ".tiff"}
 
 
@@ -151,7 +151,9 @@ def build_video_render_command(ffmpeg: str, project: object,
         start = _seconds(clip.start_frame - transition, fps)
         chain = (
             f"[{index}:v:0]trim=duration={source_duration:.6f},"
-            f"setpts=(PTS-STARTPTS)/{playback_rate:.6f},"
+            + ("reverse," if bool(getattr(clip, "reverse_playback", False)) else "")
+            + f"setpts=(PTS-STARTPTS)/{playback_rate:.6f},"
+
             f"scale={width}:{height}:force_original_aspect_ratio=decrease,"
             f"format=rgba,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:"
             "color=black@0"
