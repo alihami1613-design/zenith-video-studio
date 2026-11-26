@@ -13,7 +13,7 @@ from PySide6.QtMultimediaWidgets import QVideoWidget
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QFileDialog, QMessageBox,
     QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QListWidget,
-    QListWidgetItem, QSplitter, QFrame, QStatusBar, QSlider, QCheckBox, QComboBox, QProgressBar, QDoubleSpinBox, QLineEdit
+    QListWidgetItem, QSplitter, QFrame, QStatusBar, QSlider, QCheckBox, QComboBox, QProgressBar, QDoubleSpinBox, QLineEdit, QSpinBox
 )
 
 from timeline_model import TimelineProject, transform_eased_progress
