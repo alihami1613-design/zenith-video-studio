@@ -12,7 +12,7 @@ from proxy_manager import find_ffmpeg
 from video_color import build_color_filter
 from speed_ramp import build_speed_segments
 
-RENDER_VERSION = "timeline-h264-v11-blend-modes"
+RENDER_VERSION = "timeline-h264-v12-chroma-mask"
 STILL_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".webp", ".tif", ".tiff"}
 
 
@@ -209,6 +209,22 @@ def build_video_render_command(ffmpeg: str, project: object,
             f"format=rgba,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:"
             "color=black@0"
         )
+        if bool(getattr(clip, "chroma_key_enabled", False)):
+            key_color = str(getattr(clip, "chroma_key_color", "#00FF00")).lstrip("#").upper()
+            similarity = float(getattr(clip, "chroma_key_similarity", 0.25))
+            key_blend = float(getattr(clip, "chroma_key_blend", 0.08))
+            chain += f",colorkey=0x{key_color}:{similarity:.4f}:{key_blend:.4f}"
+        if bool(getattr(clip, "mask_enabled", False)):
+            mask_x = float(getattr(clip, "mask_x", 0.0))
+            mask_y = float(getattr(clip, "mask_y", 0.0))
+            mask_w = float(getattr(clip, "mask_width", 1.0))
+            mask_h = float(getattr(clip, "mask_height", 1.0))
+            chain += (
+                f",crop=w='max(2\\,trunc(iw*{mask_w:.6f}))':"
+                f"h='max(2\\,trunc(ih*{mask_h:.6f}))':"
+                f"x='trunc(iw*{mask_x:.6f})':y='trunc(ih*{mask_y:.6f})',"
+                f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=black@0"
+            )
         fade_in = int(getattr(clip, "video_fade_in_frames", 0))
         fade_out = int(getattr(clip, "video_fade_out_frames", 0))
         transition_type = str(getattr(clip, "transition_in_type", "dissolve"))
