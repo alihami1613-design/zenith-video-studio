@@ -113,6 +113,57 @@ class AudioRenderCommandTests(unittest.TestCase):
                     },
                 )
 
+    def test_ducking_applies_voice_sidechain_to_music_track(self):
+        with tempfile.TemporaryDirectory() as folder:
+            voice = Path(folder) / "voice.wav"
+            music = Path(folder) / "music.wav"
+            voice.touch()
+            music.touch()
+            clips = [
+                self.make_clip(voice, clip_id="voice", track="A1"),
+                self.make_clip(music, clip_id="music", track="A2"),
+            ]
+            command = build_audio_mix_command(
+                "ffmpeg", clips, 30, "mix.wav",
+                audio_ducking={
+                    "enabled": True, "voice_track": "A1", "music_track": "A2",
+                    "reduction_db": 12, "attack_ms": 20, "release_ms": 500,
+                },
+            )
+        joined = " ".join(command)
+        self.assertIn("sidechaincompress=threshold=0.025", joined)
+        self.assertIn("attack=20:release=500", joined)
+        self.assertIn("[track1][track0]", joined)
+        self.assertIn("[musicducked]", joined)
+
+    def test_ducking_rejects_same_or_unavailable_track(self):
+        with tempfile.TemporaryDirectory() as folder:
+            voice = Path(folder) / "voice.wav"
+            music = Path(folder) / "music.wav"
+            voice.touch()
+            music.touch()
+            clips = [
+                self.make_clip(voice, clip_id="voice", track="A1"),
+                self.make_clip(music, clip_id="music", track="A2"),
+            ]
+            with self.assertRaises(ValueError):
+                build_audio_mix_command(
+                    "ffmpeg", clips, 30, "mix.wav",
+                    audio_ducking={
+                        "enabled": True, "voice_track": "A1", "music_track": "A1"
+                    },
+                )
+            with self.assertRaises(ValueError):
+                build_audio_mix_command(
+                    "ffmpeg", clips, 30, "mix.wav",
+                    audio_track_settings={
+                        "A1": {"volume": 1.0, "muted": True, "solo": False}
+                    },
+                    audio_ducking={
+                        "enabled": True, "voice_track": "A1", "music_track": "A2"
+                    },
+                )
+
     def test_sorts_clips_by_timeline_position(self):
         with tempfile.TemporaryDirectory() as folder:
             first = Path(folder) / "first.wav"
