@@ -89,6 +89,23 @@ def validate_render_project(project: object) -> list[object]:
     return clips
 
 
+
+def _keyframe_expression(keyframes: list[dict[str, float]], field: str, default: float, fps: int) -> str:
+    """Build a piecewise-linear FFmpeg expression using clip-local T."""
+    if not keyframes:
+        return f"{default:.6f}"
+    points = [(int(item["frame"]) / fps, float(item.get(field, default))) for item in keyframes]
+    if len(points) == 1:
+        return f"{points[0][1]:.6f}"
+    expression = f"{points[-1][1]:.6f}"
+    for index in range(len(points) - 2, -1, -1):
+        t0, v0 = points[index]
+        t1, v1 = points[index + 1]
+        linear = f"({v0:.6f}+({v1-v0:.6f})*(T-{t0:.6f})/{(t1-t0):.6f})"
+        expression = f"if(lt(T\\,{t1:.6f})\\,{linear}\\,{expression})"
+    return f"if(lt(T\\,{points[0][0]:.6f})\\,{points[0][1]:.6f}\\,{expression})"
+
+
 def build_video_render_command(ffmpeg: str, project: object,
                                output_path: str | Path) -> list[str]:
     """Composite V1-V4 bottom-to-top; still images loop for their clip duration."""
@@ -144,13 +161,30 @@ def build_video_render_command(ffmpeg: str, project: object,
             fade_start = clip_duration - _seconds(fade_out, fps)
             chain += f",fade=t=out:st={fade_start:.6f}:d={_seconds(fade_out, fps):.6f}:alpha=1"
         chain += f",setpts=PTS+{start:.6f}/TB"
+        keyframes = list(getattr(clip, "transform_keyframes", []) or [])
+        if keyframes:
+            scale_expr = _keyframe_expression(keyframes, "scale", 1.0, fps)
+            rotation_expr = _keyframe_expression(keyframes, "rotation", 0.0, fps)
+            chain += (
+                f",scale=w='iw*({scale_expr})':h='ih*({scale_expr})':eval=frame"
+                f",rotate=angle='({rotation_expr})*PI/180':"
+                "ow=rotw(iw):oh=roth(ih):c=black@0"
+            )
         grade = build_color_filter(getattr(clip, "color_grade", {}))
         if grade:
             chain += "," + grade
         chain += f"[v{index}]"
         filters.append(chain)
         out_label = f"base{index + 1}"
-        if transition and transition_type == "push_left":
+        if keyframes:
+            x_expr = _keyframe_expression(keyframes, "x", 0.0, fps).replace("T", f"(t-{start:.6f})")
+            y_expr = _keyframe_expression(keyframes, "y", 0.0, fps).replace("T", f"(t-{start:.6f})")
+            overlay_filter = (
+                f"[{previous}][v{index}]overlay="
+                f"x='(W-w)/2+W*({x_expr})':y='(H-h)/2+H*({y_expr})':"
+                "eof_action=pass:repeatlast=0:shortest=0:format=auto"
+            )
+        elif transition and transition_type == "push_left":
             transition_seconds = _seconds(transition, fps)
             overlay_x = (
                 f"x='-W+W*min(max((t-{start:.6f})/{transition_seconds:.6f}\\,0)\\,1)'"
