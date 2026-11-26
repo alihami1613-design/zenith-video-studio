@@ -27,7 +27,12 @@ class RGBHistogramTests(unittest.TestCase):
         self.assertIn("1", command[command.index("-frames:v") + 1])
         self.assertIn("-threads", command)
         self.assertIn("256:144", command[command.index("-vf") + 1])
-        self.assertEqual(command[-2:], ["-f", "rawvideo"] if False else command[-2:])
+        self.assertEqual(command[-3:], ["-f", "rawvideo", "pipe:1"])
+
+    def test_applies_current_grade_before_sampling(self):
+        command = build_histogram_command("ffmpeg", "sample.mp4", 0, {"wheel_shadows_r": 0.5})
+        filters = command[command.index("-vf") + 1]
+        self.assertIn("colorbalance=", filters)
 
     def test_rejects_negative_timestamp(self):
         with self.assertRaises(ValueError):
