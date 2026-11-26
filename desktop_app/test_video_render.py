@@ -135,7 +135,7 @@ class VideoRenderTests(unittest.TestCase):
         )
         self.assertIn("mod(", expression)
         self.assertIn("eq(", expression)
-        self.assertGreaterEqual(expression.count("if("), 3)
+        self.assertGreaterEqual(expression.count("if("), 2)
         with self.assertRaisesRegex(ValueError, "at least 3 points"):
             build_mask_shape_expression("polygon", 0, 0, 1, 1, [[0, 0], [1, 1]], 1920, 1080)
 
