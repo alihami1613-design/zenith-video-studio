@@ -13,7 +13,7 @@ from PySide6.QtMultimediaWidgets import QVideoWidget
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QFileDialog, QMessageBox,
     QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QListWidget,
-    QListWidgetItem, QSplitter, QFrame, QStatusBar, QSlider, QCheckBox, QComboBox
+    QListWidgetItem, QSplitter, QFrame, QStatusBar, QSlider, QCheckBox, QComboBox, QProgressBar
 )
 
 from timeline_model import TimelineProject
@@ -22,6 +22,7 @@ from media_probe import probe_media, duration_to_frames
 from proxy_manager import create_proxy
 from waveform_manager import create_waveform, load_waveform
 from audio_render import render_audio_mix
+from audio_meter import estimate_track_peaks, peak_to_dbfs
 
 APP_NAME = "ZENITH Desktop"
 PROJECT_VERSION = 2
@@ -312,8 +313,21 @@ class ZenithEditor(QMainWindow):
             row.addWidget(mute)
             row.addWidget(solo)
             inspector_layout.addLayout(row)
+            meter_row = QHBoxLayout()
+            meter_label = QLabel("-∞ dBFS")
+            meter_label.setFixedWidth(66)
+            meter = QProgressBar()
+            meter.setRange(0, 150)
+            meter.setValue(0)
+            meter.setTextVisible(False)
+            meter.setFixedHeight(9)
+            meter.setToolTip("برآورد پیک از شکل موج ذخیره‌شده؛ نشانگر زنده پخش نیست")
+            meter_row.addWidget(meter, 1)
+            meter_row.addWidget(meter_label)
+            inspector_layout.addLayout(meter_row)
             self.track_mixer_controls[track] = {
-                "gain": gain, "mute": mute, "solo": solo
+                "gain": gain, "mute": mute, "solo": solo,
+                "meter": meter, "meter_label": meter_label,
             }
         duck_heading = QLabel("Ducking هوشمند گویندگی")
         duck_heading.setObjectName("panel_title")
@@ -669,6 +683,7 @@ class ZenithEditor(QMainWindow):
         self.timeline_widget.set_waveforms(self.waveforms)
         self._sync_audio_controls()
         self._sync_audio_track_controls()
+        self._sync_audio_peak_meters()
         self._sync_audio_ducking_controls()
 
     def _start_waveform(self, path: str) -> None:
@@ -684,6 +699,7 @@ class ZenithEditor(QMainWindow):
         if values:
             self.waveforms[path] = list(values)
             self.timeline_widget.set_waveforms(self.waveforms)
+            self._sync_audio_peak_meters()
             self.statusBar().showMessage(
                 f"شکل موج صوتی آماده شد: {Path(path).name}"
             )
@@ -850,6 +866,23 @@ class ZenithEditor(QMainWindow):
             controls["solo"].setChecked(bool(settings.get("solo", False)))
             del blockers
 
+    def _sync_audio_peak_meters(self) -> None:
+        """Show cached waveform peak estimates, not live playback levels."""
+        try:
+            peaks = estimate_track_peaks(
+                self.timeline_project.clips,
+                self.waveforms,
+                self.timeline_project.fps,
+                self.timeline_project.audio_track_settings,
+                self.timeline_project.audio_tracks,
+            )
+        except (TypeError, ValueError):
+            return
+        for track, controls in self.track_mixer_controls.items():
+            peak = peaks.get(track, 0.0)
+            controls["meter"].setValue(round(peak * 100))
+            controls["meter_label"].setText(peak_to_dbfs(peak))
+
     def _sync_audio_ducking_controls(self) -> None:
         settings = self.timeline_project.audio_ducking
         blockers = [
@@ -891,6 +924,7 @@ class ZenithEditor(QMainWindow):
             self._sync_audio_track_controls()
             return
         self.statusBar().showMessage(f"تنظیمات میکسر {track} تغییر کرد")
+        self._sync_audio_peak_meters()
         self.timeline_widget.refresh()
 
     def export_audio_mix(self) -> None:
