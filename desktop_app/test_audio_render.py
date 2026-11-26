@@ -212,7 +212,8 @@ class AudioRenderCommandTests(unittest.TestCase):
             source = Path(folder) / "reverse-camera.mp4"
             source.touch()
             clip = self.make_clip(source, clip_id="reverse-camera", track="V1",
-                                  media_type="video", has_audio=True, reverse_playback=True)
+                                  media_type="video", has_audio=True, audio_track="A1",
+                                  reverse_playback=True)
             command = build_audio_mix_command("ffmpeg", [clip], 30, "mix.wav")
         self.assertIn("areverse", " ".join(command))
 if __name__ == "__main__":
