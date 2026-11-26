@@ -23,7 +23,7 @@ from media_probe import probe_media, duration_to_frames
 APP_NAME = "ZENITH Desktop"
 PROJECT_VERSION = 2
 MEDIA_FILTER = (
-    "Media files (*.mp4 *.mov *.mkv *.avi *.webm *.mp3 *.wav *.m4a *.aac "
+    "Media files (*.mp4 *.mov *.mkv *.avi *.webm *.mp3 *.wav *.m4a *.aac *.ogg *.flac "
     "*.png *.jpg *.jpeg);;All files (*.*)"
 )
 AUDIO_EXTENSIONS = {".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac"}
