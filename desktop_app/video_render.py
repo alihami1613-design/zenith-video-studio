@@ -317,7 +317,7 @@ def build_video_render_command(ffmpeg: str, project: object,
                 )
                 chain += (
                     f",geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':"
-                    f"a='if({mask_expr}\,alpha(X,Y)\,0)'"
+                    f"a='if({mask_invert}\\,if({mask_expr}\\,0\\,alpha(X,Y))\\,if({mask_expr}\\,alpha(X,Y)\\,0))'"
                 )
             elif abs(float(getattr(clip, "mask_rotation", 0.0))) > 1e-9:
                 mask_expr = build_animated_mask_shape_expression(
