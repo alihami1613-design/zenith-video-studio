@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import Qt, QUrl, QSignalBlocker, QObject, Signal, QRunnable, QThreadPool, QPointF, QEvent
+from PySide6.QtCore import Qt, QUrl, QSignalBlocker, QObject, Signal, QRunnable, QThreadPool, QPointF
 from PySide6.QtGui import QAction, QFont, QPainter, QPen, QBrush, QColor, QPolygonF
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtMultimediaWidgets import QVideoWidget
@@ -33,7 +33,6 @@ from color_wheel_math import rgb_to_wheel, wheel_to_rgb
 from bezier_curve_widget import BezierCurveWidget
 from speed_ramp_preview import create_speed_ramp_preview
 from video_render import render_timeline_mp4
-from polygon_mask_overlay import PolygonMaskOverlay
 
 APP_NAME = "ZENITH Desktop"
 PROJECT_VERSION = 2
@@ -1498,19 +1497,8 @@ class ZenithEditor(QMainWindow):
                 "Mask Keyframes: " + (", ".join(str(frame) for frame in key_frames) if key_frames else "—")
             )
             self.delete_mask_keyframe_button.setEnabled(enabled and local_frame in key_frames)
-            polygon_editable = bool(
-                clip.mask_enabled and clip.mask_shape == "polygon"
-                and local_frame in key_frames
-            )
-            self.mask_overlay.set_mask(
-                current_points, self.timeline_project.width,
-                self.timeline_project.height, polygon_editable
-            )
-            self.mask_overlay.setGeometry(self.video_widget.rect())
         else:
             self.mask_keyframes_label.setText("Mask Keyframes: —")
-            self.mask_overlay.set_mask([], self.timeline_project.width,
-                                       self.timeline_project.height, False)
         if enabled:
             blend_index = self.blend_mode_combo.findData(str(getattr(clip, "blend_mode", "normal")))
             if blend_index >= 0:
@@ -1895,44 +1883,6 @@ class ZenithEditor(QMainWindow):
             self.statusBar().showMessage(f"جابه‌جایی Keyframe انجام نشد: {exc}")
         self._sync_transform_controls()
         self.timeline_widget.refresh()
-
-    def eventFilter(self, watched, event):
-        if watched is getattr(self, "video_widget", None) and event.type() == QEvent.Resize:
-            if hasattr(self, "mask_overlay"):
-                self.mask_overlay.setGeometry(self.video_widget.rect())
-                self.mask_overlay.raise_()
-        return super().eventFilter(watched, event)
-
-    def _polygon_mask_edit_started(self) -> None:
-        clip_id = self.timeline_widget.canvas.selected_clip_id
-        if not clip_id:
-            return
-        clip = self.timeline_project.get_clip(clip_id)
-        local_frame = self.timeline_project.playhead_frame - clip.start_frame
-        if not any(int(key["frame"]) == local_frame for key in clip.mask_keyframes):
-            return
-        self._push_undo()
-
-    def _polygon_mask_points_changed(self, points) -> None:
-        clip_id = self.timeline_widget.canvas.selected_clip_id
-        if not clip_id:
-            return
-        clip = self.timeline_project.get_clip(clip_id)
-        local_frame = self.timeline_project.playhead_frame - clip.start_frame
-        key = next((item for item in clip.mask_keyframes
-                    if int(item["frame"]) == local_frame), None)
-        if key is None or clip.mask_shape != "polygon" or not clip.mask_enabled:
-            return
-        try:
-            key["points"] = [[float(x), float(y)] for x, y in points]
-            clip.validate()
-            blocker = QSignalBlocker(self.mask_points_edit)
-            self.mask_points_edit.setText("; ".join(
-                f"{x:.3f},{y:.3f}" for x, y in key["points"]
-            ))
-            del blocker
-        except (TypeError, ValueError) as exc:
-            self.statusBar().showMessage(f"ویرایش رأس ماسک نامعتبر است: {exc}")
 
     def _mask_keyframe_selected(self, clip_id: str, frame: int) -> None:
         clip = self.timeline_project.get_clip(clip_id)
