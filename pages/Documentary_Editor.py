@@ -23,30 +23,19 @@ div[data-testid="stFileUploader"] {border-radius: 12px;}
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown("### 01 — ساخت تصویر و سکانس")
-mode = st.radio(
-    "روش ساخت سکانس‌ها",
-    ["ساخت خودکار ۱۲ سکانس تصویری", "استفاده از کلیپ‌های ویدئویی خودم"],
-    horizontal=True,
+st.markdown("### 01 — سکانس‌های واقعی مستند")
+mode = "استفاده از کلیپ‌های ویدئویی خودم"
+st.warning(
+    "تولیدکننده تصاویر کارتونی غیرفعال شده است. این نسخه فقط از فوتیج واقعی ویدئویی استفاده می‌کند؛ "
+    "هیچ تصویر نقاشی‌شده یا انیمیشنی به‌جای صحنه مستند ساخته نمی‌شود."
 )
-st.info(
-    "حالت خودکار از گرافیک‌های سینمایی یکپارچه و اختصاصی استفاده می‌کند؛ "
-    "بدون عکس‌های تصادفی اینترنتی، برش ناخواسته یا زوم آزاردهنده. "
-    "برای فوتیج واقعی، حالت دوم را انتخاب کن."
+videos = st.file_uploader(
+    "کلیپ‌های واقعی را به ترتیب انتخاب کن (۱ تا ۱۲ کلیپ)",
+    type=["mp4", "mov", "mkv", "avi", "webm"],
+    accept_multiple_files=True,
+    key="video_scenes_v2",
 )
-
-videos = []
-if mode == "ساخت خودکار ۱۲ سکانس تصویری":
-    st.success("۱۲ سکانس × ۵ ثانیه = ۶۰ ثانیه | عمودی 9:16 | طراحی بصری اختصاصی انسان و هوش مصنوعی")
-    st.caption("موضوع این نسخه: HUMAN & AI — رابطه انسان و هوش مصنوعی")
-else:
-    videos = st.file_uploader(
-        "کلیپ‌های ویدئویی را به ترتیب انتخاب کن (حداکثر ۱۲ کلیپ)",
-        type=["mp4", "mov", "mkv", "avi", "webm"],
-        accept_multiple_files=True,
-        key="video_scenes_v2",
-    )
-    st.caption("برای خروجی دقیق ۶۰ ثانیه، هر کلیپ به‌صورت خودکار تا ۵ ثانیه تنظیم می‌شود.")
+st.caption("مدت هر کلیپ به‌صورت خودکار تنظیم می‌شود تا خروجی نهایی دقیقاً ۶۰ ثانیه باشد.")
 
 st.markdown("---")
 st.markdown("### 02 — صدا")
@@ -296,8 +285,8 @@ if create:
     if mode == "استفاده از کلیپ‌های ویدئویی خودم" and not videos:
         st.error("ابتدا حداقل یک کلیپ ویدئویی انتخاب کن.")
         st.stop()
-    if mode == "استفاده از کلیپ‌های ویدئویی خودم" and len(videos) != 12:
-        st.error("برای خروجی ۶۰ ثانیه‌ای، دقیقاً ۱۲ کلیپ انتخاب کن؛ هر کلیپ ۵ ثانیه می‌شود.")
+    if mode == "استفاده از کلیپ‌های ویدئویی خودم" and not (1 <= len(videos) <= 12):
+        st.error("برای ساخت مستند، بین ۱ تا ۱۲ کلیپ واقعی انتخاب کن.")
         st.stop()
 
     ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
@@ -325,17 +314,18 @@ if create:
                     scene_files.append(clip_path)
                     progress.progress(int((i + 1) / 12 * 75))
             else:
+                segment_duration = (60.0 + (len(videos) - 1) * 0.25) / len(videos)
                 for i, uploaded in enumerate(videos):
-                    status.write(f"آماده‌سازی کلیپ {i + 1} از {len(videos)}")
+                    status.write(f"آماده‌سازی فوتیج واقعی {i + 1} از {len(videos)}")
                     input_path = work / f"uploaded_{i:02d}_{Path(uploaded.name).name}"
                     input_path.write_bytes(uploaded.getbuffer())
                     clip_path = work / f"scene_{i:02d}.mp4"
                     subprocess.run(
                         [ffmpeg, "-y", "-stream_loop", "-1", "-i", str(input_path),
-                         "-t", "5.25", "-vf",
+                         "-t", f"{segment_duration:.4f}", "-vf",
                          "scale=1080:1920:force_original_aspect_ratio=increase,"
                          "crop=1080:1920,setsar=1,fps=30,format=yuv420p",
-                         "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+                         "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
                          str(clip_path)],
                         check=True, capture_output=True, text=True, timeout=240,
                     )
@@ -352,7 +342,7 @@ if create:
             last = "v0"
             for i in range(1, len(scene_files)):
                 out = f"xf{i}"
-                offset = i * 5.0
+                offset = i * (segment_duration - 0.25) if mode == "استفاده از کلیپ‌های ویدئویی خودم" else i * 5.0
                 graph_parts.append(f"[{last}][v{i}]xfade=transition=fade:duration=0.25:offset={offset:.2f}[{out}]")
                 last = out
             subprocess.run(
@@ -411,8 +401,7 @@ if create:
                 mime="video/mp4",
                 use_container_width=True,
             )
-            if mode == "ساخت خودکار ۱۲ سکانس تصویری":
-                st.caption("نسخه ارتقایافته: طراحی چندلایه، حرکت دوربین آرام، ترنزیشن سینمایی و تایپوگرافی خواناتر. این موتور موشن‌گرافیک است، نه فوتورئالیسم سه‌بعدی.")
+            st.caption("این خروجی از فوتیج‌های واقعی انتخاب‌شده ساخته شده است؛ هیچ تصویر کارتونی یا نقاشی‌شده‌ای جایگزین صحنه‌ها نشده است.")
 
     except subprocess.TimeoutExpired:
         st.error("رندر بیش از زمان مجاز طول کشید. تعداد یا حجم کلیپ‌ها را کمتر کن.")
