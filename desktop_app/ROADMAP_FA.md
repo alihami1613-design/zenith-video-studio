@@ -220,5 +220,6 @@
 - [x] تست اعتبارسنجی، ذخیره/بازیابی و ساخت فیلتر رندر
 - [ ] پیش‌نمایش زنده، نمایش گرافیکی Keyframeها و منحنی Bezier قابل‌ویرایش
 - [x] Anchor Point مستقل برای pivot مقیاس‌گذاری و منحنی‌های Linear/Ease In/Ease Out/Ease In-Out
-- [ ] Motion Blur و کنترل سرعت/Time Remapping
+- [x] کنترل سرعت ۰٫۲۵× تا ۴×، تغییر طول کلیپ با حفظ محدوده منبع، و هماهنگی صدای تعبیه‌شده
+- [ ] Motion Blur، Reverse و Speed Ramp/Time Remapping
 - [ ] رندر واقعی روی Windows و رسانه‌های کاربر
