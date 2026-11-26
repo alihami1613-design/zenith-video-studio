@@ -12,7 +12,7 @@ from proxy_manager import find_ffmpeg
 from video_color import build_color_filter
 from speed_ramp import build_speed_segments
 
-RENDER_VERSION = "timeline-h264-v15-polygon-overlay"
+RENDER_VERSION = "timeline-h264-v16-animated-mask-rotation"
 STILL_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".webp", ".tif", ".tiff"}
 
 
@@ -164,17 +164,21 @@ def build_animated_mask_shape_expression(shape: str, x_expr: str, y_expr: str,
                                           width_expr: str, height_expr: str,
                                           points: list[list[float]],
                                           base_rect: tuple[float, float, float, float],
-                                          point_expressions: list[list[str]] | None = None) -> str:
-    """Build a per-frame alpha condition using animated normalized mask bounds."""
+                                          point_expressions: list[list[str]] | None = None,
+                                          rotation_expr: str = "0") -> str:
+    """Build a per-frame alpha condition using animated bounds and rotation."""
+    cx = f"(({x_expr})+({width_expr})/2)*W"
+    cy = f"(({y_expr})+({height_expr})/2)*H"
+    angle = f"(({rotation_expr})*PI/180)"
+    sample_x = f"({cx}+cos({angle})*(X-({cx}))+sin({angle})*(Y-({cy})))"
+    sample_y = f"({cy}-sin({angle})*(X-({cx}))+cos({angle})*(Y-({cy})))"
     if shape == "rectangle":
-        return (f"gte(X\,({x_expr})*W)*lt(X\,(({x_expr})+({width_expr}))*W)*"
-                f"gte(Y\,({y_expr})*H)*lt(Y\,(({y_expr})+({height_expr}))*H)")
+        return (f"gte({sample_x}\\,({x_expr})*W)*lt({sample_x}\\,(({x_expr})+({width_expr}))*W)*"
+                f"gte({sample_y}\\,({y_expr})*H)*lt({sample_y}\\,(({y_expr})+({height_expr}))*H)")
     if shape == "ellipse":
-        cx = f"(({x_expr})+({width_expr})/2)*W"
-        cy = f"(({y_expr})+({height_expr})/2)*H"
-        rx = f"max(1\,({width_expr})*W/2)"
-        ry = f"max(1\,({height_expr})*H/2)"
-        return f"lte(pow((X-{cx})/{rx}\,2)+pow((Y-{cy})/{ry}\,2)\,1)"
+        rx = f"max(1\\,({width_expr})*W/2)"
+        ry = f"max(1\\,({height_expr})*H/2)"
+        return f"lte(pow(({sample_x}-{cx})/{rx}\\,2)+pow(({sample_y}-{cy})/{ry}\\,2)\\,1)"
     if shape != "polygon" or len(points) < 3:
         raise ValueError("Animated mask requires rectangle, ellipse or a polygon with at least 3 points")
     bx, by, bw, bh = base_rect
@@ -191,11 +195,9 @@ def build_animated_mask_shape_expression(shape: str, x_expr: str, y_expr: str,
     for index, (x1, y1) in enumerate(transformed):
         x2, y2 = transformed[(index + 1) % len(transformed)]
         denominator = f"if(eq(({y2})\\,{y1})\\,0.000000001\\,(({y2})-({y1})))"
-        crossings.append(f"if(gt(Y\\,{y1})*lte(Y\\,{y2})*lt(X\\,({x1}+((Y-{y1})*({x2}-{x1})/{denominator})))\\,1\\,0)")
-    if not crossings:
-        raise ValueError("Animated polygon mask cannot contain only horizontal edges")
+        crossings.append(f"if(gt({sample_y}\\,{y1})*lte({sample_y}\\,{y2})*lt({sample_x}\\,({x1}+(({sample_y}-{y1})*({x2}-{x1})/{denominator})))\\,1\\,0)")
     count = "+".join(crossings)
-    return f"eq(mod({count}\,2)\,1)"
+    return f"eq(mod({count}\\,2)\\,1)"
 
 
 def build_video_render_command(ffmpeg: str, project: object,
@@ -295,6 +297,7 @@ def build_video_render_command(ffmpeg: str, project: object,
                 y_expr = _keyframe_expression(mask_keys, "y", mask_y, fps, "T")
                 w_expr = _keyframe_expression(mask_keys, "width", mask_w, fps, "T")
                 h_expr = _keyframe_expression(mask_keys, "height", mask_h, fps, "T")
+                rotation_expr = _keyframe_expression(mask_keys, "rotation", float(getattr(clip, "mask_rotation", 0.0)), fps, "T")
                 point_expressions = None
                 if mask_shape == "polygon":
                     point_expressions = []
@@ -309,16 +312,27 @@ def build_video_render_command(ffmpeg: str, project: object,
                         ])
                 mask_expr = build_animated_mask_shape_expression(
                     mask_shape, x_expr, y_expr, w_expr, h_expr, mask_points,
-                    (mask_x, mask_y, mask_w, mask_h), point_expressions,
+                    (mask_x, mask_y, mask_w, mask_h), point_expressions, rotation_expr,
                 )
                 chain += (
                     f",geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':"
                     f"a='if({mask_expr}\,alpha(X,Y)\,0)'"
                 )
+            elif abs(float(getattr(clip, "mask_rotation", 0.0))) > 1e-9:
+                mask_expr = build_animated_mask_shape_expression(
+                    mask_shape, f"{mask_x:.9f}", f"{mask_y:.9f}",
+                    f"{mask_w:.9f}", f"{mask_h:.9f}", mask_points,
+                    (mask_x, mask_y, mask_w, mask_h), None,
+                    f"{float(getattr(clip, 'mask_rotation', 0.0)):.9f}",
+                )
+                chain += (
+                    f",geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':"
+                    f"a='if({mask_expr}\\,alpha(X,Y)\\,0)'"
+                )
             elif mask_shape == "rectangle":
                 chain += (
-                    f",crop=w='max(2\,trunc(iw*{mask_w:.6f}))':"
-                    f"h='max(2\,trunc(ih*{mask_h:.6f}))':"
+                    f",crop=w='max(2\\,trunc(iw*{mask_w:.6f}))':"
+                    f"h='max(2\\,trunc(ih*{mask_h:.6f}))':"
                     f"x='trunc(iw*{mask_x:.6f})':y='trunc(ih*{mask_y:.6f})',"
                     f"pad={width}:{height}:x='trunc({width}*{mask_x:.6f})':y='trunc({height}*{mask_y:.6f})':color=black@0"
                 )
