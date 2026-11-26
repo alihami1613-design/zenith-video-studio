@@ -322,5 +322,29 @@ class TimelineModelTests(unittest.TestCase):
         self.assertEqual(project.clips[2].media_type, "audio")
 
 
+    def test_anchor_and_easing_round_trip(self):
+        project = TimelineProject()
+        clip = project.add_clip("motion.mp4", "motion.mp4", duration_frames=90)
+        clip.anchor_x = 0.2
+        clip.anchor_y = 0.8
+        project.set_clip_transform_keyframes(clip.clip_id, [
+            {"frame": 0, "scale": 1.0, "ease": "ease_in_out"},
+            {"frame": 45, "scale": 1.8, "ease": "ease_out"},
+        ])
+        restored = TimelineProject.from_dict(project.to_dict())
+        result = restored.get_clip(clip.clip_id)
+        self.assertAlmostEqual(result.anchor_x, 0.2)
+        self.assertAlmostEqual(result.anchor_y, 0.8)
+        self.assertEqual(result.transform_keyframes[0]["ease"], "ease_in_out")
+
+    def test_invalid_anchor_and_easing_are_rejected(self):
+        project = TimelineProject()
+        clip = project.add_clip("motion.mp4", "motion.mp4", duration_frames=90)
+        clip.anchor_x = 1.5
+        with self.assertRaises(ValueError):
+            clip.validate()
+        clip.anchor_x = 0.5
+        with self.assertRaises(ValueError):
+            project.set_clip_transform_keyframes(clip.clip_id, [{"frame": 0, "ease": "bounce"}])
 if __name__ == "__main__":
     unittest.main()
