@@ -21,6 +21,7 @@ from timeline_widget import TimelineWidget
 from media_probe import probe_media, duration_to_frames
 from proxy_manager import create_proxy
 from waveform_manager import create_waveform, load_waveform
+from audio_render import render_audio_mix
 
 APP_NAME = "ZENITH Desktop"
 PROJECT_VERSION = 2
@@ -97,6 +98,31 @@ class WaveformTask(QRunnable):
             self.signals.finished.emit(self.path, [], str(exc))
 
 
+class AudioRenderSignals(QObject):
+    finished = Signal(str, str)
+
+
+class AudioRenderTask(QRunnable):
+    """Render the current timeline audio mix away from the GUI thread."""
+
+    def __init__(self, project_data: dict[str, Any], output_path: str) -> None:
+        super().__init__()
+        self.project_data = project_data
+        self.output_path = output_path
+        self.signals = AudioRenderSignals()
+
+    def run(self) -> None:
+        try:
+            project = TimelineProject.from_dict(self.project_data)
+            result = render_audio_mix(
+                project.clips, project.fps, self.output_path,
+                timeline_duration_frames=project.duration_frames,
+            )
+            self.signals.finished.emit(str(result), "")
+        except Exception as exc:
+            self.signals.finished.emit("", str(exc))
+
+
 class ZenithEditor(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
@@ -111,6 +137,9 @@ class ZenithEditor(QMainWindow):
         self._waveform_pool = QThreadPool(self)
         self._waveform_pool.setMaxThreadCount(1)
         self._waveform_tasks: list[WaveformTask] = []
+        self._audio_render_pool = QThreadPool(self)
+        self._audio_render_pool.setMaxThreadCount(1)
+        self._audio_render_task: AudioRenderTask | None = None
         self.waveforms: dict[str, list[float]] = {}
         self._undo_stack: list[dict[str, Any]] = []
         self._redo_stack: list[dict[str, Any]] = []
@@ -267,6 +296,9 @@ class ZenithEditor(QMainWindow):
         self.split_button.clicked.connect(self.split_selected_clip)
         self.remove_button = QPushButton("حذف کلیپ")
         self.remove_button.clicked.connect(self.remove_selected_from_timeline)
+        self.audio_mix_button = QPushButton("خروجی میکس صدا (WAV)")
+        self.audio_mix_button.setToolTip("ترکیب ترک‌های صوتی با Gain و Fade واقعی؛ فایل اصلی تغییر نمی‌کند")
+        self.audio_mix_button.clicked.connect(self.export_audio_mix)
         self.undo_button = QPushButton("↶ بازگشت")
         self.undo_button.clicked.connect(self.undo)
         self.redo_button = QPushButton("↷ انجام دوباره")
@@ -275,6 +307,7 @@ class ZenithEditor(QMainWindow):
         controls.addWidget(self.redo_button)
         controls.addWidget(self.split_button)
         controls.addWidget(self.remove_button)
+        controls.addWidget(self.audio_mix_button)
         timeline_layout.addLayout(controls)
 
         self.timeline_widget = TimelineWidget(self.timeline_project)
@@ -728,6 +761,37 @@ class ZenithEditor(QMainWindow):
         self.timeline_widget.canvas.selected_clip_id = right.clip_id
         self._refresh_timeline()
         self.statusBar().showMessage(f"کلیپ در فریم {self.timeline_project.playhead_frame} تقسیم شد")
+
+    def export_audio_mix(self) -> None:
+        if self._audio_render_task is not None:
+            self.statusBar().showMessage("خروجی میکس صوتی در حال انجام است")
+            return
+        audio_clips = [clip for clip in self.timeline_project.clips if clip.media_type == "audio"]
+        if not audio_clips:
+            QMessageBox.information(self, "خروجی صدا", "ابتدا حداقل یک کلیپ صوتی به ترک‌های A1 تا A4 اضافه کنید.")
+            return
+        filename, _ = QFileDialog.getSaveFileName(self, "ذخیره میکس صوتی", "ZENITH_Audio_Mix.wav", "WAV Audio (*.wav)")
+        if not filename:
+            return
+        output = Path(filename)
+        if output.suffix.lower() != ".wav":
+            output = output.with_suffix(".wav")
+        task = AudioRenderTask(self.timeline_project.to_dict(), str(output))
+        task.signals.finished.connect(self._audio_mix_finished)
+        self._audio_render_task = task
+        self.audio_mix_button.setEnabled(False)
+        self.statusBar().showMessage("در حال میکس ترک‌های صوتی در پس‌زمینه؛ رابط برنامه آزاد می‌ماند...")
+        self._audio_render_pool.start(task)
+
+    def _audio_mix_finished(self, output_path: str, error: str) -> None:
+        self._audio_render_task = None
+        self.audio_mix_button.setEnabled(True)
+        if error:
+            QMessageBox.critical(self, "خطای خروجی صدا", error)
+            self.statusBar().showMessage("ساخت میکس صوتی ناموفق بود")
+            return
+        self.statusBar().showMessage(f"میکس صوتی آماده شد: {Path(output_path).name}")
+        QMessageBox.information(self, "خروجی صدا آماده شد", f"میکس صوتی WAV با موفقیت ساخته شد.\n\n{output_path}")
 
     def _project_data(self) -> dict[str, Any]:
         return {
