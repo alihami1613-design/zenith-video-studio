@@ -30,6 +30,16 @@ class VideoRenderTests(unittest.TestCase):
         )
 
 
+    def test_inverted_mask_alpha_expression_is_present(self):
+        with tempfile.TemporaryDirectory() as folder:
+            project = self.project(folder)
+            clip = project.clips[0]
+            clip.mask_enabled = True
+            clip.mask_invert = True
+            clip.mask_shape = "rectangle"
+            command = build_video_render_command("ffmpeg", project, "out.mp4")
+            self.assertIn("if(1\\,if(", " ".join(command))
+
     def test_animated_polygon_keyframes_build_per_vertex_expressions(self):
         from video_render import _keyframe_expression, build_animated_mask_shape_expression
         keys = [{"frame": 0, "ease": "linear", "value": 0.1},
