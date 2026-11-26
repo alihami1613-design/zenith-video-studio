@@ -67,7 +67,7 @@ with e1:
 with e2:
     transition = st.selectbox(
         "اتصال صحنه‌ها",
-        ["برش حرفه‌ای", "محو شدن از سیاهی"],
+        ["محو شدن نرم بین صحنه‌ها (Crossfade)", "برش حرفه‌ای", "محو شدن از سیاهی"],
         index=0,
     )
 with e3:
@@ -231,7 +231,24 @@ if st.button("✨ ساخت تیزر تبلیغاتی", type="primary", use_conta
                 except (requests.RequestException, RuntimeError) as audio_error:
                     st.warning("موسیقی پیش‌فرض در دسترس نیست (احتمالاً محدودیت موقت سرور). رندر ادامه پیدا می‌کند؛ برای داشتن صدا، فایل موسیقی خودت را بارگذاری کن. جزئیات: " + str(audio_error)[:240])
             assets = [(item, "video") for item in (videos or [])] + [(item, "photo") for item in (photos or [])]
-            per_clip = duration / len(assets)
+
+            # Match the actual render order to the Offline Ad Director's story order.
+            def render_asset_rank(asset):
+                name = Path(asset[0].name).stem.lower()
+                if any(word in name for word in ["intro", "opening", "start", "شروع", "معرفی", "hero", "product", "main", "محصول", "اصلی"]):
+                    return 0
+                if any(word in name for word in ["detail", "close", "macro", "atomizer", "جزئیات", "نزدیک", "بافت"]):
+                    return 1
+                if any(word in name for word in ["triptych", "lifestyle", "people", "use", "استفاده", "خانواده", "محیط"]):
+                    return 2
+                if any(word in name for word in ["final", "ending", "end", "outro", "logo", "پایان", "لوگو", "برند"]):
+                    return 3
+                return 2
+
+            assets = [item for _, item in sorted(enumerate(assets), key=lambda pair: (render_asset_rank(pair[1]), pair[0]))]
+            crossfade_len = min(0.45, duration / (len(assets) * 5)) if transition.startswith("محو شدن نرم") and len(assets) > 1 else 0.0
+            # Extend each shot to compensate for overlaps and preserve exact total duration.
+            per_clip = (duration + crossfade_len * (len(assets) - 1)) / len(assets)
 
             for i, (uploaded, asset_type) in enumerate(assets):
                 kind_label = "عکس" if asset_type == "photo" else "کلیپ"
@@ -321,8 +338,31 @@ if st.button("✨ ساخت تیزر تبلیغاتی", type="primary", use_conta
                     f.write(f"file '{safe_path}'\n")
 
             joined = work / "joined.mp4"
-            run_ffmpeg([ffmpeg, "-y", "-f", "concat", "-safe", "0", "-i", str(concat),
-                        "-c", "copy", str(joined)])
+            if crossfade_len > 0 and len(normalized) > 1:
+                # True scene-to-scene dissolves, rather than fading each shot to black.
+                xfade_inputs = []
+                for clip in normalized:
+                    xfade_inputs += ["-i", str(clip)]
+                graph_parts = []
+                previous = "[0:v]"
+                current_offset = per_clip - crossfade_len
+                for idx in range(1, len(normalized)):
+                    out_label = f"[xf{idx}]"
+                    graph_parts.append(
+                        f"{previous}[{idx}:v]xfade=transition=fade:duration={crossfade_len:.3f}:"
+                        f"offset={current_offset:.3f}{out_label}"
+                    )
+                    previous = out_label
+                    current_offset += per_clip - crossfade_len
+                run_ffmpeg([
+                    ffmpeg, "-y", *xfade_inputs, "-filter_complex", ";".join(graph_parts),
+                    "-map", previous, "-an", "-c:v", "libx264", "-preset", "veryfast",
+                    "-crf", "23" if quality == "1080p متعادل" else "26",
+                    "-pix_fmt", "yuv420p", "-r", "24", "-movflags", "+faststart", str(joined)
+                ])
+            else:
+                run_ffmpeg([ffmpeg, "-y", "-f", "concat", "-safe", "0", "-i", str(concat),
+                            "-c", "copy", str(joined)])
             progress.progress(72)
 
             final = work / "ADVERTISING_SHOWREEL.mp4"
