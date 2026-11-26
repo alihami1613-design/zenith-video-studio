@@ -16,7 +16,8 @@ class ColorPreviewTests(unittest.TestCase):
         )
         self.assertEqual(command[command.index("-ss") + 1], "2.500000")
         self.assertEqual(command[command.index("-t") + 1], "8.000000")
-        self.assertIn("scale='min(960,iw)':-2,exposure=exposure=1.000", command)
+        vf = command[command.index("-vf") + 1]
+        self.assertIn("scale='min(960,iw)':-2,exposure=exposure=1.000", vf)
         self.assertEqual(command[command.index("-threads") + 1], "2")
         self.assertIn("0:a?", command)
 
