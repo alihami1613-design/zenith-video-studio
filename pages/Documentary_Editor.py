@@ -138,10 +138,52 @@ def fetch_commons_image(query, used_titles, folder, index):
         except requests.RequestException as exc:
             last_error = exc
             continue
+    # Curated Commons file fallbacks for subjects whose search wording is unreliable.
+    curated_titles = []
+    qlow = query.lower()
+    if "neural" in qlow or "network" in qlow:
+        curated_titles = [
+            "File:Artificial Neural Network.jpg",
+            "File:Neural Network.svg",
+            "File:Deep neural networks diagram.png",
+        ]
+    elif "robot" in qlow:
+        curated_titles = ["File:Honda ASIMO.jpg", "File:Robot.jpg"]
+    for file_title in curated_titles:
+        try:
+            params = {
+                "action": "query", "titles": file_title, "prop": "imageinfo",
+                "iiprop": "url", "iiurlwidth": 1920, "format": "json",
+            }
+            response = requests.get(api, params=params, headers=headers, timeout=35)
+            response.raise_for_status()
+            pages = response.json().get("query", {}).get("pages", {})
+            for page in pages.values():
+                title = page.get("title", "")
+                info = (page.get("imageinfo") or [{}])[0]
+                url = info.get("thumburl") or info.get("url")
+                if not url or title in used_titles:
+                    continue
+                if not url.lower().split("?")[0].endswith((".jpg", ".jpeg", ".png", ".webp")):
+                    continue
+                image_response = requests.get(url, headers=headers, timeout=45)
+                image_response.raise_for_status()
+                if len(image_response.content) < 8000:
+                    continue
+                path = folder / f"source_{index:02d}.jpg"
+                path.write_bytes(image_response.content)
+                used_titles.add(title)
+                source_url = page.get("canonicalurl") or (
+                    "https://commons.wikimedia.org/wiki/" + quote(title.replace(" ", "_"))
+                )
+                return path, title, source_url
+        except requests.RequestException as exc:
+            last_error = exc
+            continue
     if last_error and not tried:
         raise last_error
     raise RuntimeError(
-        "پس از چند جست‌وجوی جایگزین، تصویر مناسبی در Wikimedia Commons پیدا نشد: " + query
+        "پس از جست‌وجو و فایل‌های جایگزین، تصویر مناسبی در Wikimedia Commons پیدا نشد: " + query
     )
 
 if create:
