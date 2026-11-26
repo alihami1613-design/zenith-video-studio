@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-PROJECT_SCHEMA_VERSION = 9
+PROJECT_SCHEMA_VERSION = 10
 DEFAULT_FPS = 30
 DEFAULT_VIDEO_TRACKS = ("V1", "V2", "V3", "V4")
 DEFAULT_AUDIO_TRACKS = ("A1", "A2", "A3", "A4")
@@ -41,6 +41,7 @@ class Clip:
     video_fade_in_frames: int = 0
     video_fade_out_frames: int = 0
     transition_in_frames: int = 0
+    transition_in_type: str = "dissolve"
     color_grade: dict[str, float] = field(default_factory=lambda: {
         "exposure": 0.0, "contrast": 1.0, "saturation": 1.0,
         "temperature": 0.0, "tint": 0.0,
@@ -63,6 +64,8 @@ class Clip:
             raise ValueError("Clip volume must be between 0.0 and 2.0")
         if min(self.fade_in_frames, self.fade_out_frames, self.video_fade_in_frames, self.video_fade_out_frames, self.transition_in_frames) < 0:
             raise ValueError("Fade durations cannot be negative")
+        if self.transition_in_type not in {"dissolve", "wipe_left", "push_left"}:
+            raise ValueError("Unsupported video transition type")
         if any(value > self.duration_frames for value in (self.fade_in_frames, self.fade_out_frames, self.video_fade_in_frames, self.video_fade_out_frames, self.transition_in_frames)):
             raise ValueError("Fade duration cannot exceed clip duration")
         grade = dict(self.color_grade or {})
@@ -290,12 +293,14 @@ class TimelineProject:
         clip.validate()
         return clip
 
-    def set_clip_transition(self, clip_id: str, *, dissolve_in_frames: int) -> Clip:
+    def set_clip_transition(self, clip_id: str, *, dissolve_in_frames: int, transition_type: str = "dissolve") -> Clip:
         """Set a pre-roll cross dissolve on an incoming video clip."""
         clip = self.get_clip(clip_id)
         if clip.media_type != "video" or not clip.track.startswith("V"):
             raise ValueError("Cross Dissolve requires a video-track clip")
         frames = int(dissolve_in_frames)
+        if transition_type not in {"dissolve", "wipe_left", "push_left"}:
+            raise ValueError("Unsupported video transition type")
         if frames < 0 or frames > clip.duration_frames:
             raise ValueError("Cross Dissolve duration must be within clip duration")
         if frames:
@@ -313,6 +318,7 @@ class TimelineProject:
             if before_previous and previous.transition_in_frames + frames > previous.duration_frames:
                 raise ValueError("Adjacent Cross Dissolves exceed the middle clip duration")
         clip.transition_in_frames = frames
+        clip.transition_in_type = transition_type
         clip.validate()
         return clip
 
@@ -424,6 +430,7 @@ class TimelineProject:
                 video_fade_in_frames=max(0, int(raw.get("video_fade_in_frames", 0) or 0)),
                 video_fade_out_frames=max(0, int(raw.get("video_fade_out_frames", 0) or 0)),
                 transition_in_frames=max(0, int(raw.get("transition_in_frames", 0) or 0)),
+                transition_in_type=str(raw.get("transition_in_type", "dissolve") or "dissolve"),
                 color_grade=dict(raw.get("color_grade") or {}),
             ))
         return cls(
