@@ -242,5 +242,7 @@
 - [x] ترکیب کنترل‌های سه‌گانه با Temperature/Tint در فیلتر colorbalance
 - [x] پیش‌نمایش کم‌وضوح با نسخه Cache مستقل
 - [x] ابزار RGB Histogram سبک با نمونه‌برداری یک فریم ۲۵۶×۱۴۴، اعمال Grade فعلی و پردازش تک‌نخی در پس‌زمینه
-- [ ] رابط دایره‌ای تعاملی و نمایشگرهای Waveform/RGB Parade/Vectorscope
+- [x] نمایشگر Luma Waveform از فریم نمونه ۲۵۶×۱۴۴ با Grade فعلی
+- [x] نمایشگر RGB Parade سه‌کاناله از همان فریم نمونه و Grade فعلی
+- [ ] رابط دایره‌ای تعاملی Color Wheels و نمایشگر Vectorscope
 - [ ] آزمون دستی روی Windows و رسانه‌های واقعی کاربر
