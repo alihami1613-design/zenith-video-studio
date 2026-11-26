@@ -1324,6 +1324,7 @@ class ZenithEditor(QMainWindow):
             self.vectorscope_widget.set_data(None)
             self._scope_clip_id = clip_id
         self.color_preview_button.setEnabled(enabled)
+        self.color_wheel_reset_button.setEnabled(enabled)
         scope_ready = bool(enabled and not self._scope_tasks)
         self.rgb_histogram_button.setEnabled(scope_ready)
         self.waveform_button.setEnabled(scope_ready)
@@ -1344,7 +1345,6 @@ class ZenithEditor(QMainWindow):
         for zone in ("shadows", "midtones", "highlights"):
             rgb = [float(clip.color_grade.get(f"wheel_{zone}_{channel}", 0.0)) for channel in ("r", "g", "b")]
             self.color_wheels[zone].set_values(*rgb_to_wheel(*rgb))
-        self.color_wheel_reset_button.setEnabled(enabled)
 
     def analyze_rgb_histogram(self) -> None:
         clip_id = self.timeline_widget.canvas.selected_clip_id
