@@ -93,7 +93,7 @@ def build_audio_mix_command(
             if bool(getattr(clip, "reverse_playback", False)):
                 raise ValueError(f"Speed Ramp و Reverse هم‌زمان فعلاً برای صدای کلیپ پشتیبانی نمی‌شوند: {clip.name}")
             split_labels = "".join(f"[ar{index}_{part}]" for part in range(len(speed_segments)))
-            filters.append(f"{audio_source_label}{','.join(chain)}[{label}]")
+            filters.append(f"[{index}:a:0]asplit={len(speed_segments)}{split_labels}")
             segment_outputs = []
             for part, segment in enumerate(speed_segments):
                 label = f"arout{index}_{part}"
@@ -131,7 +131,7 @@ def build_audio_mix_command(
         delay_ms = round(_seconds(clip.start_frame, fps) * 1000)
         chain.append(f"adelay={delay_ms}:all=1")
         label = f"a{index}"
-        filters.append(f"[{index}:a:0]{','.join(chain)}[{label}]")
+        filters.append(f"{audio_source_label}{','.join(chain)}[{label}]")
         route = getattr(clip, "audio_track", clip.track)
         if route not in {"A1", "A2", "A3", "A4"}:
             raise ValueError(f"مسیر صدای کلیپ معتبر نیست: {clip.name}")
