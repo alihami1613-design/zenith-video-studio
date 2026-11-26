@@ -35,7 +35,7 @@ st.info(
 
 videos = []
 if mode == "ساخت خودکار ۱۲ سکانس تصویری":
-    st.success("۱۲ سکانس × ۵ ثانیه = ۶۰ ثانیه | هر سکانس تصویر مستقل و حرکت دوربین جداگانه دارد.")
+    st.success("۱۲ سکانس × ۵ ثانیه = ۶۰ ثانیه | عمودی 9:16 | طراحی بصری اختصاصی انسان و هوش مصنوعی")
     st.caption("موضوع این نسخه: HUMAN & AI — رابطه انسان و هوش مصنوعی")
 else:
     videos = st.file_uploader(
@@ -66,7 +66,7 @@ with c2:
 
 st.markdown("---")
 st.markdown("### 03 — خروجی")
-st.write("MP4 • Full HD 1920×1080 • 30 FPS • H.264")
+st.write("MP4 • عمودی 9:16 • Full HD 1080×1920 • 30 FPS • H.264")
 create = st.button("🎬 ساخت ویدئوی ۶۰ ثانیه‌ای", type="primary", use_container_width=True)
 
 SCENES = [
@@ -85,110 +85,138 @@ SCENES = [
 ]
 
 def make_scene_art(index, label, folder):
-    """Create a consistent 1080p cinematic motion-graphics plate; no external stock photos."""
-    W, H = 1920, 1080
-    # Vectorized deep-navy gradient for fast rendering on the cloud server.
+    """Create a vertical, coherent cinematic illustration with recognizable human/AI subjects."""
+    W, H = 1080, 1920
     yy, xx = np.mgrid[0:H, 0:W]
-    glow = np.clip(1 - np.sqrt(((xx - 1370) / 1150) ** 2 + ((yy - 430) / 850) ** 2), 0, 1)
+    glow = np.clip(1 - np.sqrt(((xx - 700) / 760) ** 2 + ((yy - 980) / 1150) ** 2), 0, 1)
     t = yy / H
     arr = np.stack([
-        5 + 5 * glow,
-        10 + 34 * glow + 4 * t,
-        22 + 43 * glow + 8 * t,
+        3 + 8 * glow,
+        8 + 30 * glow + 3 * t,
+        20 + 48 * glow + 7 * t,
     ], axis=-1).clip(0,255).astype(np.uint8)
     img = Image.fromarray(arr, "RGB")
     d = ImageDraw.Draw(img, "RGBA")
-    # Fine technical grid and framing.
-    for x in range(80, W, 80):
-        d.line((x, 0, x, H), fill=(105, 180, 205, 17), width=1)
-    for y in range(80, H, 80):
-        d.line((0, y, W, y), fill=(105, 180, 205, 17), width=1)
-    d.rounded_rectangle((64, 58, W-64, H-58), radius=26, outline=(150, 205, 220, 65), width=2)
-    # Abstract focal artwork varies by chapter, while retaining the same visual language.
-    cx, cy = 1210, 500
-    teal, cyan, gold = (60, 220, 210, 220), (95, 175, 255, 210), (230, 190, 115, 220)
-    if index in (0, 1, 7, 10):
-        # Human / machine profile motif.
-        d.ellipse((cx-220, cy-250, cx+220, cy+190), outline=cyan if index in (1,10) else teal, width=5)
-        d.arc((cx-150, cy-180, cx+150, cy+180), 205, 520, fill=gold, width=7)
-        d.ellipse((cx-70, cy-55, cx-48, cy-33), fill=gold)
-        d.arc((cx-80, cy-10, cx+110, cy+135), 15, 155, fill=teal, width=5)
-        for k in range(9):
-            yy = cy-200+k*48
-            d.line((cx+250, yy, cx+360, yy), fill=(90,180,220,100), width=2)
-    elif index in (3, 4):
-        # Neural network: clean nodes and deliberate connections.
-        layers = [[(cx-330, cy-180+i*90) for i in range(5)],
-                  [(cx-100, cy-230+i*76) for i in range(7)],
-                  [(cx+150, cy-180+i*90) for i in range(5)],
-                  [(cx+360, cy-100+i*100) for i in range(3)]]
-        for left, right in zip(layers, layers[1:]):
+    # Vertical cinematic frame, restrained HUD lines and atmospheric light.
+    d.rounded_rectangle((42, 42, W-42, H-42), radius=30, outline=(130,205,225,75), width=2)
+    for x in range(90, W, 90):
+        d.line((x, 0, x, H), fill=(100,175,210,12), width=1)
+    teal=(65,225,215,235); blue=(95,175,255,235); gold=(245,190,105,245)
+    white=(235,244,250,245)
+    cx, cy = 540, 1110
+
+    def human(x, y, scale=1.0, color=(175,205,225,255), side=False):
+        # Recognizable human bust: head, neck, shoulders and facial profile.
+        r=int(105*scale)
+        d.ellipse((x-r,y-430*scale-r,x+r,y-430*scale+r), fill=(18,38,60,255), outline=color, width=max(3,int(8*scale)))
+        d.ellipse((x-r*.65,y-430*scale-r*.65,x+r*.65,y-430*scale+r*.65), outline=(gold if side else (120,190,220,150)), width=max(2,int(3*scale)))
+        d.rounded_rectangle((x-48*scale,y-330*scale,x+48*scale,y-245*scale), radius=18, fill=(18,38,60,255), outline=color, width=4)
+        d.rounded_rectangle((x-210*scale,y-270*scale,x+210*scale,y+210*scale), radius=int(100*scale), fill=(15,35,58,255), outline=color, width=max(3,int(7*scale)))
+        d.arc((x-78*scale,y-485*scale,x+95*scale,y-360*scale), 185, 345, fill=gold, width=max(2,int(5*scale)))
+        d.ellipse((x+25*scale,y-440*scale,x+43*scale,y-422*scale), fill=gold)
+
+    def robot(x, y, scale=1.0):
+        # Clearly mechanical head, luminous eyes, segmented neck and shoulders.
+        w,h=230*scale,255*scale
+        d.rounded_rectangle((x-w/2,y-430*scale-h/2,x+w/2,y-430*scale+h/2), radius=int(48*scale), fill=(18,43,68,255), outline=blue, width=max(4,int(9*scale)))
+        d.line((x-w*.34,y-430*scale-65*scale,x+w*.34,y-430*scale-65*scale), fill=teal, width=max(3,int(6*scale)))
+        for ex in (-62,62):
+            d.ellipse((x+(ex-17)*scale,y-430*scale-15*scale,x+(ex+17)*scale,y-430*scale+19*scale), fill=teal)
+        d.arc((x-65*scale,y-430*scale+45*scale,x+65*scale,y-430*scale+110*scale), 10, 170, fill=gold, width=max(3,int(6*scale)))
+        d.line((x,y-300*scale,x,y-235*scale), fill=blue, width=max(6,int(16*scale)))
+        d.rounded_rectangle((x-220*scale,y-250*scale,x+220*scale,y+210*scale), radius=int(95*scale), fill=(13,31,52,255), outline=blue, width=max(4,int(8*scale)))
+        for j in range(3):
+            d.line((x-120*scale,y-140*scale+j*80*scale,x+120*scale,y-140*scale+j*80*scale), fill=(90,185,230,150), width=max(2,int(4*scale)))
+
+    titles = [
+        "THE HUMAN MIND", "MEET THE MACHINE", "HUMAN + AI",
+        "NEURAL NETWORKS", "MACHINE LEARNING", "AI IN MEDICINE",
+        "INTELLIGENT INDUSTRY", "WORKING TOGETHER",
+        "THE FUTURE OF WORK", "SMART CITIES",
+        "A NEW CONNECTION", "OUR SHARED FUTURE"
+    ]
+    # A distinct visual story beat for each chapter.
+    if index == 0:
+        human(cx,cy,1.15)
+        d.arc((cx-360,cy-760,cx+360,cy-60), 200, 520, fill=gold, width=8)
+    elif index == 1:
+        robot(cx,cy,1.18)
+    elif index == 2:
+        human(350,cy,0.82); robot(760,cy,0.82)
+        d.line((475,cy-400,635,cy-400), fill=gold, width=7)
+        d.ellipse((525,cy-450,575,cy-400), fill=teal)
+    elif index in (3,4):
+        # Neural network surrounding a central glowing AI core.
+        layers=[[(150,650+i*105) for i in range(7)],
+                [(390,590+i*85) for i in range(9)],
+                [(680,650+i*105) for i in range(7)],
+                [(920,800+i*105) for i in range(4)]]
+        for left,right in zip(layers,layers[1:]):
             for p in left:
                 for q in right:
-                    d.line((p, q), fill=(70,175,220,75), width=3)
-        for li, layer in enumerate(layers):
-            for j, (x,y) in enumerate(layer):
-                r = 15 if li in (0,3) else 19
-                d.ellipse((x-r,y-r,x+r,y+r), fill=gold if (j+li)%4==0 else cyan, outline=(220,245,255,220), width=2)
-    elif index in (5,):
-        # Medical scan / diagnostic rings.
-        for r in (95,155,215,275):
-            d.ellipse((cx-r,cy-r,cx+r,cy+r), outline=(70,190,220,150), width=3)
-        d.line((cx-300,cy,cx+300,cy), fill=teal, width=4)
-        d.line((cx,cy-300,cx,cy+300), fill=teal, width=4)
-        d.polygon([(cx,cy-110),(cx+28,cy-25),(cx+115,cy),(cx+28,cy+25),(cx,cy+110),(cx-28,cy+25),(cx-115,cy),(cx-28,cy-25)], outline=gold)
-    elif index in (6,):
-        # Industrial robotic arm.
-        pts=[(cx-240,cy+210),(cx-110,cy+60),(cx+30,cy+110),(cx+190,cy-120),(cx+300,cy-190)]
-        d.line(pts, fill=cyan, width=38, joint="curve")
+                    d.line((p,q), fill=(65,175,235,90), width=3)
+        for li,layer in enumerate(layers):
+            for j,(x,y) in enumerate(layer):
+                r=16 if li in (0,3) else 20
+                d.ellipse((x-r,y-r,x+r,y+r), fill=gold if (j+li)%4==0 else blue, outline=white, width=2)
+        d.ellipse((cx-115,cy-115,cx+115,cy+115), fill=(12,36,60,255), outline=teal, width=9)
+        d.text((cx-48,cy-20),"AI",fill=white)
+    elif index == 5:
+        human(330,cy,0.72)
+        # Medical scan panel and diagnostic cross.
+        d.rounded_rectangle((520,650,950,1510), radius=35, fill=(10,30,52,220), outline=teal, width=6)
+        for r in (95,165,235):
+            d.ellipse((735-r,1050-r,735+r,1050+r), outline=(80,205,225,170), width=5)
+        d.line((735,780,735,1320), fill=gold, width=5)
+        d.line((465,1050,1005,1050), fill=gold, width=5)
+    elif index == 6:
+        # Industrial robotic arm, conveyor and factory silhouette.
+        d.rectangle((100,1350,980,1500), fill=(12,30,48,255), outline=blue, width=5)
+        pts=[(250,1300),(390,1080),(560,1170),(740,900),(850,760)]
+        d.line(pts, fill=blue, width=52, joint="curve")
         for x,y in pts:
-            d.ellipse((x-34,y-34,x+34,y+34), fill=(12,35,58,255), outline=gold, width=8)
-        d.line((cx+300,cy-190,cx+390,cy-270), fill=gold, width=16)
-    elif index in (8,):
-        # Future of work: modular connected panels.
-        for row in range(3):
-            for col in range(4):
-                x=cx-330+col*175; y=cy-190+row*155
-                d.rounded_rectangle((x,y,x+125,y+105), radius=15, outline=cyan if (row+col)%2 else gold, width=4)
-                d.line((x+25,y+72,x+95,y+72), fill=(140,210,230,160), width=4)
-    elif index in (9,):
-        # Smart city skyline.
-        for j in range(9):
-            x=cx-390+j*95; h=180+(j*73)%260
-            d.rectangle((x,cy+220-h,x+65,cy+220), outline=cyan, width=4, fill=(15,38,62,170))
-            for wy in range(cy+245-h,cy+190,48):
-                d.line((x+16,wy,x+49,wy), fill=gold, width=4)
-        d.arc((cx-420,cy-340,cx+420,cy+500), 195, 345, fill=teal, width=4)
+            d.ellipse((x-48,y-48,x+48,y+48), fill=(12,35,58,255), outline=gold, width=9)
+        for x in (180,430,680,900):
+            d.rectangle((x,1470,x+75,1570), outline=teal, width=4)
+    elif index == 7:
+        human(330,cy,0.78); robot(760,cy,0.78)
+        d.line((470,cy-180,610,cy-180), fill=gold, width=12)
+        d.ellipse((520,cy-225,570,cy-175), fill=teal)
+    elif index == 8:
+        human(cx,cy,0.9)
+        for j in range(4):
+            y=650+j*170
+            d.rounded_rectangle((90,y,310,y+105), radius=18, fill=(12,36,60,230), outline=gold if j%2==0 else teal, width=5)
+            d.line((130,y+55,265,y+55), fill=white, width=4)
+    elif index == 9:
+        for j in range(7):
+            x=90+j*130; h=300+(j*113)%440
+            d.rectangle((x,1450-h,x+92,1450), fill=(13,39,64,255), outline=blue, width=5)
+            for wy in range(1480-h,1420,65):
+                d.rectangle((x+22,wy,x+38,wy+22), fill=gold)
+                d.rectangle((x+55,wy,x+71,wy+22), fill=teal)
+        d.arc((100,600,980,1650),190,350,fill=gold,width=6)
+    elif index == 10:
+        human(330,cy,0.82); robot(760,cy,0.82)
+        d.line((460,cy-425,620,cy-425), fill=gold, width=8)
+        for j in range(7):
+            x=480+j*20
+            d.ellipse((x,cy-445,x+14,cy-431),fill=teal)
     else:
-        # Connected human-AI future motif.
-        d.ellipse((cx-260,cy-250,cx+260,cy+270), outline=teal, width=5)
-        for j in range(24):
-            import math
-            ang = j * math.pi / 12
-            x = cx + int(220*math.cos(ang)); y=cy+int(220*math.sin(ang))
-            d.ellipse((x-9,y-9,x+9,y+9), fill=gold)
-            d.line((cx,cy,x,y), fill=(70,180,220,70), width=2)
-    # Restrained title treatment and chapter marker.
-    d.text((125, 170), "ZENITH BEYOND", fill=(205,220,228,210), stroke_width=0)
-    d.text((125, 270), f"{index+1:02d} / 12", fill=(225,190,120,235))
-    english_titles = [
-        "THE HUMAN MIND", "THE MACHINE", "AI IN DAILY LIFE", "NEURAL NETWORKS",
-        "MACHINE LEARNING", "AI IN MEDICINE", "INTELLIGENT INDUSTRY",
-        "HUMAN + MACHINE", "THE FUTURE OF WORK", "SMART CITIES",
-        "A NEW CONNECTION", "A SHARED FUTURE"
-    ]
-    d.text((125, 355), english_titles[index], fill=(240,245,248,245), stroke_width=0)
-    d.line((125, 420, 510, 420), fill=(80,205,205,210), width=4)
-    d.text((125, 470), "HUMAN  ×  ARTIFICIAL INTELLIGENCE", fill=(150,185,205,210))
-    # Soft vignette, not a zoom or crop.
-    vignette = Image.new("L", (W,H), 0)
-    vd = ImageDraw.Draw(vignette)
-    vd.ellipse((-300,-250,W+300,H+250), fill=215)
-    vignette = vignette.filter(ImageFilter.GaussianBlur(150))
-    img.putalpha(vignette)
-    out = folder / f"scene_art_{index:02d}.png"
-    img.convert("RGB").save(out, quality=95)
+        human(330,cy,0.82); robot(760,cy,0.82)
+        d.arc((120,520,960,1640),200,520,fill=gold,width=8)
+        d.ellipse((cx-24,cy-30,cx+24,cy+18),fill=teal)
+
+    # Clear editorial hierarchy; title text is kept away from the main subject.
+    d.text((95,115),"ZENITH BEYOND",fill=(205,225,238,230))
+    d.text((95,205),f"{index+1:02d} / 12",fill=gold)
+    d.text((95,285),titles[index],fill=white)
+    d.line((95,350,500,350),fill=teal,width=4)
+    d.text((95,390),"HUMAN  ×  ARTIFICIAL INTELLIGENCE",fill=(155,195,215,225))
+    out=folder / f"scene_art_{index:02d}.png"
+    img.save(out, quality=95)
     return out
+
 
 
 if create:
@@ -213,7 +241,7 @@ if create:
                     status.write(f"طراحی سکانس {i + 1} از ۱۲: {label}")
                     image_path = make_scene_art(i, label, work)
                     clip_path = work / f"scene_{i:02d}.mp4"
-                    vf = "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,format=yuv420p"
+                    vf = "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2,setsar=1,format=yuv420p"
                     subprocess.run(
                         [ffmpeg, "-y", "-loop", "1", "-framerate", "30", "-i", str(image_path),
                          "-vf", vf, "-t", "5", "-an", "-c:v", "libx264",
@@ -254,7 +282,7 @@ if create:
             )
             progress.progress(82)
 
-            final_video = work / "ZENITH_HUMAN_AND_AI_60S.mp4"
+            final_video = work / "ZENITH_HUMAN_AND_AI_VERTICAL_60S.mp4"
             command = [ffmpeg, "-y", "-i", str(silent_video)]
             audio_inputs = []
             if narration:
@@ -297,12 +325,12 @@ if create:
             st.download_button(
                 "⬇️ دریافت ویدئوی نهایی",
                 data=final_video.read_bytes(),
-                file_name="ZENITH_HUMAN_AND_AI_60S.mp4",
+                file_name="ZENITH_HUMAN_AND_AI_VERTICAL_60S.mp4",
                 mime="video/mp4",
                 use_container_width=True,
             )
             if mode == "ساخت خودکار ۱۲ سکانس تصویری":
-                st.caption("این نسخه از گرافیک‌های اختصاصی تولیدشده در استودیو استفاده می‌کند، نه عکس‌های استوک.")
+                st.caption("این نسخه از گرافیک‌های اختصاصی انسان و AI استفاده می‌کند؛ برای فوتورئالیسم سه‌بعدی و حرکت واقعی، موتور تولید ویدئوی AI جداگانه لازم است.")
 
     except requests.RequestException as e:
         st.error("دریافت تصویر از Wikimedia Commons ناموفق بود. اتصال اینترنت سرویس را بررسی کن.")
@@ -317,4 +345,4 @@ if create:
         st.error(f"خطای غیرمنتظره: {e}")
 
 st.markdown("---")
-st.caption("ZENITH BEYOND — Beyond the Visible | Cinematic Motion Graphics v3")
+st.caption("ZENITH BEYOND — Vertical Human & AI | Motion Graphics v4")
