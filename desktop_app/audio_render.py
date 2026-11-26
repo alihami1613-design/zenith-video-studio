@@ -99,7 +99,7 @@ def build_audio_mix_command(
                 label = f"arout{index}_{part}"
                 segment_outputs.append(f"[{label}]")
                 segment_chain = [
-                    f"atrim=start={float(segment['source_start_frames']) / fps:.6f}:"
+                    f"atrim=start={source_start + float(segment['source_start_frames']) / fps:.6f}:"
                     f"duration={float(segment['source_duration_frames']) / fps:.6f}",
                     "asetpts=PTS-STARTPTS",
                     *_atempo_chain(float(segment["rate"])),
