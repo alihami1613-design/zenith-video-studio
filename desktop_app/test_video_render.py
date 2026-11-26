@@ -60,9 +60,11 @@ class VideoRenderTests(unittest.TestCase):
             project.clips[1].start_frame = 60
             project.clips[1].end_frame = 90
             project.clips[1].transition_in_frames = 15
+            project.duration_frames = 90
             command = build_video_render_command("ffmpeg", project, "out.mp4")
         joined = " ".join(command)
         self.assertIn("fade=t=in:st=0:d=0.500000:alpha=1", joined)
+        self.assertIn("trim=duration=1.500000", joined)
         self.assertIn("setpts=PTS+1.500000/TB", joined)
         self.assertEqual(project.duration_frames, 90)
 
