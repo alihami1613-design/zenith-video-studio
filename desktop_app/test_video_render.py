@@ -58,6 +58,19 @@ class VideoRenderTests(unittest.TestCase):
         self.assertIn("0.800000", joined)
         self.assertIn("3*(1-(min(max((t", joined)
 
+    def test_builds_keyframed_opacity_alpha_expression(self):
+        with tempfile.TemporaryDirectory() as folder:
+            project = self.project(folder)
+            project.clips[0].transform_keyframes = [
+                {"frame": 0, "opacity": 1.0},
+                {"frame": 30, "opacity": 0.25},
+            ]
+            command = build_video_render_command("ffmpeg", project, "out.mp4")
+        joined = " ".join(command)
+        self.assertIn("geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)'", joined)
+        self.assertIn("a='alpha(X,Y)*(if(lt(T", joined)
+        self.assertIn("0.250000", joined)
+
     def test_builds_1080p_h264_with_grade_and_black_gap(self):
         with tempfile.TemporaryDirectory() as folder:
             project = self.project(folder)
