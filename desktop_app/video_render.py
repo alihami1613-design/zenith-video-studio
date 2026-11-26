@@ -190,8 +190,8 @@ def build_video_render_command(ffmpeg: str, project: object,
             y_expr = _keyframe_expression(keyframes, "y", 0.0, fps, clip_time)
             overlay_filter = (
                 f"[{previous}][v{index}]overlay="
-                f"x='(W-w)/2+W*({x_expr})+W*(1-({scale_expr}))*({float(getattr(clip, \"anchor_x\", 0.5)):.6f}-0.5)':"
-                f"y='(H-h)/2+H*({y_expr})+H*(1-({scale_expr}))*({float(getattr(clip, \"anchor_y\", 0.5)):.6f}-0.5)':"
+                f"x='(W-w)/2+W*({x_expr})+W*(1-({scale_expr}))*({float(getattr(clip, 'anchor_x', 0.5)):.6f}-0.5)':"
+                f"y='(H-h)/2+H*({y_expr})+H*(1-({scale_expr}))*({float(getattr(clip, 'anchor_y', 0.5)):.6f}-0.5)':"
                 "eof_action=pass:repeatlast=0:shortest=0:format=auto"
             )
         elif transition and transition_type == "push_left":
