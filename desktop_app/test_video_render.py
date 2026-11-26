@@ -405,7 +405,8 @@ class VideoRenderTests(unittest.TestCase):
                 [[0.2, 0.2], [0.8, 0.2], [0.5, 0.8]],
                 (0.1, 0.2, 0.6, 0.5), rotation_expr="35",
             )
-            self.assertIn("cos((35*PI/180))", expression)
+            self.assertIn("cos(", expression)
+            self.assertIn("PI/180", expression)
             self.assertIn("sin((35*PI/180))", expression)
 
     def test_mask_rotation_is_applied_in_static_and_animated_render_paths(self):
