@@ -24,7 +24,8 @@ from waveform_manager import create_waveform, load_waveform
 from audio_render import render_audio_mix
 from audio_meter import estimate_track_peaks, peak_to_dbfs
 from color_preview import create_color_preview
-from color_scopes import RGBHistogramWidget, extract_rgb_histogram
+from color_scopes import extract_rgb_histogram
+from color_scope_widget import RGBHistogramWidget
 from speed_ramp_preview import create_speed_ramp_preview
 from video_render import render_timeline_mp4
 
@@ -116,16 +117,17 @@ class RGBHistogramSignals(QObject):
 class RGBHistogramTask(QRunnable):
     """Sample one tiny RGB frame off the GUI thread for the Color scope."""
 
-    def __init__(self, clip_id: str, path: str, timestamp: float) -> None:
+    def __init__(self, clip_id: str, path: str, timestamp: float, grade: dict[str, float]) -> None:
         super().__init__()
         self.clip_id = clip_id
         self.path = path
         self.timestamp = timestamp
+        self.grade = dict(grade)
         self.signals = RGBHistogramSignals()
 
     def run(self) -> None:
         try:
-            result = extract_rgb_histogram(self.path, self.timestamp)
+            result = extract_rgb_histogram(self.path, self.timestamp, self.grade)
             self.signals.finished.emit(self.clip_id, result, "")
         except Exception as exc:
             self.signals.finished.emit(self.clip_id, None, str(exc))
@@ -1267,6 +1269,9 @@ class ZenithEditor(QMainWindow):
             except KeyError:
                 pass
         enabled = bool(clip and clip.media_type == "video")
+        if self._scope_clip_id != clip_id:
+            self.rgb_histogram_widget.set_histogram(None)
+            self._scope_clip_id = clip_id
         self.color_preview_button.setEnabled(enabled)
         self.rgb_histogram_button.setEnabled(enabled)
         for slider, label, scale in self.color_controls.values():
@@ -1301,7 +1306,7 @@ class ZenithEditor(QMainWindow):
             self.statusBar().showMessage("تحلیل این کلیپ در حال انجام است")
             return
         timestamp = clip.source_in / max(1, self.timeline_project.fps)
-        task = RGBHistogramTask(clip_id, clip.path, timestamp)
+        task = RGBHistogramTask(clip_id, clip.path, timestamp, dict(clip.color_grade))
         task.signals.finished.connect(self._rgb_histogram_finished)
         self._scope_tasks.append(task)
         self.rgb_histogram_button.setEnabled(False)
