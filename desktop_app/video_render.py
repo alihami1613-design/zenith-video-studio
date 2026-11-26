@@ -278,7 +278,47 @@ def build_video_render_command(ffmpeg: str, project: object,
                 f"[{previous}][v{index}]overlay=0:0:"
                 "eof_action=pass:repeatlast=0:shortest=0:format=auto"
             )
-        filters.append(f"{overlay_filter}[{out_label}]")
+        blend_mode = str(getattr(clip, "blend_mode", "normal"))
+        if blend_mode == "normal":
+            filters.append(f"{overlay_filter}[{out_label}]")
+        else:
+            if keyframes:
+                placement_x = (
+                    f"(W-w)/2+W*({x_expr})+W*(1-({scale_expr}))*"
+                    f"({float(getattr(clip, 'anchor_x', 0.5)):.6f}-0.5)"
+                )
+                placement_y = (
+                    f"(H-h)/2+H*({y_expr})+H*(1-({scale_expr}))*"
+                    f"({float(getattr(clip, 'anchor_y', 0.5)):.6f}-0.5)"
+                )
+            elif transition and transition_type == "push_left":
+                transition_seconds = _seconds(transition, fps)
+                placement_x = (
+                    f"-W+W*min(max((t-{start:.6f})/{transition_seconds:.6f}\\,0)\\,1)"
+                )
+                placement_y = "0"
+            else:
+                placement_x, placement_y = "0", "0"
+            blend_bg = f"blendbg{index}"
+            top_full = f"topfull{index}"
+            blend_raw = f"blendraw{index}"
+            blend_mask = f"blendmask{index}"
+            filters.append(
+                f"color=c=black@0:s={width}x{height}:r={fps}:d={duration:.6f},"
+                f"format=rgba[{blend_bg}]"
+            )
+            filters.append(
+                f"[{blend_bg}][v{index}]overlay=x='{placement_x}':y='{placement_y}':"
+                f"eof_action=pass:repeatlast=0:shortest=0:format=auto[{top_full}]"
+            )
+            filters.append(
+                f"[{previous}][{top_full}]blend=all_mode={blend_mode}:"
+                f"eof_action=pass:repeatlast=0:shortest=0[{blend_raw}]"
+            )
+            filters.append(f"[{top_full}]alphaextract[{blend_mask}]")
+            filters.append(
+                f"[{previous}][{blend_raw}][{blend_mask}]maskedmerge[{out_label}]"
+            )
         previous = out_label
 
     command.extend([
