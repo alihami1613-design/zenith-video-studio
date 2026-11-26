@@ -366,6 +366,14 @@ class ZenithEditor(QMainWindow):
         self.cross_dissolve_slider.sliderPressed.connect(self._push_undo)
         self.cross_dissolve_slider.valueChanged.connect(self._cross_dissolve_changed)
         inspector_layout.addWidget(self.cross_dissolve_slider)
+        self.transition_type_label = QLabel('نوع گذار')
+        inspector_layout.addWidget(self.transition_type_label)
+        self.transition_type_combo = QComboBox()
+        self.transition_type_combo.addItem('Cross Dissolve', 'dissolve')
+        self.transition_type_combo.addItem('Wipe از چپ', 'wipe_left')
+        self.transition_type_combo.addItem('Push از چپ', 'push_left')
+        self.transition_type_combo.currentIndexChanged.connect(self._cross_dissolve_changed)
+        inspector_layout.addWidget(self.transition_type_combo)
 
         color_heading = QLabel("اصلاح رنگ کلیپ")
         color_heading.setObjectName("panel_title")
@@ -694,6 +702,7 @@ class ZenithEditor(QMainWindow):
                 pass
         enabled = bool(clip and clip.media_type == "video" and clip.track.startswith("V"))
         self.cross_dissolve_slider.setEnabled(enabled)
+        self.transition_type_combo.setEnabled(enabled)
         if not enabled:
             self.cross_dissolve_label.setText("Cross Dissolve In: —")
             return
@@ -707,7 +716,8 @@ class ZenithEditor(QMainWindow):
                          source_handles, self.timeline_project.fps * 5)
         self.cross_dissolve_slider.setRange(0, max(max_frames, clip.transition_in_frames))
         self.cross_dissolve_slider.setValue(clip.transition_in_frames)
-        self.cross_dissolve_slider.setEnabled((adjacent and max_frames > 0) or clip.transition_in_frames > 0)
+        self.transition_type_combo.setCurrentIndex(max(0, self.transition_type_combo.findData(clip.transition_in_type)))
+        self.transition_type_combo.setEnabled((adjacent and max_frames > 0) or clip.transition_in_frames > 0)
         del blockers
         fps = max(1, self.timeline_project.fps)
         if not adjacent and clip.transition_in_frames == 0:
@@ -724,7 +734,9 @@ class ZenithEditor(QMainWindow):
         try:
             clip = self.timeline_project.get_clip(clip_id)
             self.timeline_project.set_clip_transition(
-                clip_id, dissolve_in_frames=self.cross_dissolve_slider.value()
+                clip_id,
+                dissolve_in_frames=self.cross_dissolve_slider.value(),
+                transition_type=str(self.transition_type_combo.currentData() or 'dissolve'),
             )
         except (KeyError, ValueError) as exc:
             self.statusBar().showMessage(f"تنظیم Cross Dissolve اعمال نشد: {exc}")
