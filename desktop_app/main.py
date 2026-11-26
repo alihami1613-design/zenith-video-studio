@@ -26,8 +26,8 @@ from audio_meter import estimate_track_peaks, peak_to_dbfs
 from color_preview import create_color_preview
 from color_scopes import extract_rgb_frame, extract_rgb_histogram
 from color_scope_widget import RGBHistogramWidget
-from advanced_scopes import calculate_luma_waveform, calculate_rgb_parade
-from advanced_scope_widget import ScopeMatrixWidget
+from advanced_scopes import calculate_luma_waveform, calculate_rgb_parade, calculate_vectorscope
+from advanced_scope_widget import ScopeMatrixWidget, VectorScopeWidget
 from speed_ramp_preview import create_speed_ramp_preview
 from video_render import render_timeline_mp4
 
@@ -134,7 +134,7 @@ class RGBHistogramTask(QRunnable):
                 result = extract_rgb_histogram(self.path, self.timestamp, self.grade)
             else:
                 frame = extract_rgb_frame(self.path, self.timestamp, self.grade)
-                result = calculate_luma_waveform(frame) if self.scope_kind == "waveform" else calculate_rgb_parade(frame)
+                result = (calculate_luma_waveform(frame) if self.scope_kind == "waveform" else calculate_rgb_parade(frame) if self.scope_kind == "parade" else calculate_vectorscope(frame))
             self.signals.finished.emit(self.clip_id, result, "")
         except Exception as exc:
             self.signals.finished.emit(self.clip_id, None, str(exc))
@@ -609,6 +609,13 @@ class ZenithEditor(QMainWindow):
         self.rgb_parade_button.setEnabled(False)
         self.rgb_parade_button.clicked.connect(lambda: self.analyze_video_scope("parade"))
         inspector_layout.addWidget(self.rgb_parade_button)
+
+        self.vectorscope_widget = VectorScopeWidget()
+        inspector_layout.addWidget(self.vectorscope_widget)
+        self.vectorscope_button = QPushButton("تحلیل Vectorscope")
+        self.vectorscope_button.setEnabled(False)
+        self.vectorscope_button.clicked.connect(lambda: self.analyze_video_scope("vectorscope"))
+        inspector_layout.addWidget(self.vectorscope_button)
 
         mixer_heading = QLabel("میکسر ترک‌ها")
         mixer_heading.setObjectName("panel_title")
@@ -1294,12 +1301,14 @@ class ZenithEditor(QMainWindow):
             self.rgb_histogram_widget.set_histogram(None)
             self.waveform_widget.set_data(None)
             self.rgb_parade_widget.set_data(None)
+            self.vectorscope_widget.set_data(None)
             self._scope_clip_id = clip_id
         self.color_preview_button.setEnabled(enabled)
         scope_ready = bool(enabled and not self._scope_tasks)
         self.rgb_histogram_button.setEnabled(scope_ready)
         self.waveform_button.setEnabled(scope_ready)
         self.rgb_parade_button.setEnabled(scope_ready)
+        self.vectorscope_button.setEnabled(scope_ready)
         for slider, label, scale in self.color_controls.values():
             slider.setEnabled(enabled)
             if not enabled:
@@ -1375,6 +1384,7 @@ class ZenithEditor(QMainWindow):
         self.rgb_histogram_button.setEnabled(ready)
         self.waveform_button.setEnabled(ready)
         self.rgb_parade_button.setEnabled(ready)
+        self.vectorscope_button.setEnabled(ready)
 
     def _video_scope_finished(self, clip_id: str, scope_kind: str, data: object, error: str) -> None:
         self._scope_tasks = [task for task in self._scope_tasks if task.clip_id != clip_id]
@@ -1388,6 +1398,8 @@ class ZenithEditor(QMainWindow):
             self.waveform_widget.set_data(data)
         elif scope_kind == "parade":
             self.rgb_parade_widget.set_data(data)
+        elif scope_kind == "vectorscope":
+            self.vectorscope_widget.set_data(data)
         else:
             self.rgb_histogram_widget.set_histogram(data)
         self._scope_clip_id = clip_id
