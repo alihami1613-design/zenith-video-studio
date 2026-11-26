@@ -30,6 +30,7 @@ from advanced_scopes import calculate_luma_waveform, calculate_rgb_parade, calcu
 from advanced_scope_widget import ScopeMatrixWidget, VectorScopeWidget
 from color_wheel_widget import ColorWheelWidget
 from color_wheel_math import rgb_to_wheel, wheel_to_rgb
+from bezier_curve_widget import BezierCurveWidget
 from speed_ramp_preview import create_speed_ramp_preview
 from video_render import render_timeline_mp4
 
@@ -489,6 +490,11 @@ class ZenithEditor(QMainWindow):
         self.transform_easing_combo.addItem("Cubic Bezier", "bezier")
         inspector_layout.addWidget(self.transform_easing_combo)
         self.bezier_controls: dict[str, QDoubleSpinBox] = {}
+        self.bezier_curve_widget = BezierCurveWidget()
+        self.bezier_curve_widget.setVisible(False)
+        self.bezier_curve_widget.valuesChanged.connect(self._bezier_graph_changed)
+        self.bezier_curve_widget.editingStarted.connect(self._bezier_graph_edit_started)
+        self.bezier_curve_widget.editingFinished.connect(self._bezier_graph_edit_finished)
         for key, title, default in (("bezier_y1", "Bezier Handle 1 (Y)", 0.0),
                                     ("bezier_y2", "Bezier Handle 2 (Y)", 1.0)):
             inspector_layout.addWidget(QLabel(title))
@@ -499,6 +505,10 @@ class ZenithEditor(QMainWindow):
             spin.setValue(default)
             self.bezier_controls[key] = spin
             inspector_layout.addWidget(spin)
+        inspector_layout.addWidget(QLabel("نمودار منحنی Bezier — دستگیره‌ها را بکشید"))
+        inspector_layout.addWidget(self.bezier_curve_widget)
+        self.transform_easing_combo.currentIndexChanged.connect(self._sync_bezier_graph_visibility)
+        self._bezier_edit_snapshot_active = False
         self.add_transform_keyframe_button = QPushButton("ثبت Keyframe در محل Playhead")
         self.add_transform_keyframe_button.setEnabled(False)
         self.add_transform_keyframe_button.clicked.connect(self._add_transform_keyframe)
@@ -1048,6 +1058,7 @@ class ZenithEditor(QMainWindow):
         for control in self.bezier_controls.values():
             control.setEnabled(enabled)
         if not enabled:
+            self.bezier_curve_widget.setVisible(False)
             self.transform_keyframes_label.setText("Keyframe: —")
             return
         local_frame = max(0, min(clip.duration_frames - 1,
@@ -1089,9 +1100,69 @@ class ZenithEditor(QMainWindow):
                 blocker = QSignalBlocker(control)
                 control.setValue(float(active_key.get(key, 0.0 if key.endswith("y1") else 1.0)))
                 del blocker
+        self.bezier_curve_widget.set_values(
+            float((before or {}).get("bezier_y1", 0.0)),
+            float((before or {}).get("bezier_y2", 1.0)),
+        )
+        self._sync_bezier_graph_visibility()
         self.transform_keyframes_label.setText(
             f"{len(clip.transform_keyframes)} Keyframe | فریم فعلی کلیپ: {local_frame}"
         )
+
+    def _active_bezier_key(self):
+        clip_id = self.timeline_widget.canvas.selected_clip_id
+        if not clip_id:
+            return None, None, None
+        try:
+            clip = self.timeline_project.get_clip(clip_id)
+        except KeyError:
+            return None, None, None
+        if clip.media_type != "video" or not clip.track.startswith("V"):
+            return None, None, None
+        local_frame = self.timeline_project.playhead_frame - clip.start_frame
+        keys = sorted(clip.transform_keyframes, key=lambda item: int(item["frame"]))
+        key = max((item for item in keys if int(item["frame"]) <= local_frame),
+                  key=lambda item: int(item["frame"]), default=None)
+        return clip, key, keys
+
+    def _sync_bezier_graph_visibility(self, *_args) -> None:
+        clip, key, _keys = self._active_bezier_key()
+        visible = bool(clip and key and self.transform_easing_combo.currentData() == "bezier")
+        self.bezier_curve_widget.setVisible(visible)
+
+    def _bezier_graph_edit_started(self) -> None:
+        _clip, key, _keys = self._active_bezier_key()
+        self._bezier_edit_snapshot_active = bool(key)
+        if self._bezier_edit_snapshot_active:
+            self._push_undo()
+
+    def _bezier_graph_changed(self, y1: float, y2: float) -> None:
+        clip, key, keys = self._active_bezier_key()
+        if not clip or not key or not self._bezier_edit_snapshot_active:
+            return
+        key_frame = int(key["frame"])
+        updated = []
+        for item in keys:
+            copy = dict(item)
+            if int(copy["frame"]) == key_frame:
+                copy["ease"] = "bezier"
+                copy["bezier_y1"] = float(y1)
+                copy["bezier_y2"] = float(y2)
+            updated.append(copy)
+        try:
+            self.timeline_project.set_clip_transform_keyframes(clip.clip_id, updated)
+        except (KeyError, ValueError) as exc:
+            self.statusBar().showMessage(f"ویرایش منحنی انجام نشد: {exc}")
+            return
+        for name, value in (("bezier_y1", y1), ("bezier_y2", y2)):
+            blocker = QSignalBlocker(self.bezier_controls[name])
+            self.bezier_controls[name].setValue(value)
+            del blocker
+        self.timeline_widget.refresh()
+
+    def _bezier_graph_edit_finished(self) -> None:
+        self._bezier_edit_snapshot_active = False
+        self.statusBar().showMessage("منحنی Bezier ذخیره شد؛ تغییرات با Undo قابل بازگشت است.")
 
     def _toggle_clip_reverse(self, enabled: bool) -> None:
         clip_id = self.timeline_widget.canvas.selected_clip_id
