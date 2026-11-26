@@ -260,8 +260,8 @@ if create:
                     subprocess.run(
                         [ffmpeg, "-y", "-stream_loop", "-1", "-i", str(input_path),
                          "-t", "5", "-vf",
-                         "scale=1920:1080:force_original_aspect_ratio=decrease,"
-                         "pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30,format=yuv420p",
+                         "scale=1080:1920:force_original_aspect_ratio=increase,"
+                         "crop=1080:1920,setsar=1,fps=30,format=yuv420p",
                          "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
                          str(clip_path)],
                         check=True, capture_output=True, text=True, timeout=240,
