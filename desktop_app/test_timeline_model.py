@@ -9,6 +9,25 @@ from timeline_model import TimelineProject
 
 
 class TimelineModelTests(unittest.TestCase):
+    def test_video_clip_embedded_audio_is_persisted_and_migrated(self):
+        project = TimelineProject()
+        clip = project.add_clip(
+            "camera.mp4", "camera.mp4", track="V1", duration_frames=90,
+            media_type="video", has_audio=True, audio_track="A3",
+        )
+        restored = TimelineProject.from_dict(project.to_dict())
+        saved = restored.get_clip(clip.clip_id)
+        self.assertTrue(saved.has_audio)
+        self.assertEqual(saved.audio_track, "A3")
+        legacy = TimelineProject.from_dict({
+            "fps": 30, "clips": [{
+                "path": "old.mp4", "name": "old.mp4", "track": "V1",
+                "media_type": "video", "duration_frames": 60,
+            }]
+        })
+        self.assertFalse(legacy.clips[0].has_audio)
+        self.assertEqual(legacy.clips[0].audio_track, "A1")
+
     def test_add_and_round_trip(self):
         project = TimelineProject(fps=30)
         clip = project.add_clip("media/a.mp4", "a.mp4", duration_frames=240)
@@ -44,7 +63,7 @@ class TimelineModelTests(unittest.TestCase):
         self.assertAlmostEqual(saved.volume, 0.8)
         self.assertEqual(saved.fade_in_frames, 30)
         self.assertEqual(saved.fade_out_frames, 45)
-        self.assertEqual(project.to_dict()["schema_version"], 5)
+        self.assertEqual(project.to_dict()["schema_version"], 6)
 
     def test_audio_track_mixer_round_trip(self):
         project = TimelineProject()
