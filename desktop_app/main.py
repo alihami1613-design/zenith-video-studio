@@ -462,6 +462,7 @@ class ZenithEditor(QMainWindow):
             ("y", "Position Y", -2.0, 2.0, 0.05, 0.0),
             ("scale", "Scale", 0.1, 4.0, 0.05, 1.0),
             ("rotation", "Rotation", -3600.0, 3600.0, 1.0, 0.0),
+            ("opacity", "Opacity (0–1)", 0.0, 1.0, 0.05, 1.0),
         ):
             inspector_layout.addWidget(QLabel(title))
             spin = QDoubleSpinBox()
@@ -1072,7 +1073,7 @@ class ZenithEditor(QMainWindow):
         local_frame = max(0, min(clip.duration_frames - 1,
                                  self.timeline_project.playhead_frame - clip.start_frame))
         keys = sorted(clip.transform_keyframes, key=lambda item: int(item["frame"]))
-        defaults = {"x": 0.0, "y": 0.0, "scale": 1.0, "rotation": 0.0}
+        defaults = {"x": 0.0, "y": 0.0, "scale": 1.0, "rotation": 0.0, "opacity": 1.0}
         before = max((key for key in keys if int(key["frame"]) <= local_frame),
                      key=lambda item: int(item["frame"]), default=None)
         after = min((key for key in keys if int(key["frame"]) > local_frame),
