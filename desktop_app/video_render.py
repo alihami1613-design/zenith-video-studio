@@ -11,7 +11,7 @@ from audio_render import render_audio_mix
 from proxy_manager import find_ffmpeg
 from video_color import build_color_filter
 
-RENDER_VERSION = "timeline-h264-v5-wipe-push"
+RENDER_VERSION = "timeline-h264-v6-anchor-easing"
 STILL_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".webp", ".tif", ".tiff"}
 
 
@@ -101,7 +101,15 @@ def _keyframe_expression(keyframes: list[dict[str, float]], field: str, default:
     for index in range(len(points) - 2, -1, -1):
         t0, v0 = points[index]
         t1, v1 = points[index + 1]
-        linear = f"({v0:.6f}+({v1-v0:.6f})*({time_expr}-{t0:.6f})/{(t1-t0):.6f})"
+        progress = f"min(max(({time_expr}-{t0:.6f})/{(t1-t0):.6f}\\,0)\\,1)"
+        easing = str(keyframes[index].get("ease", "linear"))
+        if easing == "ease_in":
+            progress = f"({progress})*({progress})"
+        elif easing == "ease_out":
+            progress = f"(1-(1-({progress}))*(1-({progress})))"
+        elif easing == "ease_in_out":
+            progress = f"(({progress})*({progress})*(3-2*({progress})))"
+        linear = f"({v0:.6f}+({v1-v0:.6f})*({progress}))"
         expression = f"if(lt({time_expr}\\,{t1:.6f})\\,{linear}\\,{expression})"
     return f"if(lt({time_expr}\\,{points[0][0]:.6f})\\,{points[0][1]:.6f}\\,{expression})"
 
