@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import Qt, QUrl
+from PySide6.QtCore import Qt, QUrl, QSignalBlocker
 from PySide6.QtGui import QAction, QFont
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtMultimediaWidgets import QVideoWidget
@@ -43,6 +43,8 @@ class ZenithEditor(QMainWindow):
         self.audio_output = QAudioOutput(self)
         self.player.setAudioOutput(self.audio_output)
         self.audio_output.setVolume(0.8)
+        self._pending_seek_ms: int | None = None
+        self.player.mediaStatusChanged.connect(self._media_status_changed)
         self.player.durationChanged.connect(self._duration_changed)
         self.player.positionChanged.connect(self._position_changed)
         self.player.playbackStateChanged.connect(self._playback_state_changed)
@@ -200,8 +202,7 @@ class ZenithEditor(QMainWindow):
         if not path.exists():
             self.media_info.setText(f"فایل پیدا نشد؛ بعداً امکان اتصال مجدد اضافه می‌شود:\n{path}")
             return
-        self.player.stop()
-        self.player.setSource(QUrl.fromLocalFile(str(path)))
+        self._load_preview_source(path, 0)
         self.media_info.setText(f"{item['name']}\n{path}")
         self.statusBar().showMessage(f"آماده پخش: {item['name']}")
 
@@ -212,14 +213,38 @@ class ZenithEditor(QMainWindow):
             return
         self.media_info.setText(f"کلیپ انتخاب‌شده: {clip.name}\nمسیر: {clip.track}")
         if Path(clip.path).exists():
-            self.player.stop()
-            self.player.setSource(QUrl.fromLocalFile(clip.path))
             position_ms = int(clip.source_in * 1000 / self.timeline_project.fps)
-            self.player.setPosition(position_ms)
+            self._load_preview_source(Path(clip.path), position_ms)
             for index, media in enumerate(self.media_items):
                 if media.get("path") == clip.path:
+                    # Updating the bin selection must not reload the source and
+                    # cancel the clip's source-in seek.
+                    blocker = QSignalBlocker(self.media_list)
                     self.media_list.setCurrentRow(index)
+                    del blocker
                     break
+
+    def _load_preview_source(self, path: Path, position_ms: int = 0) -> None:
+        self.player.stop()
+        self._pending_seek_ms = max(0, int(position_ms))
+        self.player.setSource(QUrl.fromLocalFile(str(path)))
+
+    def _apply_pending_seek(self) -> None:
+        if self._pending_seek_ms is None:
+            return
+        target = self._pending_seek_ms
+        duration = self.player.duration()
+        if duration > 0:
+            target = min(target, duration)
+        self.player.setPosition(target)
+        self._pending_seek_ms = None
+
+    def _media_status_changed(self, status: QMediaPlayer.MediaStatus) -> None:
+        if status in (
+            QMediaPlayer.MediaStatus.LoadedMedia,
+            QMediaPlayer.MediaStatus.BufferedMedia,
+        ):
+            self._apply_pending_seek()
 
     def _set_playhead(self, frame: int) -> None:
         self.timeline_project.playhead_frame = max(0, frame)
@@ -245,6 +270,7 @@ class ZenithEditor(QMainWindow):
 
     def _duration_changed(self, duration: int) -> None:
         self.seek_slider.setRange(0, duration)
+        self._apply_pending_seek()
         self._update_time_label(self.player.position(), duration)
 
     def _position_changed(self, position: int) -> None:
