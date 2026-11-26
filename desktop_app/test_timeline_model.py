@@ -45,6 +45,32 @@ class TimelineModelTests(unittest.TestCase):
         self.assertEqual(right.transform_keyframes[0]["frame"], 30)
         self.assertIsNot(left.transform_keyframes, right.transform_keyframes)
 
+    def test_trim_preserves_transform_value_at_new_start(self):
+        project = TimelineProject()
+        clip = project.add_clip("motion.mp4", "motion.mp4", duration_frames=120)
+        project.set_clip_transform_keyframes(clip.clip_id, [
+            {"frame": 0, "x": 0.0, "y": 0.0, "scale": 1.0, "rotation": 0.0},
+            {"frame": 60, "x": 1.0, "y": 0.5, "scale": 2.0, "rotation": 30.0},
+        ])
+        project.trim_clip(clip.clip_id, new_start_frame=30, new_end_frame=100)
+        first = clip.transform_keyframes[0]
+        self.assertEqual(first["frame"], 0)
+        self.assertAlmostEqual(first["x"], 0.5)
+        self.assertAlmostEqual(first["y"], 0.25)
+        self.assertAlmostEqual(first["scale"], 1.5)
+        self.assertAlmostEqual(first["rotation"], 15.0)
+
+    def test_trim_after_last_transform_key_keeps_last_transform(self):
+        project = TimelineProject()
+        clip = project.add_clip("motion.mp4", "motion.mp4", duration_frames=120)
+        project.set_clip_transform_keyframes(clip.clip_id, [
+            {"frame": 10, "x": 0.4, "y": -0.2, "scale": 1.4, "rotation": 8.0},
+        ])
+        project.trim_clip(clip.clip_id, new_start_frame=40, new_end_frame=100)
+        self.assertEqual(len(clip.transform_keyframes), 1)
+        self.assertEqual(clip.transform_keyframes[0]["frame"], 0)
+        self.assertAlmostEqual(clip.transform_keyframes[0]["x"], 0.4)
+
     def test_transform_keyframes_reject_invalid_order_and_bounds(self):
         project = TimelineProject()
         clip = project.add_clip("motion.mp4", "motion.mp4", duration_frames=60)
