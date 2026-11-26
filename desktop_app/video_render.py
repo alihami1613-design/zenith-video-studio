@@ -119,6 +119,12 @@ def _keyframe_expression(keyframes: list[dict[str, float]], field: str, default:
             progress = f"(1-(1-({progress}))*(1-({progress})))"
         elif easing == "ease_in_out":
             progress = f"(({progress})*({progress})*(3-2*({progress})))"
+        elif easing == "bezier":
+            y1 = min(1.0, max(0.0, float(keyframes[index].get("bezier_y1", 0.0))))
+            y2 = min(1.0, max(0.0, float(keyframes[index].get("bezier_y2", 1.0))))
+            p = progress
+            one = f"(1-({p}))"
+            progress = f"(3*{one}*{one}*({p})*{y1:.6f}+3*{one}*({p})*({p})*{y2:.6f}+({p})*({p})*({p}))"
         linear = f"({v0:.6f}+({v1-v0:.6f})*({progress}))"
         expression = f"if(lt({time_expr}\\,{t1:.6f})\\,{linear}\\,{expression})"
     return f"if(lt({time_expr}\\,{points[0][0]:.6f})\\,{points[0][1]:.6f}\\,{expression})"
