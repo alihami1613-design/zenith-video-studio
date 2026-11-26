@@ -86,7 +86,10 @@ class Clip:
     color_grade: dict[str, float] = field(default_factory=lambda: {
         "exposure": 0.0, "contrast": 1.0, "saturation": 1.0,
         "temperature": 0.0, "tint": 0.0,
-        "highlights": 0.0, "shadows": 0.0, "whites": 0.0, "blacks": 0.0,\n        "wheel_shadows_r": 0.0, "wheel_shadows_g": 0.0, "wheel_shadows_b": 0.0,\n        "wheel_midtones_r": 0.0, "wheel_midtones_g": 0.0, "wheel_midtones_b": 0.0,\n        "wheel_highlights_r": 0.0, "wheel_highlights_g": 0.0, "wheel_highlights_b": 0.0,
+        "highlights": 0.0, "shadows": 0.0, "whites": 0.0, "blacks": 0.0,
+        "wheel_shadows_r": 0.0, "wheel_shadows_g": 0.0, "wheel_shadows_b": 0.0,
+        "wheel_midtones_r": 0.0, "wheel_midtones_g": 0.0, "wheel_midtones_b": 0.0,
+        "wheel_highlights_r": 0.0, "wheel_highlights_g": 0.0, "wheel_highlights_b": 0.0,
     })
 
     @property
@@ -154,12 +157,18 @@ class Clip:
         grade = dict(self.color_grade or {})
         defaults = {"exposure": 0.0, "contrast": 1.0, "saturation": 1.0,
                     "temperature": 0.0, "tint": 0.0, "highlights": 0.0, "shadows": 0.0,
-                    "whites": 0.0, "blacks": 0.0}
+                    "whites": 0.0, "blacks": 0.0,
+                    "wheel_shadows_r": 0.0, "wheel_shadows_g": 0.0, "wheel_shadows_b": 0.0,
+                    "wheel_midtones_r": 0.0, "wheel_midtones_g": 0.0, "wheel_midtones_b": 0.0,
+                    "wheel_highlights_r": 0.0, "wheel_highlights_g": 0.0, "wheel_highlights_b": 0.0}
         bounds = {"exposure": (-4.0, 4.0), "contrast": (0.0, 2.0),
                   "saturation": (0.0, 3.0), "temperature": (-1.0, 1.0),
                   "tint": (-1.0, 1.0), "highlights": (-1.0, 1.0),
                   "shadows": (-1.0, 1.0), "whites": (-1.0, 1.0),
-                  "blacks": (-1.0, 1.0)}
+                  "blacks": (-1.0, 1.0),
+                  "wheel_shadows_r": (-1.0, 1.0), "wheel_shadows_g": (-1.0, 1.0), "wheel_shadows_b": (-1.0, 1.0),
+                  "wheel_midtones_r": (-1.0, 1.0), "wheel_midtones_g": (-1.0, 1.0), "wheel_midtones_b": (-1.0, 1.0),
+                  "wheel_highlights_r": (-1.0, 1.0), "wheel_highlights_g": (-1.0, 1.0), "wheel_highlights_b": (-1.0, 1.0)}
         normalized = {}
         for key, default in defaults.items():
             value = float(grade.get(key, default))
