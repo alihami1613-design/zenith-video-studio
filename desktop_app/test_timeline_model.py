@@ -45,6 +45,24 @@ class TimelineModelTests(unittest.TestCase):
         self.assertEqual(right.transform_keyframes[0]["frame"], 30)
         self.assertIsNot(left.transform_keyframes, right.transform_keyframes)
 
+    def test_transform_bezier_handles_round_trip_and_validate(self):
+        project = TimelineProject()
+        clip = project.add_clip("bezier.mp4", "bezier.mp4", duration_frames=90)
+        project.set_clip_transform_keyframes(clip.clip_id, [
+            {"frame": 0, "scale": 1.0, "ease": "bezier",
+             "bezier_y1": 0.2, "bezier_y2": 0.8},
+            {"frame": 60, "scale": 2.0},
+        ])
+        restored = TimelineProject.from_dict(project.to_dict())
+        first = restored.get_clip(clip.clip_id).transform_keyframes[0]
+        self.assertEqual(first["ease"], "bezier")
+        self.assertAlmostEqual(first["bezier_y1"], 0.2)
+        self.assertAlmostEqual(first["bezier_y2"], 0.8)
+        with self.assertRaisesRegex(ValueError, "Bezier handles"):
+            project.set_clip_transform_keyframes(clip.clip_id, [
+                {"frame": 0, "ease": "bezier", "bezier_y1": 1.5},
+            ])
+
     def test_trim_preserves_transform_value_at_new_start(self):
         project = TimelineProject()
         clip = project.add_clip("motion.mp4", "motion.mp4", duration_frames=120)
