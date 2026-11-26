@@ -89,7 +89,8 @@ class TimelineModelTests(unittest.TestCase):
         project.set_clip_color(
             clip.clip_id, exposure=1.25, contrast=1.2, saturation=1.4,
             temperature=0.3, tint=-0.2, highlights=0.4, shadows=-0.3,
-            whites=0.2, blacks=-0.1, wheel_shadows_r=0.25,\n            wheel_midtones_g=-0.2, wheel_highlights_b=0.35,
+            whites=0.2, blacks=-0.1, wheel_shadows_r=0.25,
+            wheel_midtones_g=-0.2, wheel_highlights_b=0.35,
         )
         restored = TimelineProject.from_dict(project.to_dict())
         saved = restored.get_clip(clip.clip_id)
@@ -98,7 +99,10 @@ class TimelineModelTests(unittest.TestCase):
         self.assertAlmostEqual(saved.color_grade["highlights"], 0.4)
         self.assertAlmostEqual(saved.color_grade["shadows"], -0.3)
         self.assertAlmostEqual(saved.color_grade["whites"], 0.2)
-        self.assertAlmostEqual(saved.color_grade["blacks"], -0.1)\n        self.assertAlmostEqual(saved.color_grade["wheel_shadows_r"], 0.25)\n        self.assertAlmostEqual(saved.color_grade["wheel_midtones_g"], -0.2)\n        self.assertAlmostEqual(saved.color_grade["wheel_highlights_b"], 0.35)
+        self.assertAlmostEqual(saved.color_grade["blacks"], -0.1)
+        self.assertAlmostEqual(saved.color_grade["wheel_shadows_r"], 0.25)
+        self.assertAlmostEqual(saved.color_grade["wheel_midtones_g"], -0.2)
+        self.assertAlmostEqual(saved.color_grade["wheel_highlights_b"], 0.35)
         left, right = restored.split_clip(clip.clip_id, 60)
         self.assertEqual(left.color_grade, right.color_grade)
         self.assertIsNot(left.color_grade, right.color_grade)
@@ -125,7 +129,10 @@ class TimelineModelTests(unittest.TestCase):
         self.assertEqual(grade["highlights"], 0.0)
         self.assertEqual(grade["shadows"], 0.0)
         self.assertEqual(grade["whites"], 0.0)
-        self.assertEqual(grade["blacks"], 0.0)\n        self.assertEqual(grade["wheel_shadows_r"], 0.0)\n        self.assertEqual(grade["wheel_midtones_g"], 0.0)\n        self.assertEqual(grade["wheel_highlights_b"], 0.0)
+        self.assertEqual(grade["blacks"], 0.0)
+        self.assertEqual(grade["wheel_shadows_r"], 0.0)
+        self.assertEqual(grade["wheel_midtones_g"], 0.0)
+        self.assertEqual(grade["wheel_highlights_b"], 0.0)
 
     def test_visual_fades_round_trip_split_and_validation(self):
         project = TimelineProject()
