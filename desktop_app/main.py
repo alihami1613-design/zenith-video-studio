@@ -13,7 +13,7 @@ from PySide6.QtMultimediaWidgets import QVideoWidget
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QFileDialog, QMessageBox,
     QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QListWidget,
-    QListWidgetItem, QSplitter, QFrame, QStatusBar, QSlider, QCheckBox, QComboBox, QProgressBar
+    QListWidgetItem, QSplitter, QFrame, QStatusBar, QSlider, QCheckBox, QComboBox, QProgressBar, QDoubleSpinBox
 )
 
 from timeline_model import TimelineProject
@@ -375,6 +375,32 @@ class ZenithEditor(QMainWindow):
         self.transition_type_combo.currentIndexChanged.connect(self._cross_dissolve_changed)
         inspector_layout.addWidget(self.transition_type_combo)
 
+
+        transform_heading = QLabel("حرکت و Transform با Keyframe")
+        transform_heading.setObjectName("panel_title")
+        inspector_layout.addWidget(transform_heading)
+        self.transform_controls: dict[str, QDoubleSpinBox] = {}
+        for key, title, low, high, step, value in (
+            ("x", "Position X", -2.0, 2.0, 0.05, 0.0),
+            ("y", "Position Y", -2.0, 2.0, 0.05, 0.0),
+            ("scale", "Scale", 0.1, 4.0, 0.05, 1.0),
+            ("rotation", "Rotation", -3600.0, 3600.0, 1.0, 0.0),
+        ):
+            inspector_layout.addWidget(QLabel(title))
+            spin = QDoubleSpinBox()
+            spin.setRange(low, high)
+            spin.setSingleStep(step)
+            spin.setDecimals(2)
+            spin.setValue(value)
+            self.transform_controls[key] = spin
+            inspector_layout.addWidget(spin)
+        self.add_transform_keyframe_button = QPushButton("ثبت Keyframe در محل Playhead")
+        self.add_transform_keyframe_button.setEnabled(False)
+        self.add_transform_keyframe_button.clicked.connect(self._add_transform_keyframe)
+        inspector_layout.addWidget(self.add_transform_keyframe_button)
+        self.transform_keyframes_label = QLabel("Keyframe: —")
+        inspector_layout.addWidget(self.transform_keyframes_label)
+
         color_heading = QLabel("اصلاح رنگ کلیپ")
         color_heading.setObjectName("panel_title")
         inspector_layout.addWidget(color_heading)
@@ -593,6 +619,7 @@ class ZenithEditor(QMainWindow):
         self._sync_video_fade_controls()
         self._sync_cross_dissolve_controls()
         self._sync_color_controls()
+        self._sync_transform_controls()
         if Path(clip.path).exists():
             position_ms = int(clip.source_in * 1000 / self.timeline_project.fps)
             preview_path = Path(clip.path)
@@ -749,6 +776,60 @@ class ZenithEditor(QMainWindow):
         self.cross_dissolve_label.setText("{}: {:.1f} ثانیه".format(transition_names.get(clip.transition_in_type, "Transition"), clip.transition_in_frames / fps))
         self.timeline_widget.refresh()
         self.statusBar().showMessage("Cross Dissolve ذخیره شد؛ پیش‌نمایش نهایی در رندر MP4 اعمال می‌شود.")
+
+
+    def _sync_transform_controls(self) -> None:
+        clip_id = self.timeline_widget.canvas.selected_clip_id
+        clip = None
+        if clip_id:
+            try:
+                clip = self.timeline_project.get_clip(clip_id)
+            except KeyError:
+                pass
+        enabled = bool(clip and clip.media_type == "video" and clip.track.startswith("V"))
+        self.add_transform_keyframe_button.setEnabled(enabled)
+        for control in self.transform_controls.values():
+            control.setEnabled(enabled)
+        if not enabled:
+            self.transform_keyframes_label.setText("Keyframe: —")
+            return
+        local_frame = max(0, min(clip.duration_frames - 1,
+                                 self.timeline_project.playhead_frame - clip.start_frame))
+        current = max((key for key in clip.transform_keyframes if key["frame"] <= local_frame),
+                      key=lambda item: item["frame"], default=None)
+        if current:
+            defaults = {"x": 0.0, "y": 0.0, "scale": 1.0, "rotation": 0.0}
+            for key, control in self.transform_controls.items():
+                blocker = QSignalBlocker(control)
+                control.setValue(float(current.get(key, defaults[key])))
+                del blocker
+        self.transform_keyframes_label.setText(
+            f"{len(clip.transform_keyframes)} Keyframe | فریم فعلی کلیپ: {local_frame}"
+        )
+
+    def _add_transform_keyframe(self) -> None:
+        clip_id = self.timeline_widget.canvas.selected_clip_id
+        if not clip_id:
+            return
+        clip = self.timeline_project.get_clip(clip_id)
+        local_frame = self.timeline_project.playhead_frame - clip.start_frame
+        if not 0 <= local_frame < clip.duration_frames:
+            self.statusBar().showMessage("Playhead باید داخل کلیپ انتخاب‌شده باشد.")
+            return
+        self._push_undo()
+        keys = [dict(item) for item in clip.transform_keyframes if int(item["frame"]) != local_frame]
+        keys.append({
+            "frame": local_frame,
+            **{key: control.value() for key, control in self.transform_controls.items()},
+        })
+        keys.sort(key=lambda item: int(item["frame"]))
+        try:
+            self.timeline_project.set_clip_transform_keyframes(clip_id, keys)
+        except (KeyError, ValueError) as exc:
+            self.statusBar().showMessage(f"ثبت Keyframe انجام نشد: {exc}")
+            return
+        self._sync_transform_controls()
+        self.statusBar().showMessage("Keyframe ثبت شد؛ حرکت بین نقاط به‌صورت خطی در خروجی MP4 محاسبه می‌شود.")
 
     def _sync_color_controls(self) -> None:
         clip_id = self.timeline_widget.canvas.selected_clip_id
