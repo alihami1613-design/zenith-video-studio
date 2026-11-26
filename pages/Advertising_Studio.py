@@ -403,24 +403,44 @@ if st.button("✨ ساخت تیزر تبلیغاتی", type="primary", use_conta
                     else:
                         title_y, subtitle_y, cta_y = int(output_h*0.78), int(output_h*0.84), int(output_h*0.91)
                         title_x = "w*0.09"
-                    # Animated editorial typography: fade in and gently settle into position.
-                    fade_alpha = "if(lt(t,0.65),t/0.65,1)"
+                    # Editorial title card: controlled opening window; CTA reserved for the final beat.
+                    # Keep overlays away from the product for most of the film.
+                    title_enable = "gte(t,0.65)*lt(t,4.8)"
+                    cta_enable = f"gte(t,{max(0, duration-3.0):.3f})"
                     if mg_title.strip():
-                        title_motion_y = f"{title_y}+34*(1-min(t/0.7,1))"
-                        video_filters.append(f"drawtext=textfile='{title_file.as_posix()}':x={title_x}:y='{title_motion_y}':fontsize=52:fontcolor=white:alpha='{fade_alpha}'{common}")
+                        title_motion_y = f"{title_y}+30*(1-min(max((t-0.65)/0.65,0),1))"
+                        video_filters.append(
+                            f"drawtext=textfile='{title_file.as_posix()}':x={title_x}:y='{title_motion_y}':"
+                            f"fontsize=52:fontcolor=white:borderw=2:bordercolor=black@0.30:"
+                            f"shadowcolor=black@0.65:shadowx=2:shadowy=3:enable='{title_enable}'{common}"
+                        )
                     if mg_subtitle.strip():
-                        subtitle_motion_y = f"{subtitle_y}+24*(1-min(t/0.8,1))"
-                        video_filters.append(f"drawtext=textfile='{subtitle_file.as_posix()}':x=(w-text_w)/2:y='{subtitle_motion_y}':fontsize=28:fontcolor=0xE8D8B8:alpha='{fade_alpha}'{common}")
+                        subtitle_motion_y = f"{subtitle_y}+20*(1-min(max((t-0.85)/0.7,0),1))"
+                        video_filters.append(
+                            f"drawtext=textfile='{subtitle_file.as_posix()}':x=(w-text_w)/2:y='{subtitle_motion_y}':"
+                            f"fontsize=28:fontcolor=0xE8D8B8:shadowcolor=black@0.65:shadowx=1:shadowy=2:"
+                            f"enable='gte(t,0.85)*lt(t,4.8)'{common}"
+                        )
                     line_y = int(output_h*0.68)
                     line_x = int(output_w*0.24)
                     line_width = int(output_w*0.52)
-                    video_filters.append(f"drawbox=x={line_x}:y={line_y}:w={line_width}:h=3:color=0xD6B46A@0.95:t=fill")
+                    video_filters.append(
+                        f"drawbox=x={line_x}:y={line_y}:w={line_width}:h=3:color=0xD6B46A@0.95:t=fill:"
+                        f"enable='{title_enable}'"
+                    )
                     if mg_cta.strip():
                         cta_width = int(output_w*0.44)
                         cta_x = int((output_w-cta_width)/2)
-                        video_filters.append(f"drawbox=x={cta_x}:y={cta_y}:w={cta_width}:h=48:color=0xD6B46A@0.92:t=fill")
-                        cta_motion_y = f"{cta_y+12}+28*(1-min(t/0.75,1))"
-                        video_filters.append(f"drawtext=textfile='{cta_file.as_posix()}':x=(w-text_w)/2:y='{cta_motion_y}':fontsize=24:fontcolor=black:alpha='{fade_alpha}'{common}")
+                        video_filters.append(
+                            f"drawbox=x={cta_x}:y={cta_y}:w={cta_width}:h=48:"
+                            f"color=0xD6B46A@0.94:t=fill:enable='{cta_enable}'"
+                        )
+                        cta_motion_y = f"{cta_y+12}+18*(1-min(max((t-{max(0, duration-3.0):.3f})/0.55,0),1))"
+                        video_filters.append(
+                            f"drawtext=textfile='{cta_file.as_posix()}':x=(w-text_w)/2:y='{cta_motion_y}':"
+                            f"fontsize=24:fontcolor=black:shadowcolor=0xD6B46A@0.35:shadowx=0:shadowy=0:"
+                            f"enable='{cta_enable}'{common}"
+                        )
                 else:
                     st.warning("فونت مناسب برای موشن‌گرافیک پیدا نشد؛ تیزر بدون نوشته ساخته می‌شود.")
             cmd += ["-vf", ",".join(video_filters), "-map", "0:v:0"]
