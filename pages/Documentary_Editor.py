@@ -122,8 +122,8 @@ if create:
     if mode == "استفاده از کلیپ‌های ویدئویی خودم" and not videos:
         st.error("ابتدا حداقل یک کلیپ ویدئویی انتخاب کن.")
         st.stop()
-    if mode == "استفاده از کلیپ‌های ویدئویی خودم" and len(videos) > 12:
-        st.error("حداکثر ۱۲ کلیپ انتخاب کن.")
+    if mode == "استفاده از کلیپ‌های ویدئویی خودم" and len(videos) != 12:
+        st.error("برای خروجی ۶۰ ثانیه‌ای، دقیقاً ۱۲ کلیپ انتخاب کن؛ هر کلیپ ۵ ثانیه می‌شود.")
         st.stop()
 
     ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
@@ -202,13 +202,13 @@ if create:
             if music:
                 p = work / ("music." + music.name.rsplit(".", 1)[-1])
                 p.write_bytes(music.getbuffer())
-                command += ["-i", str(p)]
+                command += ["-stream_loop", "-1", "-i", str(p)]
                 audio_inputs.append("music")
 
             if narration and music:
                 graph = (
                     f"[1:a]volume={narration_volume/100:.2f},apad[n];"
-                    f"[2:a]volume={music_volume/100:.2f},aloop=loop=-1:size=2000000000[m];"
+                    f"[2:a]volume={music_volume/100:.2f}[m];"
                     "[n][m]amix=inputs=2:duration=longest:dropout_transition=2[a]"
                 )
                 command += ["-filter_complex", graph, "-map", "0:v", "-map", "[a]"]
@@ -216,7 +216,7 @@ if create:
                 graph = f"[1:a]volume={narration_volume/100:.2f},apad[a]"
                 command += ["-filter_complex", graph, "-map", "0:v", "-map", "[a]"]
             elif music:
-                graph = f"[1:a]volume={music_volume/100:.2f},aloop=loop=-1:size=2000000000[a]"
+                graph = f"[1:a]volume={music_volume/100:.2f}[a]"
                 command += ["-filter_complex", graph, "-map", "0:v", "-map", "[a]"]
             else:
                 command += ["-map", "0:v"]
