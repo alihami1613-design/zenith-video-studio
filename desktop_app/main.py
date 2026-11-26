@@ -706,7 +706,7 @@ class ZenithEditor(QMainWindow):
         if not enabled:
             self.cross_dissolve_label.setText("Cross Dissolve In: —")
             return
-        blockers = QSignalBlocker(self.cross_dissolve_slider)
+        blockers = [QSignalBlocker(self.cross_dissolve_slider), QSignalBlocker(self.transition_type_combo)]
         previous = next((item for item in reversed(self.timeline_project.clips_on_track(clip.track))
                          if item.start_frame < clip.start_frame), None)
         adjacent = bool(previous and previous.end_frame == clip.start_frame)
@@ -725,7 +725,8 @@ class ZenithEditor(QMainWindow):
         elif adjacent and max_frames == 0 and clip.transition_in_frames == 0:
             self.cross_dissolve_label.setText("Cross Dissolve: نیازمند فریم قبل از In")
         else:
-            self.cross_dissolve_label.setText(f"Cross Dissolve In: {clip.transition_in_frames / fps:.1f} ثانیه")
+            transition_names = {"dissolve": "Cross Dissolve", "wipe_left": "Wipe از چپ", "push_left": "Push از چپ"}
+        self.cross_dissolve_label.setText("{}: {:.1f} ثانیه".format(transition_names.get(clip.transition_in_type, "Transition"), clip.transition_in_frames / fps))
 
     def _cross_dissolve_changed(self, *_: Any) -> None:
         clip_id = self.timeline_widget.canvas.selected_clip_id
