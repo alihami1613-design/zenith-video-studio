@@ -67,6 +67,10 @@ class TimelineProject:
     audio_tracks: list[str] = field(default_factory=lambda: list(DEFAULT_AUDIO_TRACKS))
     clips: list[Clip] = field(default_factory=list)
     playhead_frame: int = 0
+    audio_track_settings: dict[str, dict[str, Any]] = field(default_factory=lambda: {
+        track: {"volume": 1.0, "muted": False, "solo": False}
+        for track in DEFAULT_AUDIO_TRACKS
+    })
 
     def __post_init__(self) -> None:
         if self.fps < 1:
@@ -75,6 +79,16 @@ class TimelineProject:
             raise ValueError("Project dimensions must be positive")
         if self.playhead_frame < 0:
             self.playhead_frame = 0
+        for track in self.audio_tracks:
+            raw = self.audio_track_settings.get(track, {})
+            volume = float(raw.get("volume", 1.0))
+            if not math.isfinite(volume) or not 0.0 <= volume <= 2.0:
+                raise ValueError(f"Invalid audio track volume: {track}")
+            self.audio_track_settings[track] = {
+                "volume": volume,
+                "muted": bool(raw.get("muted", False)),
+                "solo": bool(raw.get("solo", False)),
+            }
         for clip in self.clips:
             clip.validate()
 
@@ -195,6 +209,24 @@ class TimelineProject:
                     other.start_frame = max(0, other.start_frame - clip.duration_frames)
         return clip
 
+    def set_audio_track(self, track: str, *, volume: float | None = None,
+                        muted: bool | None = None, solo: bool | None = None) -> dict[str, Any]:
+        if track not in self.audio_tracks:
+            raise ValueError(f\"Unknown audio track: {track}\")
+        settings = self.audio_track_settings.setdefault(
+            track, {\"volume\": 1.0, \"muted\": False, \"solo\": False}
+        )
+        if volume is not None:
+            value = float(volume)
+            if not math.isfinite(value) or not 0.0 <= value <= 2.0:
+                raise ValueError(\"Track volume must be between 0.0 and 2.0\")
+            settings[\"volume\"] = value
+        if muted is not None:
+            settings[\"muted\"] = bool(muted)
+        if solo is not None:
+            settings[\"solo\"] = bool(solo)
+        return dict(settings)
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "schema_version": PROJECT_SCHEMA_VERSION,
@@ -204,6 +236,7 @@ class TimelineProject:
             "video_tracks": self.video_tracks,
             "audio_tracks": self.audio_tracks,
             "playhead_frame": self.playhead_frame,
+            "audio_track_settings": self.audio_track_settings,
             "clips": [clip.to_dict() for clip in self.clips],
         }
 
@@ -254,4 +287,5 @@ class TimelineProject:
             audio_tracks=list(data.get("audio_tracks") or DEFAULT_AUDIO_TRACKS),
             clips=clips,
             playhead_frame=max(0, int(data.get("playhead_frame", 0) or 0)),
+            audio_track_settings=dict(data.get("audio_track_settings") or {}),
         )
