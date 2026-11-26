@@ -28,6 +28,7 @@ from color_scopes import extract_rgb_frame, extract_rgb_histogram
 from color_scope_widget import RGBHistogramWidget
 from advanced_scopes import calculate_luma_waveform, calculate_rgb_parade, calculate_vectorscope
 from advanced_scope_widget import ScopeMatrixWidget, VectorScopeWidget
+from color_wheel_widget import ColorWheelWidget, rgb_to_wheel, wheel_to_rgb
 from speed_ramp_preview import create_speed_ramp_preview
 from video_render import render_timeline_mp4
 
@@ -576,6 +577,25 @@ class ZenithEditor(QMainWindow):
             slider.valueChanged.connect(self._color_controls_changed)
             inspector_layout.addWidget(slider)
             self.color_controls[key] = (slider, label, scale)
+
+        # Keep the existing RGB sliders as the canonical persisted controls,
+        # but present their three-way groups through compact circular widgets.
+        self.color_wheels: dict[str, ColorWheelWidget] = {}
+        wheel_row = QHBoxLayout()
+        for zone, title in (("shadows", "Shadows"), ("midtones", "Midtones"), ("highlights", "Highlights")):
+            wheel = ColorWheelWidget(title)
+            wheel.valuesChanged.connect(lambda x, y, z=zone: self._color_wheel_changed(z, x, y))
+            wheel.editingStarted.connect(self._push_undo)
+            wheel_row.addWidget(wheel, 1)
+            self.color_wheels[zone] = wheel
+            for channel in ("r", "g", "b"):
+                slider, label, _ = self.color_controls[f"wheel_{zone}_{channel}"]
+                slider.hide()
+                label.hide()
+        inspector_layout.addLayout(wheel_row)
+        self.color_wheel_reset_button = QPushButton("بازنشانی چرخ‌های رنگ")
+        self.color_wheel_reset_button.clicked.connect(self._reset_color_wheels)
+        inspector_layout.addWidget(self.color_wheel_reset_button)
 
         self.color_preview_button = QPushButton("ساخت پیش‌نمایش رنگ کلیپ")
         self.color_preview_button.setToolTip(
@@ -1321,6 +1341,10 @@ class ZenithEditor(QMainWindow):
             slider.setValue(round(value / scale))
             label.setText(f"{key.title()}: {value:.2f}")
         del blockers
+        for zone in ("shadows", "midtones", "highlights"):
+            rgb = [float(clip.color_grade.get(f"wheel_{zone}_{channel}", 0.0)) for channel in ("r", "g", "b")]
+            self.color_wheels[zone].set_values(*rgb_to_wheel(*rgb))
+        self.color_wheel_reset_button.setEnabled(enabled)
 
     def analyze_rgb_histogram(self) -> None:
         clip_id = self.timeline_widget.canvas.selected_clip_id
@@ -1404,6 +1428,27 @@ class ZenithEditor(QMainWindow):
             self.rgb_histogram_widget.set_histogram(data)
         self._scope_clip_id = clip_id
         self.statusBar().showMessage(f"{scope_kind} فریم نمونه با Grade فعلی محاسبه شد؛ تصویر اصلی تغییر نکرد.")
+
+    def _color_wheel_changed(self, zone: str, x: float, y: float) -> None:
+        red, green, blue = wheel_to_rgb(x, y)
+        for channel, value in zip(("r", "g", "b"), (red, green, blue)):
+            slider, _, scale = self.color_controls[f"wheel_{zone}_{channel}"]
+            blocker = QSignalBlocker(slider)
+            slider.setValue(round(value / scale))
+            del blocker
+        self._color_controls_changed()
+
+    def _reset_color_wheels(self) -> None:
+        self._push_undo()
+        for wheel in self.color_wheels.values():
+            wheel.set_values(0.0, 0.0)
+        for zone in ("shadows", "midtones", "highlights"):
+            for channel in ("r", "g", "b"):
+                slider, _, _ = self.color_controls[f"wheel_{zone}_{channel}"]
+                blocker = QSignalBlocker(slider)
+                slider.setValue(0)
+                del blocker
+        self._color_controls_changed()
 
     def _color_controls_changed(self, *_: Any) -> None:
         clip_id = self.timeline_widget.canvas.selected_clip_id
