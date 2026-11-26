@@ -24,6 +24,7 @@ from waveform_manager import create_waveform, load_waveform
 from audio_render import render_audio_mix
 from audio_meter import estimate_track_peaks, peak_to_dbfs
 from color_preview import create_color_preview
+from video_render import render_timeline_mp4
 
 APP_NAME = "ZENITH Desktop"
 PROJECT_VERSION = 2
@@ -154,6 +155,28 @@ class AudioRenderTask(QRunnable):
             self.signals.finished.emit("", str(exc))
 
 
+class VideoRenderSignals(QObject):
+    finished = Signal(str, str)
+
+
+class VideoRenderTask(QRunnable):
+    """Render one immutable project snapshot to MP4 off the GUI thread."""
+
+    def __init__(self, project_data: dict[str, Any], output_path: str) -> None:
+        super().__init__()
+        self.project_data = project_data
+        self.output_path = output_path
+        self.signals = VideoRenderSignals()
+
+    def run(self) -> None:
+        try:
+            project = TimelineProject.from_dict(self.project_data)
+            result = render_timeline_mp4(project, self.output_path)
+            self.signals.finished.emit(str(result), "")
+        except Exception as exc:
+            self.signals.finished.emit("", str(exc))
+
+
 class ZenithEditor(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
@@ -171,6 +194,9 @@ class ZenithEditor(QMainWindow):
         self._audio_render_pool = QThreadPool(self)
         self._audio_render_pool.setMaxThreadCount(1)
         self._audio_render_task: AudioRenderTask | None = None
+        self._video_render_pool = QThreadPool(self)
+        self._video_render_pool.setMaxThreadCount(1)
+        self._video_render_task: VideoRenderTask | None = None
         self._color_preview_pool = QThreadPool(self)
         self._color_preview_pool.setMaxThreadCount(1)
         self._color_preview_tasks: list[ColorPreviewTask] = []
@@ -445,6 +471,9 @@ class ZenithEditor(QMainWindow):
         self.split_button.clicked.connect(self.split_selected_clip)
         self.remove_button = QPushButton("حذف کلیپ")
         self.remove_button.clicked.connect(self.remove_selected_from_timeline)
+        self.video_render_button = QPushButton("خروجی نهایی MP4 (1080p)")
+        self.video_render_button.setToolTip("رندر H.264 با اصلاح رنگ کلیپ و میکس صدای تایم‌لاین؛ V1 بدون هم‌پوشانی")
+        self.video_render_button.clicked.connect(self.export_video_mp4)
         self.audio_mix_button = QPushButton("خروجی میکس صدا (WAV)")
         self.audio_mix_button.setToolTip("ترکیب ترک‌های صوتی با Gain و Fade واقعی؛ فایل اصلی تغییر نمی‌کند")
         self.audio_mix_button.clicked.connect(self.export_audio_mix)
@@ -457,6 +486,7 @@ class ZenithEditor(QMainWindow):
         controls.addWidget(self.split_button)
         controls.addWidget(self.remove_button)
         controls.addWidget(self.audio_mix_button)
+        controls.addWidget(self.video_render_button)
         timeline_layout.addLayout(controls)
 
         self.timeline_widget = TimelineWidget(self.timeline_project)
@@ -1114,6 +1144,45 @@ class ZenithEditor(QMainWindow):
         self.audio_mix_button.setEnabled(False)
         self.statusBar().showMessage("در حال میکس ترک‌های صوتی در پس‌زمینه؛ رابط برنامه آزاد می‌ماند...")
         self._audio_render_pool.start(task)
+
+    def export_video_mp4(self) -> None:
+        if self._video_render_task is not None:
+            self.statusBar().showMessage("خروجی ویدیویی در حال انجام است")
+            return
+        if not any(clip.track.startswith("V") and clip.media_type == "video"
+                   for clip in self.timeline_project.clips):
+            QMessageBox.information(self, "خروجی MP4", "ابتدا یک کلیپ ویدیویی روی ترک V1 قرار دهید.")
+            return
+        filename, _ = QFileDialog.getSaveFileName(
+            self, "ذخیره ویدیوی نهایی", "ZENITH_Final_1080p.mp4",
+            "MP4 Video (*.mp4)"
+        )
+        if not filename:
+            return
+        output = Path(filename)
+        if output.suffix.lower() != ".mp4":
+            output = output.with_suffix(".mp4")
+        task = VideoRenderTask(self.timeline_project.to_dict(), str(output))
+        task.signals.finished.connect(self._video_render_finished)
+        self._video_render_task = task
+        self.video_render_button.setEnabled(False)
+        self.statusBar().showMessage(
+            "رندر MP4 در پس‌زمینه آغاز شد؛ رابط آزاد می‌ماند. لطفاً تا پایان رندر برنامه را نبندید."
+        )
+        self._video_render_pool.start(task)
+
+    def _video_render_finished(self, output_path: str, error: str) -> None:
+        self._video_render_task = None
+        self.video_render_button.setEnabled(True)
+        if error:
+            QMessageBox.critical(self, "خطای خروجی MP4", error)
+            self.statusBar().showMessage("ساخت خروجی MP4 ناموفق بود")
+            return
+        self.statusBar().showMessage(f"ویدیوی نهایی آماده شد: {Path(output_path).name}")
+        QMessageBox.information(
+            self, "خروجی MP4 آماده شد",
+            f"ویدیوی H.264 با موفقیت ساخته شد.\n\n{output_path}"
+        )
 
     def _audio_mix_finished(self, output_path: str, error: str) -> None:
         self._audio_render_task = None
