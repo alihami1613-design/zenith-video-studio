@@ -278,17 +278,24 @@ if st.button("✨ ساخت تیزر تبلیغاتی", type="primary", use_conta
                     input_args = ["-stream_loop", "-1", "-i", str(src), "-t", f"{per_clip:.3f}"]
                 else:
                     frames = max(1, round(per_clip * 24))
-                    # Gentle luxury-product camera movement: subtle 3-4% zoom, not an aggressive push-in.
-                    if i % 3 == 0:
-                        zoom_expr = "min(zoom+0.00022,1.04)"
+                    # Restrained Ken Burns movement with a different camera path per still.
+                    if i % 4 == 0:
+                        zoom_expr = "min(zoom+0.00075,1.105)"
                         x_expr = "iw/2-(iw/zoom/2)"
-                    elif i % 3 == 1:
-                        zoom_expr = "if(eq(on,0),1.0,min(zoom+0.00018,1.035))"
-                        x_expr = "iw/2-(iw/zoom/2)+4*sin(on/90)"
+                        y_expr = "ih/2-(ih/zoom/2)"
+                    elif i % 4 == 1:
+                        zoom_expr = "if(eq(on,0),1.105,max(zoom-0.00075,1.0))"
+                        x_expr = "iw/2-(iw/zoom/2)"
+                        y_expr = "ih/2-(ih/zoom/2)"
+                    elif i % 4 == 2:
+                        zoom_expr = "min(zoom+0.00055,1.075)"
+                        x_expr = "(iw-iw/zoom)*(0.15+0.70*on/" + str(frames) + ")"
+                        y_expr = "ih/2-(ih/zoom/2)"
                     else:
-                        zoom_expr = "if(eq(on,0),1.0,min(zoom+0.00016,1.03))"
-                        x_expr = "iw/2-(iw/zoom/2)-4*sin(on/100)"
-                    vf += f",zoompan=z='{zoom_expr}':d=1:x='{x_expr}':y='ih/2-(ih/zoom/2)':s={output_w}x{output_h}:fps=24,trim=duration={per_clip:.3f},setpts=PTS-STARTPTS"
+                        zoom_expr = "min(zoom+0.00055,1.075)"
+                        x_expr = "(iw-iw/zoom)*(0.85-0.70*on/" + str(frames) + ")"
+                        y_expr = "ih/2-(ih/zoom/2)"
+                    vf += f",zoompan=z='{zoom_expr}':d=1:x='{x_expr}':y='{y_expr}':s={output_w}x{output_h}:fps=24,trim=duration={per_clip:.3f},setpts=PTS-STARTPTS"
                     input_args = ["-loop", "1", "-framerate", "24", "-i", str(src), "-t", f"{per_clip:.3f}"]
 
                 # Optional dip-to-black transition on every shot; clean cuts remain the default.
@@ -356,10 +363,14 @@ if st.button("✨ ساخت تیزر تبلیغاتی", type="primary", use_conta
                     else:
                         title_y, subtitle_y, cta_y = int(output_h*0.78), int(output_h*0.84), int(output_h*0.91)
                         title_x = "w*0.09"
+                    # Animated editorial typography: fade in and gently settle into position.
+                    fade_alpha = "if(lt(t,0.65),t/0.65,1)"
                     if mg_title.strip():
-                        video_filters.append(f"drawtext=textfile='{title_file.as_posix()}':x={title_x}:y={title_y}:fontsize=52:fontcolor=white{common}")
+                        title_motion_y = f"{title_y}+34*(1-min(t/0.7,1))"
+                        video_filters.append(f"drawtext=textfile='{title_file.as_posix()}':x={title_x}:y='{title_motion_y}':fontsize=52:fontcolor=white:alpha='{fade_alpha}'{common}")
                     if mg_subtitle.strip():
-                        video_filters.append(f"drawtext=textfile='{subtitle_file.as_posix()}':x=(w-text_w)/2:y={subtitle_y}:fontsize=28:fontcolor=0xE8D8B8{common}")
+                        subtitle_motion_y = f"{subtitle_y}+24*(1-min(t/0.8,1))"
+                        video_filters.append(f"drawtext=textfile='{subtitle_file.as_posix()}':x=(w-text_w)/2:y='{subtitle_motion_y}':fontsize=28:fontcolor=0xE8D8B8:alpha='{fade_alpha}'{common}")
                     line_y = int(output_h*0.68)
                     line_x = int(output_w*0.24)
                     line_width = int(output_w*0.52)
@@ -368,7 +379,8 @@ if st.button("✨ ساخت تیزر تبلیغاتی", type="primary", use_conta
                         cta_width = int(output_w*0.44)
                         cta_x = int((output_w-cta_width)/2)
                         video_filters.append(f"drawbox=x={cta_x}:y={cta_y}:w={cta_width}:h=48:color=0xD6B46A@0.92:t=fill")
-                        video_filters.append(f"drawtext=textfile='{cta_file.as_posix()}':x=(w-text_w)/2:y={cta_y+12}:fontsize=24:fontcolor=black{common}")
+                        cta_motion_y = f"{cta_y+12}+28*(1-min(t/0.75,1))"
+                        video_filters.append(f"drawtext=textfile='{cta_file.as_posix()}':x=(w-text_w)/2:y='{cta_motion_y}':fontsize=24:fontcolor=black:alpha='{fade_alpha}'{common}")
                 else:
                     st.warning("فونت مناسب برای موشن‌گرافیک پیدا نشد؛ تیزر بدون نوشته ساخته می‌شود.")
             cmd += ["-vf", ",".join(video_filters), "-map", "0:v:0"]
