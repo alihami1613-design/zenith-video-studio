@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal, QPoint, QSize
-from PySide6.QtGui import QColor, QFont, QPainter, QPen, QBrush, QPainterPath
+from PySide6.QtGui import QColor, QFont, QPainter, QPen, QBrush, QPainterPath, QPolygonF
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QScrollArea, QSlider, QFrame
 
 TRACKS = ("V4", "V3", "V2", "V1", "A1", "A2", "A3", "A4")
@@ -19,6 +19,8 @@ class TimelineCanvas(QWidget):
     clipTrimmed = Signal(str, int, int)
     editStarted = Signal()
     speedRampChanged = Signal(str, list)
+    transformKeyframeMoved = Signal(str, int, int)
+    transformKeyframeSelected = Signal(str, int)
 
     def __init__(self, project, parent=None):
         super().__init__(parent)
@@ -34,6 +36,9 @@ class TimelineCanvas(QWidget):
         self._original_source_in = 0
         self._preview_state = None
         self._drag_ramp_index = None
+        self._drag_transform_keyframe_frame = None
+        self._preview_transform_keyframe_frame = None
+        self.selected_transform_keyframe_frame = None
         self._preview_ramp_points = None
         self._playhead_dragging = False
         self.waveforms = {}
@@ -209,6 +214,21 @@ class TimelineCanvas(QWidget):
                             max(1, duration_frames) * (x2 - x1)
                         )
                         painter.drawEllipse(point_x - 3, ramp_y(point["rate"]) - 3, 6, 6)
+                if selected and clip.media_type == "video" and clip.track.startswith("V"):
+                    key_y = rect_y + rect_h // 2
+                    for key in clip.transform_keyframes:
+                        original_frame = int(key["frame"])
+                        shown_frame = (self._preview_transform_keyframe_frame
+                                       if self._drag_transform_keyframe_frame == original_frame
+                                       and self._preview_transform_keyframe_frame is not None
+                                       else original_frame)
+                        key_x = x1 + int(shown_frame / max(1, clip.duration_frames) * (x2 - x1))
+                        diamond = QPolygonF([QPoint(key_x, key_y - 6), QPoint(key_x + 6, key_y),
+                                             QPoint(key_x, key_y + 6), QPoint(key_x - 6, key_y)])
+                        active = original_frame == self.selected_transform_keyframe_frame
+                        painter.setBrush(QBrush(QColor("#FFF1B8") if active else QColor("#F2D27A")))
+                        painter.setPen(QPen(QColor("#33270D"), 1))
+                        painter.drawPolygon(diamond)
                 if selected:
                     painter.fillRect(x1, rect_y, 4, rect_h, QColor("#FFF0C2"))
                     painter.fillRect(x2 - 4, rect_y, 4, rect_h, QColor("#FFF0C2"))
@@ -242,6 +262,21 @@ class TimelineCanvas(QWidget):
                 nearest, nearest_distance = index, distance
         return nearest
 
+    def _transform_keyframe_at(self, clip, point):
+        if clip.media_type != "video" or not clip.track.startswith("V"):
+            return None
+        left, right = self._frame_x(clip.start_frame), self._frame_x(clip.end_frame)
+        width = max(1, right - left)
+        center_y = RULER_HEIGHT + TRACKS.index(clip.track) * TRACK_HEIGHT + TRACK_HEIGHT // 2
+        nearest, distance_min = None, 145
+        for key in clip.transform_keyframes:
+            frame = int(key["frame"])
+            x = left + int(frame / max(1, clip.duration_frames) * width)
+            distance = (point.x() - x) ** 2 + (point.y() - center_y) ** 2
+            if distance < distance_min:
+                nearest, distance_min = frame, distance
+        return nearest
+
     def mousePressEvent(self, event):
         if event.button() != Qt.LeftButton:
             return
@@ -249,6 +284,20 @@ class TimelineCanvas(QWidget):
         clip = self._clip_at(point)
         if clip:
             self.selected_clip_id = clip.clip_id
+            keyframe_frame = self._transform_keyframe_at(clip, point)
+            if keyframe_frame is not None:
+                self.selected_transform_keyframe_frame = keyframe_frame
+                self._drag_clip_id = clip.clip_id
+                self._drag_mode = "transform_keyframe"
+                self._drag_transform_keyframe_frame = keyframe_frame
+                self._preview_transform_keyframe_frame = keyframe_frame
+                self._drag_origin = point
+                self.editStarted.emit()
+                self.clipSelected.emit(clip.clip_id)
+                self.transformKeyframeSelected.emit(clip.clip_id, keyframe_frame)
+                self.update()
+                return
+            self.selected_transform_keyframe_frame = None
             self._drag_clip_id = clip.clip_id
             self._drag_origin = point
             self._drag_start_frame = clip.start_frame
@@ -282,7 +331,17 @@ class TimelineCanvas(QWidget):
         delta_x = event.position().toPoint().x() - self._drag_origin.x()
         delta_frames = int(round(delta_x / max(1, self.pixels_per_second) * self.project.fps))
         clip = self.project.get_clip(self._drag_clip_id)
-        if self._drag_mode == "ramp":
+        if self._drag_mode == "transform_keyframe":
+            keys = sorted(clip.transform_keyframes, key=lambda item: int(item["frame"]))
+            index = next((i for i, item in enumerate(keys) if int(item["frame"]) == self._drag_transform_keyframe_frame), -1)
+            if index >= 0:
+                left = self._frame_x(clip.start_frame)
+                width = max(1, self._frame_x(clip.end_frame) - left)
+                local = int(round((event.position().toPoint().x() - left) / width * clip.duration_frames))
+                low = int(keys[index - 1]["frame"]) + 1 if index else 0
+                high = int(keys[index + 1]["frame"]) - 1 if index + 1 < len(keys) else clip.duration_frames - 1
+                self._preview_transform_keyframe_frame = max(low, min(high, local))
+        elif self._drag_mode == "ramp":
             index = self._drag_ramp_index
             if index is not None and self._preview_ramp_points:
                 left = self._frame_x(clip.start_frame)
@@ -348,7 +407,11 @@ class TimelineCanvas(QWidget):
             return
         clip = self.project.get_clip(self._drag_clip_id)
         preview = self._preview_state
-        if self._drag_mode == "ramp" and self._preview_ramp_points is not None:
+        if self._drag_mode == "transform_keyframe":
+            if (self._drag_transform_keyframe_frame is not None and self._preview_transform_keyframe_frame is not None
+                    and self._preview_transform_keyframe_frame != self._drag_transform_keyframe_frame):
+                self.transformKeyframeMoved.emit(clip.clip_id, self._drag_transform_keyframe_frame, self._preview_transform_keyframe_frame)
+        elif self._drag_mode == "ramp" and self._preview_ramp_points is not None:
             if self._preview_ramp_points != clip.speed_ramp:
                 self.speedRampChanged.emit(clip.clip_id, self._preview_ramp_points)
         elif preview:
@@ -362,6 +425,8 @@ class TimelineCanvas(QWidget):
         self._preview_state = None
         self._preview_ramp_points = None
         self._drag_ramp_index = None
+        self._drag_transform_keyframe_frame = None
+        self._preview_transform_keyframe_frame = None
         self._drag_clip_id = None
         self.update_geometry_for_project()
 
@@ -373,6 +438,8 @@ class TimelineWidget(QWidget):
     clipTrimmed = Signal(str, int, int)
     editStarted = Signal()
     speedRampChanged = Signal(str, list)
+    transformKeyframeMoved = Signal(str, int, int)
+    transformKeyframeSelected = Signal(str, int)
 
     def __init__(self, project, parent=None):
         super().__init__(parent)
@@ -407,6 +474,8 @@ class TimelineWidget(QWidget):
         self.canvas.clipTrimmed.connect(self.clipTrimmed)
         self.canvas.editStarted.connect(self.editStarted)
         self.canvas.speedRampChanged.connect(self.speedRampChanged)
+        self.canvas.transformKeyframeMoved.connect(self.transformKeyframeMoved)
+        self.canvas.transformKeyframeSelected.connect(self.transformKeyframeSelected)
 
     def set_project(self, project):
         self.project = project
