@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-PROJECT_SCHEMA_VERSION = 16
+PROJECT_SCHEMA_VERSION = 17
 DEFAULT_FPS = 30
 DEFAULT_VIDEO_TRACKS = ("V1", "V2", "V3", "V4")
 DEFAULT_AUDIO_TRACKS = ("A1", "A2", "A3", "A4")
@@ -86,6 +86,7 @@ class Clip:
     color_grade: dict[str, float] = field(default_factory=lambda: {
         "exposure": 0.0, "contrast": 1.0, "saturation": 1.0,
         "temperature": 0.0, "tint": 0.0,
+        "highlights": 0.0, "shadows": 0.0, "whites": 0.0, "blacks": 0.0,
     })
 
     @property
@@ -152,10 +153,13 @@ class Clip:
             raise ValueError("Fade duration cannot exceed clip duration")
         grade = dict(self.color_grade or {})
         defaults = {"exposure": 0.0, "contrast": 1.0, "saturation": 1.0,
-                    "temperature": 0.0, "tint": 0.0}
+                    "temperature": 0.0, "tint": 0.0, "highlights": 0.0, "shadows": 0.0,
+                    "whites": 0.0, "blacks": 0.0}
         bounds = {"exposure": (-4.0, 4.0), "contrast": (0.0, 2.0),
                   "saturation": (0.0, 3.0), "temperature": (-1.0, 1.0),
-                  "tint": (-1.0, 1.0)}
+                  "tint": (-1.0, 1.0), "highlights": (-1.0, 1.0),
+                  "shadows": (-1.0, 1.0), "whites": (-1.0, 1.0),
+                  "blacks": (-1.0, 1.0)}
         normalized = {}
         for key, default in defaults.items():
             value = float(grade.get(key, default))
@@ -399,7 +403,8 @@ class TimelineProject:
     def set_clip_color(self, clip_id: str, **values: float) -> Clip:
         """Set validated, non-destructive per-clip color grading controls."""
         clip = self.get_clip(clip_id)
-        allowed = {"exposure", "contrast", "saturation", "temperature", "tint"}
+        allowed = {"exposure", "contrast", "saturation", "temperature", "tint",
+                   "highlights", "shadows", "whites", "blacks"}
         if set(values) - allowed:
             raise ValueError("Unknown color grading control")
         grade = dict(clip.color_grade)
