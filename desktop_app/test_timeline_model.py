@@ -39,7 +39,7 @@ class TimelineModelTests(unittest.TestCase):
         restored = TimelineProject.from_dict(project.to_dict())
         saved = restored.get_clip(clip.clip_id)
         self.assertEqual(len(saved.transform_keyframes), 2)
-        self.assertEqual(restored.to_dict()["schema_version"], 23)
+        self.assertEqual(restored.to_dict()["schema_version"], 24)
         left, right = restored.split_clip(clip.clip_id, 60)
         self.assertEqual(left.transform_keyframes[0]["frame"], 0)
         self.assertEqual(right.transform_keyframes[0]["frame"], 30)
@@ -655,6 +655,38 @@ class TimelineModelTests(unittest.TestCase):
             ])
 
 
+
+
+    def test_mask_rotation_round_trip_interpolation_split_and_validation(self):
+        project = TimelineProject()
+        clip = project.add_clip("rotated-mask.mp4", "rotated-mask.mp4", duration_frames=120)
+        clip.mask_enabled = True
+        clip.mask_rotation = 12.5
+        clip.mask_keyframes = [
+            {"frame": 0, "x": 0.1, "y": 0.1, "width": 0.6, "height": 0.5,
+             "rotation": -10.0, "ease": "linear"},
+            {"frame": 90, "x": 0.1, "y": 0.1, "width": 0.6, "height": 0.5,
+             "rotation": 50.0, "ease": "linear"},
+        ]
+        clip.validate()
+        restored = TimelineProject.from_dict(project.to_dict())
+        saved = restored.get_clip(clip.clip_id)
+        self.assertAlmostEqual(saved.mask_rotation, 12.5)
+        values = mask_values_at(saved.mask_keyframes, 45, {
+            "x": saved.mask_x, "y": saved.mask_y, "width": saved.mask_width,
+            "height": saved.mask_height, "rotation": saved.mask_rotation,
+        })
+        self.assertAlmostEqual(values["rotation"], 20.0)
+        left, right = restored.split_clip(clip.clip_id, 45)
+        self.assertAlmostEqual(right.mask_rotation, 20.0)
+        self.assertAlmostEqual(right.mask_keyframes[0]["rotation"], 20.0)
+        right.mask_rotation = 3601.0
+        with self.assertRaisesRegex(ValueError, "Mask rotation"):
+            right.validate()
+        right.mask_rotation = 0.0
+        right.mask_keyframes[0]["rotation"] = -3601.0
+        with self.assertRaisesRegex(ValueError, "Mask keyframe rotation"):
+            right.validate()
 
 if __name__ == "__main__":
     unittest.main()
