@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-PROJECT_SCHEMA_VERSION = 18
+PROJECT_SCHEMA_VERSION = 19
 DEFAULT_FPS = 30
 DEFAULT_VIDEO_TRACKS = ("V1", "V2", "V3", "V4")
 DEFAULT_AUDIO_TRACKS = ("A1", "A2", "A3", "A4")
@@ -682,6 +682,7 @@ class TimelineProject:
                 video_fade_out_frames=max(0, int(raw.get("video_fade_out_frames", 0) or 0)),
                 transition_in_frames=max(0, int(raw.get("transition_in_frames", 0) or 0)),
                 transition_in_type=str(raw.get("transition_in_type", "dissolve") or "dissolve"),
+                blend_mode=str(raw.get("blend_mode", "normal") or "normal"),
                 transform_keyframes=[dict(k) for k in raw.get("transform_keyframes", [])],
                 anchor_x=float(raw.get("anchor_x", 0.5)),
                 anchor_y=float(raw.get("anchor_y", 0.5)),
