@@ -28,7 +28,8 @@ from color_scopes import extract_rgb_frame, extract_rgb_histogram
 from color_scope_widget import RGBHistogramWidget
 from advanced_scopes import calculate_luma_waveform, calculate_rgb_parade, calculate_vectorscope
 from advanced_scope_widget import ScopeMatrixWidget, VectorScopeWidget
-from color_wheel_widget import ColorWheelWidget, rgb_to_wheel, wheel_to_rgb
+from color_wheel_widget import ColorWheelWidget
+from color_wheel_math import rgb_to_wheel, wheel_to_rgb
 from speed_ramp_preview import create_speed_ramp_preview
 from video_render import render_timeline_mp4
 
