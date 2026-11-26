@@ -1296,9 +1296,10 @@ class ZenithEditor(QMainWindow):
             self.rgb_parade_widget.set_data(None)
             self._scope_clip_id = clip_id
         self.color_preview_button.setEnabled(enabled)
-        self.rgb_histogram_button.setEnabled(enabled)
-        self.waveform_button.setEnabled(enabled)
-        self.rgb_parade_button.setEnabled(enabled)
+        scope_ready = bool(enabled and not self._scope_tasks)
+        self.rgb_histogram_button.setEnabled(scope_ready)
+        self.waveform_button.setEnabled(scope_ready)
+        self.rgb_parade_button.setEnabled(scope_ready)
         for slider, label, scale in self.color_controls.values():
             slider.setEnabled(enabled)
             if not enabled:
@@ -1327,8 +1328,8 @@ class ZenithEditor(QMainWindow):
         if not Path(clip.path).is_file():
             self.statusBar().showMessage("فایل اصلی کلیپ پیدا نشد")
             return
-        if any(task.clip_id == clip_id for task in self._scope_tasks):
-            self.statusBar().showMessage("تحلیل این کلیپ در حال انجام است")
+        if self._scope_tasks:
+            self.statusBar().showMessage("یک تحلیل Scope در حال انجام است؛ برای جلوگیری از صف پردازشی صبر کن")
             return
         timestamp = clip.source_in / max(1, self.timeline_project.fps)
         task = RGBHistogramTask(clip_id, clip.path, timestamp, dict(clip.color_grade))
@@ -1353,8 +1354,8 @@ class ZenithEditor(QMainWindow):
         if not Path(clip.path).is_file():
             self.statusBar().showMessage("فایل اصلی کلیپ پیدا نشد")
             return
-        if any(task.clip_id == clip_id for task in self._scope_tasks):
-            self.statusBar().showMessage("تحلیل دیگری برای این کلیپ در حال انجام است")
+        if self._scope_tasks:
+            self.statusBar().showMessage("یک تحلیل Scope در حال انجام است؛ برای جلوگیری از صف پردازشی صبر کن")
             return
         timestamp = clip.source_in / max(1, self.timeline_project.fps)
         task = RGBHistogramTask(clip_id, clip.path, timestamp, dict(clip.color_grade), scope_kind)
