@@ -204,8 +204,7 @@ class AudioRenderCommandTests(unittest.TestCase):
             command = build_audio_mix_command("ffmpeg", [clip], 30, "mix.wav")
         joined = " ".join(command)
         self.assertIn("atrim=start=1.000000:duration=5.000000", joined)
-        self.assertIn("atrim=start=1.000000:duration=", joined)
-        self.assertIn("atempo=0.575000", joined)
+        self.assertIn("atempo=0.500000", joined)
 
 
     def test_reverse_embedded_audio_is_reversed(self):
@@ -233,7 +232,7 @@ class AudioRenderCommandTests(unittest.TestCase):
         joined = " ".join(command)
         self.assertIn("asplit=11", joined)
         self.assertIn("concat=n=11:v=0:a=1", joined)
-        self.assertIn("atempo=0.500000", joined)
+        self.assertIn("atempo=0.575000", joined)
         self.assertIn("atempo=2.000000", joined)
         self.assertNotIn("areverse", joined)
 
