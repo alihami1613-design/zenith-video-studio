@@ -32,6 +32,7 @@ class TimelineCanvas(QWidget):
         self._original_end = 0
         self._original_source_in = 0
         self._preview_state = None
+        self.waveforms = {}
         self.setMouseTracking(True)
         self.setMinimumHeight(RULER_HEIGHT + len(TRACKS) * TRACK_HEIGHT + 2)
         self.setMinimumWidth(900)
@@ -39,6 +40,10 @@ class TimelineCanvas(QWidget):
     def sizeHint(self):
         seconds = max(30, self.project.duration_frames / max(1, self.project.fps) + 10)
         return QSize(min(20000, max(900, LABEL_WIDTH + int(seconds * self.pixels_per_second))), RULER_HEIGHT + len(TRACKS) * TRACK_HEIGHT)
+
+    def set_waveforms(self, waveforms):
+        self.waveforms = waveforms or {}
+        self.update()
 
     def set_project(self, project):
         self.project = project
@@ -134,6 +139,24 @@ class TimelineCanvas(QWidget):
                 painter.setBrush(QBrush(fill))
                 painter.setPen(QPen(QColor("#F3D58F") if selected else fill.lighter(135), 1))
                 painter.drawRoundedRect(x1, rect_y, x2 - x1, rect_h, 4, 4)
+                waveform = self.waveforms.get(clip.path) if clip.media_type == "audio" else None
+                if waveform:
+                    center_y = rect_y + rect_h // 2
+                    half_height = max(2, rect_h // 2 - 4)
+                    samples_per_second = 20.0
+                    first_sample = max(0, int((clip.source_in / max(1, self.project.fps)) * samples_per_second))
+                    visible_width = max(0, x2 - x1 - 8)
+                    for pixel_offset in range(visible_width):
+                        sample_index = first_sample + int(
+                            (pixel_offset / max(1, self.pixels_per_second)) * samples_per_second
+                        )
+                        if sample_index >= len(waveform):
+                            break
+                        amplitude = waveform[sample_index]
+                        bar_height = max(1, int(amplitude * half_height))
+                        px = x1 + 4 + pixel_offset
+                        painter.setPen(QPen(QColor("#B7D8E5"), 1))
+                        painter.drawLine(px, center_y - bar_height, px, center_y + bar_height)
                 if selected:
                     painter.fillRect(x1, rect_y, 4, rect_h, QColor("#FFF0C2"))
                     painter.fillRect(x2 - 4, rect_y, 4, rect_h, QColor("#FFF0C2"))
@@ -263,6 +286,9 @@ class TimelineWidget(QWidget):
     def set_project(self, project):
         self.project = project
         self.canvas.set_project(project)
+
+    def set_waveforms(self, waveforms):
+        self.canvas.set_waveforms(waveforms)
 
     def refresh(self):
         self.canvas.update_geometry_for_project()
