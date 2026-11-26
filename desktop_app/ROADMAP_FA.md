@@ -210,3 +210,15 @@
 - [ ] Zoom، dip-to-color و easing قابل تنظیم
 - [ ] Crossfade صوتی هم‌زمان
 - [ ] رندر آزمایشی روی Windows با رسانه‌های واقعی
+
+
+## وضعیت Transform و Keyframe — مرحله ششم
+- [x] مدل ذخیره‌سازی Keyframe برای Position X/Y، Scale و Rotation (schema v11)
+- [x] کنترل ثبت Keyframe در Inspector در موقعیت فعلی Playhead
+- [x] درون‌یابی خطی بین نقاط و تولید expressionهای FFmpeg
+- [x] حفظ/جابجایی Keyframeها در Split و Trim
+- [x] تست اعتبارسنجی، ذخیره/بازیابی و ساخت فیلتر رندر
+- [ ] پیش‌نمایش زنده و نمایش گرافیکی Keyframeها
+- [ ] منحنی Bezier/Easing و Anchor Point مستقل
+- [ ] Motion Blur و کنترل سرعت/Time Remapping
+- [ ] رندر واقعی روی Windows و رسانه‌های کاربر
