@@ -39,7 +39,7 @@ class TimelineModelTests(unittest.TestCase):
         restored = TimelineProject.from_dict(project.to_dict())
         saved = restored.get_clip(clip.clip_id)
         self.assertEqual(len(saved.transform_keyframes), 2)
-        self.assertEqual(restored.to_dict()["schema_version"], 18)
+        self.assertEqual(restored.to_dict()["schema_version"], 19)
         left, right = restored.split_clip(clip.clip_id, 60)
         self.assertEqual(left.transform_keyframes[0]["frame"], 0)
         self.assertEqual(right.transform_keyframes[0]["frame"], 30)
@@ -100,6 +100,16 @@ class TimelineModelTests(unittest.TestCase):
             project.set_clip_transform_keyframes(clip.clip_id, [
                 {"frame": 0, "scale": 5.0},
             ])
+
+    def test_legacy_project_defaults_blend_mode_to_normal(self):
+        restored = TimelineProject.from_dict({
+            "schema_version": 18,
+            "clips": [{
+                "path": "legacy.mp4", "name": "legacy.mp4",
+                "track": "V1", "duration_frames": 30,
+            }],
+        })
+        self.assertEqual(restored.clips[0].blend_mode, "normal")
 
     def test_blend_mode_round_trip_split_and_validation(self):
         project = TimelineProject()
