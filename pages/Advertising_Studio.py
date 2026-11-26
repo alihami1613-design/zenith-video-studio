@@ -101,74 +101,76 @@ else:
 if narration:
     st.audio(narration)
 
-st.markdown("### 🤖 AI AD DIRECTOR — کارگردان هوشمند تبلیغات")
-st.caption("علاوه بر شرح پروژه، هوش مصنوعی می‌تواند یک فریم نمونه از عکس‌ها و کلیپ‌های انتخاب‌شده را بررسی کند. این تحلیل، بررسی فریم نمونه است و نه بازبینی کامل تمام ثانیه‌های ویدئو.")
-with st.expander("🧠 تحلیل هوشمند فوتیج و طراحی تدوین", expanded=True):
-    ai_brief = st.text_area("محصول / هدف / مخاطب / حس موردنظر را توضیح بده", placeholder="مثلاً تبلیغ مبل تخت‌خواب‌شو، مخاطب خانواده‌ها، سبک لوکس و مدرن، هدف فروش ...", height=100, key="ai_ad_brief")
-    ai_key = st.text_input("API Key (ارائه‌دهنده سازگار با OpenAI)", type="password", key="ai_ad_api_key")
-    ai_endpoint = st.text_input("API Base URL", value="https://api.openai.com/v1", key="ai_ad_endpoint")
-    ai_model = st.text_input("مدل دارای قابلیت بینایی (Vision)", value="gpt-4o-mini", key="ai_ad_model")
-    if st.button("✨ تحلیل فوتیج و طراحی برنامه تدوین", key="ai_ad_plan_btn", use_container_width=True):
-        if not ai_brief.strip() or not ai_key.strip():
-            st.warning("شرح تبلیغ و API Key را وارد کن.")
-        elif not (videos or photos):
-            st.warning("برای تحلیل تصویری، ابتدا حداقل یک عکس یا کلیپ بارگذاری کن.")
-        else:
-            try:
-                import base64
-                ai_ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
-                visual_parts = []
-                asset_list = [(item, "video") for item in (videos or [])] + [(item, "photo") for item in (photos or [])]
-                with tempfile.TemporaryDirectory() as ai_td:
-                    ai_work = Path(ai_td)
-                    for asset_index, (asset, asset_type) in enumerate(asset_list[:8]):
-                        asset_suffix = Path(asset.name).suffix.lower() or (".mp4" if asset_type == "video" else ".jpg")
-                        asset_path = ai_work / f"asset_{asset_index}{asset_suffix}"
-                        frame_path = ai_work / f"sample_{asset_index}.jpg"
-                        asset_path.write_bytes(asset.getbuffer())
-                        if asset_type == "video":
-                            frame_cmd = [ai_ffmpeg, "-y", "-ss", "1", "-i", str(asset_path), "-frames:v", "1", "-vf", "scale=640:-2", "-q:v", "5", str(frame_path)]
-                        else:
-                            frame_cmd = [ai_ffmpeg, "-y", "-i", str(asset_path), "-frames:v", "1", "-vf", "scale=640:-2", "-q:v", "5", str(frame_path)]
-                        frame_proc = subprocess.run(frame_cmd, capture_output=True, text=True, timeout=60)
-                        if frame_proc.returncode == 0 and frame_path.exists() and frame_path.stat().st_size:
-                            encoded = base64.b64encode(frame_path.read_bytes()).decode("ascii")
-                            visual_parts.append({"type":"text","text":f"Asset {asset_index+1}: {asset.name} ({'video representative frame at approx. 1 second' if asset_type == 'video' else 'photo'})"})
-                            visual_parts.append({"type":"image_url","image_url":{"url":"data:image/jpeg;base64,"+encoded,"detail":"low"}})
-                if not visual_parts:
-                    raise RuntimeError("از فایل‌های انتخاب‌شده فریم قابل‌خواندن استخراج نشد.")
-                ai_prompt = f"""You are a senior commercial film director, editor and post-production supervisor. Analyze the supplied representative frames and the brief. Build a practical, executable edit plan. Clearly distinguish visual observations from assumptions because only one representative frame per video is supplied. Do not claim to have watched full clips.
-Brief: {ai_brief.strip()}
-Requested duration: {duration} seconds.
-Aspect ratio: {orientation}.
-Color mood: {style}.
-Editing preset: {edit_preset}.
-Transition preference: {transition}.
-VFX strength: {vfx_strength}/100.
-Motion graphic title: {mg_title}; subtitle: {mg_subtitle}; CTA: {mg_cta}.
-Return in Persian with: (1) visual analysis of each asset by filename, (2) recommended asset order with reasons, (3) shot-by-shot timeline that totals exactly {duration} seconds, (4) crop/framing advice for {orientation}, (5) color grade, (6) motion graphics, (7) sound design and mix, (8) final quality-control checklist. Avoid generic advice; be specific to the visible frames."""
-                visual_parts.insert(0, {"type":"text","text":ai_prompt})
-                ai_url = ai_endpoint.strip().rstrip("/") + "/chat/completions"
-                ai_response = requests.post(
-                    ai_url,
-                    headers={"Authorization":"Bearer "+ai_key.strip(),"Content-Type":"application/json"},
-                    json={"model":ai_model.strip(),"messages":[
-                        {"role":"system","content":"You are a professional advertising director and editor. Analyze only the supplied images and user-provided facts. Answer in Persian. Never claim to have inspected unseen footage."},
-                        {"role":"user","content":visual_parts}
-                    ],"temperature":0.5},
-                    timeout=150
-                )
-                ai_response.raise_for_status()
-                ai_text = ai_response.json()["choices"][0]["message"]["content"]
-                st.session_state["ai_ad_plan_result"] = ai_text
-                st.success(f"تحلیل {len(visual_parts)//2} نمونه تصویری انجام شد و برنامه تدوین آماده است.")
-            except Exception as ai_err:
-                st.error("تحلیل AI انجام نشد؛ رندر عادی برنامه تغییری نکرده است.")
-                st.code(str(ai_err)[:1500])
-    if st.session_state.get("ai_ad_plan_result"):
-        st.markdown("#### گزارش تحلیل و برنامه تدوین")
-        st.markdown(st.session_state["ai_ad_plan_result"])
+st.markdown("### 🧠 OFFLINE AD DIRECTOR — کارگردان هوشمند آفلاین")
+st.caption("بدون API Key، بدون ارسال فایل به اینترنت و بدون هزینه سرویس هوش مصنوعی. برنامه بر اساس نام فایل‌ها، نوع رسانه و تنظیمات تدوین، یک نقشه اجرایی پیشنهادی می‌سازد؛ این نسخه هنوز محتوای تصویری داخل کلیپ را مانند یک مدل بینایی درک نمی‌کند.")
 
+with st.expander("🎬 طراحی خودکار سناریو و برنامه تدوین", expanded=True):
+    ai_brief = st.text_area(
+        "شرح تبلیغ: محصول، مخاطب و هدف تبلیغ را بنویس",
+        placeholder="مثلاً تبلیغ یک مبل مدرن برای خانواده‌ها؛ هدف افزایش فروش؛ حس لوکس، گرم و قابل اعتماد.",
+        height=90,
+        key="offline_ad_brief",
+    )
+    if st.button("✨ طراحی برنامه تدوین آفلاین", key="offline_ad_plan_btn", use_container_width=True):
+        offline_assets = [(item, "ویدئو") for item in (videos or [])] + [(item, "عکس") for item in (photos or [])]
+        if not ai_brief.strip():
+            st.warning("لطفاً شرح کوتاهی از محصول و هدف تبلیغ بنویس.")
+        elif not offline_assets:
+            st.warning("ابتدا حداقل یک عکس یا کلیپ بارگذاری کن.")
+        elif len(offline_assets) > 12:
+            st.warning("مجموع عکس‌ها و کلیپ‌ها باید حداکثر ۱۲ فایل باشد.")
+        else:
+            def offline_asset_score(asset):
+                name = Path(asset.name).stem.lower()
+                groups = {
+                    "intro": ["intro", "start", "opening", "شروع", "معرفی", "نمای کلی"],
+                    "detail": ["detail", "close", "macro", "جزئیات", "نزدیک", "بافت"],
+                    "hero": ["hero", "product", "main", "محصول", "اصلی", "قهرمان"],
+                    "lifestyle": ["lifestyle", "people", "use", "استفاده", "خانواده", "محیط"],
+                    "ending": ["end", "outro", "logo", "پایان", "لوگو", "برند"],
+                }
+                score = 0
+                for points, words in enumerate(groups.values()):
+                    if any(word in name for word in words):
+                        score += (points + 1) * 10
+                return score
+
+            ordered_assets = sorted(
+                enumerate(offline_assets),
+                key=lambda pair: (offline_asset_score(pair[1][0]), pair[0]),
+            )
+            segment = duration / len(ordered_assets)
+            brief_lower = ai_brief.lower()
+            if any(word in brief_lower for word in ["لوکس", "premium", "luxury", "گران", "خاص"]):
+                creative_direction = "شروع آرام و باابهت، نماهای تمیز و جزئیات محصول؛ پایان با نمایش برند و دعوت به اقدام."
+            elif any(word in brief_lower for word in ["جوان", "انرژی", "ورزشی", "سریع", "هیجان", "dynamic"]):
+                creative_direction = "شروع ضربه‌ای، برش‌های کوتاه و ریتم تند؛ پایان با یک نمای قهرمان واضح."
+            else:
+                creative_direction = "شروع با معرفی سریع، سپس نمایش کاربرد یا جزئیات و در پایان تأکید روشن بر مزیت محصول."
+
+            st.success("برنامه تدوین آفلاین آماده شد.")
+            st.markdown("#### جهت خلاقه پیشنهادی")
+            st.write(creative_direction)
+            st.markdown("#### ترتیب پیشنهادی و تایم‌لاین")
+            for position, (original_index, (asset, asset_type)) in enumerate(ordered_assets):
+                t0 = position * segment
+                t1 = (position + 1) * segment
+                label = "نمای معرفی / شروع" if position == 0 else ("نمای پایانی / تأکید بر برند" if position == len(ordered_assets)-1 else "نمای محصول، کاربرد یا جزئیات")
+                st.write(f"**{position+1:02d}. {asset.name}** — {asset_type} | {t0:.1f} تا {t1:.1f} ثانیه | {label}")
+            st.markdown("#### تنظیمات پیشنهادی تدوین")
+            st.write(f"- مدت کل: {duration} ثانیه؛ سهم زمانی هر فایل: حدود {segment:.1f} ثانیه.")
+            st.write(f"- کادر: {orientation}؛ خروجی: {output_w}×{output_h} پیکسل.")
+            st.write(f"- سبک فعلی انتخاب‌شده: {edit_preset}؛ حال‌وهوای رنگ: {style}؛ شدت جلوه: {vfx_strength} از ۱۰۰.")
+            st.write(f"- اتصال صحنه‌ها: {transition}. برای تبلیغ پرانرژی، برش حرفه‌ای معمولاً مناسب‌تر است؛ برای محصول لوکس، محوشدن کوتاه را با احتیاط استفاده کن.")
+            st.write(f"- موشن‌گرافیک: تیتر «{mg_title}»، زیرتیتر «{mg_subtitle}» و دعوت به اقدام «{mg_cta}».")
+            st.write(f"- صدا: گویندگی روی موسیقی قرار بگیرد؛ سطح فعلی گویندگی {voice_level}% و موسیقی {music_level}% است.")
+            st.markdown("#### کنترل کیفیت پیش از خروجی")
+            st.write("- مطمئن شو مهم‌ترین نمای محصول در ثانیه‌های ابتدایی دیده می‌شود.")
+            st.write("- نوشته‌ها از لبه امن تصویر فاصله داشته باشند و روی سوژه اصلی نیفتند.")
+            st.write("- صدای گویندگی واضح‌تر از موسیقی باشد و ابتدا و انتهای صدا نرم محو شود.")
+            st.write("- مجوز تجاری موسیقی و تصاویر/ویدئوها را بررسی کن.")
+            st.info("این برنامه به‌صورت محلی و بر پایه اطلاعات فایل‌ها و انتخاب‌های تدوین ساخته شده است؛ نام فایل‌ها را هوشمندانه انتخاب کن (مثلاً intro، detail، product، ending) تا ترتیب پیشنهادی دقیق‌تر شود. برای تشخیص واقعی اشیا و اتفاقات داخل تصویر، بعداً به مدل بینایی محلی یا آنلاین نیاز است.")
+            
 st.caption("خروجی: MP4 / H.264 / 1080p / 24fps. قالب عمودی 9:16 برای نمایش تمام‌صفحه Reels یا افقی 16:9.")
 st.caption("موسیقی پیش‌فرض: Soft Corporate — MusicLFiles | مجوز CC BY 4.0؛ در انتشار ویدئو نام سازنده و پیوند منبع را ذکر کن: https://commons.wikimedia.org/wiki/File:Soft_Corporate_by_MusicLFiles.ogg")
 
