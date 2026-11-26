@@ -11,7 +11,7 @@ from audio_render import render_audio_mix
 from proxy_manager import find_ffmpeg
 from video_color import build_color_filter
 
-RENDER_VERSION = "timeline-h264-v4-cross-dissolve"
+RENDER_VERSION = "timeline-h264-v5-wipe-push"
 STILL_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".webp", ".tif", ".tiff"}
 
 
@@ -129,8 +129,15 @@ def build_video_render_command(ffmpeg: str, project: object,
         )
         fade_in = int(getattr(clip, "video_fade_in_frames", 0))
         fade_out = int(getattr(clip, "video_fade_out_frames", 0))
-        if transition:
+        transition_type = str(getattr(clip, "transition_in_type", "dissolve"))
+        if transition and transition_type == "dissolve":
             chain += f",fade=t=in:st=0:d={_seconds(transition, fps):.6f}:alpha=1"
+        elif transition and transition_type == "wipe_left":
+            transition_seconds = _seconds(transition, fps)
+            chain += (
+                ",geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':"
+                f"a='if(lte(X,W*min(max(T/{transition_seconds:.6f}\\,0)\\,1))\\,255\\,0)'"
+            )
         elif fade_in:
             chain += f",fade=t=in:st=0:d={_seconds(fade_in, fps):.6f}:alpha=1"
         if fade_out:
@@ -143,11 +150,21 @@ def build_video_render_command(ffmpeg: str, project: object,
         chain += f"[v{index}]"
         filters.append(chain)
         out_label = f"base{index + 1}"
-        filters.append(
-            f"[{previous}][v{index}]overlay=0:0:"
-            "eof_action=pass:repeatlast=0:shortest=0:format=auto"
-            f"[{out_label}]"
-        )
+        if transition and transition_type == "push_left":
+            transition_seconds = _seconds(transition, fps)
+            overlay_x = (
+                f"x='-W+W*min(max((t-{start:.6f})/{transition_seconds:.6f}\\,0)\\,1)'"
+            )
+            overlay_filter = (
+                f"[{previous}][v{index}]overlay={overlay_x}:y=0:"
+                "eof_action=pass:repeatlast=0:shortest=0:format=auto"
+            )
+        else:
+            overlay_filter = (
+                f"[{previous}][v{index}]overlay=0:0:"
+                "eof_action=pass:repeatlast=0:shortest=0:format=auto"
+            )
+        filters.append(f"{overlay_filter}[{out_label}]")
         previous = out_label
 
     command.extend([
