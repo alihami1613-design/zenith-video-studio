@@ -83,6 +83,25 @@ class VideoRenderTests(unittest.TestCase):
         self.assertIn("colorchannelmixer=aa=0.500000", joined)
         self.assertNotIn("geq=r='r(X,Y)'", joined)
 
+    def test_builds_alpha_aware_multiply_blend_pipeline(self):
+        with tempfile.TemporaryDirectory() as folder:
+            project = self.project(folder)
+            project.clips[0].blend_mode = "multiply"
+            command = build_video_render_command("ffmpeg", project, "out.mp4")
+        joined = " ".join(command)
+        self.assertIn("blend=all_mode=multiply", joined)
+        self.assertIn("[topfull0]alphaextract[blendmask0]", joined)
+        self.assertIn("[base0][blendraw0][blendmask0]maskedmerge[base1]", joined)
+
+    def test_normal_blend_mode_keeps_lightweight_overlay_path(self):
+        with tempfile.TemporaryDirectory() as folder:
+            project = self.project(folder)
+            project.clips[0].blend_mode = "normal"
+            command = build_video_render_command("ffmpeg", project, "out.mp4")
+        joined = " ".join(command)
+        self.assertIn("[base0][v0]overlay", joined)
+        self.assertNotIn("maskedmerge", joined)
+
     def test_builds_1080p_h264_with_grade_and_black_gap(self):
         with tempfile.TemporaryDirectory() as folder:
             project = self.project(folder)
