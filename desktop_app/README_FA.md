@@ -238,3 +238,9 @@ python -m unittest discover -s desktop_app -p "test_*.py"
 - برای بازگرداندن هر سه چرخ به حالت خنثی از «بازنشانی چرخ‌های رنگ» استفاده کنید.
 - داده‌ها در همان فیلدهای RGB قبلی پروژه ذخیره می‌شوند؛ پروژه‌های قدیمی سازگار باقی می‌مانند.
 - پیش‌نمایش تصویر همچنان به‌صورت دستی و با دکمه «ساخت/به‌روزرسانی پیش‌نمایش رنگ» ساخته می‌شود تا فشار دائمی به پردازنده وارد نشود.
+
+
+### Cubic Bezier Transform Easing
+- Transform keyframes now support Cubic Bezier easing with two editable Y handles (0–1) in the Inspector.
+- Handle values are stored on the starting keyframe and rendered through FFmpeg expressions; legacy projects remain compatible.
+- A draggable curve graph and live preview are still planned, not yet implemented.
