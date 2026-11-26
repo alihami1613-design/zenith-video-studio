@@ -10,7 +10,7 @@ import math
 from typing import Any
 from uuid import uuid4
 
-PROJECT_SCHEMA_VERSION = 8
+PROJECT_SCHEMA_VERSION = 9
 DEFAULT_FPS = 30
 DEFAULT_VIDEO_TRACKS = ("V1", "V2", "V3", "V4")
 DEFAULT_AUDIO_TRACKS = ("A1", "A2", "A3", "A4")
