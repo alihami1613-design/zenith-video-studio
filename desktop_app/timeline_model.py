@@ -10,7 +10,7 @@ import math
 from typing import Any
 from uuid import uuid4
 
-PROJECT_SCHEMA_VERSION = 4
+PROJECT_SCHEMA_VERSION = 5
 DEFAULT_FPS = 30
 DEFAULT_VIDEO_TRACKS = ("V1", "V2", "V3", "V4")
 DEFAULT_AUDIO_TRACKS = ("A1", "A2", "A3", "A4")
@@ -54,6 +54,25 @@ class Clip:
         if self.fade_in_frames > self.duration_frames or self.fade_out_frames > self.duration_frames:
             raise ValueError("Fade duration cannot exceed clip duration")
 
+    def set_audio_ducking(self, *, enabled: bool | None = None,
+                          voice_track: str | None = None,
+                          music_track: str | None = None,
+                          reduction_db: float | None = None,
+                          attack_ms: int | None = None,
+                          release_ms: int | None = None) -> dict[str, Any]:
+        values = dict(self.audio_ducking)
+        for key, value in {
+            "enabled": enabled, "voice_track": voice_track,
+            "music_track": music_track, "reduction_db": reduction_db,
+            "attack_ms": attack_ms, "release_ms": release_ms,
+        }.items():
+            if value is not None:
+                values[key] = value
+        # Reuse project validation to keep the persisted settings canonical.
+        self.audio_ducking = values
+        self.__post_init__()
+        return dict(self.audio_ducking)
+
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
@@ -70,6 +89,10 @@ class TimelineProject:
     audio_track_settings: dict[str, dict[str, Any]] = field(default_factory=lambda: {
         track: {"volume": 1.0, "muted": False, "solo": False}
         for track in DEFAULT_AUDIO_TRACKS
+    })
+    audio_ducking: dict[str, Any] = field(default_factory=lambda: {
+        "enabled": False, "voice_track": "A1", "music_track": "A2",
+        "reduction_db": 12.0, "attack_ms": 20, "release_ms": 500,
     })
 
     def __post_init__(self) -> None:
@@ -89,6 +112,25 @@ class TimelineProject:
                 "muted": bool(raw.get("muted", False)),
                 "solo": bool(raw.get("solo", False)),
             }
+        duck = dict(self.audio_ducking or {})
+        voice_track = str(duck.get("voice_track", "A1"))
+        music_track = str(duck.get("music_track", "A2"))
+        reduction = float(duck.get("reduction_db", 12.0))
+        attack = int(duck.get("attack_ms", 20))
+        release = int(duck.get("release_ms", 500))
+        if voice_track not in self.audio_tracks or music_track not in self.audio_tracks:
+            raise ValueError("Ducking tracks must be valid audio tracks")
+        if voice_track == music_track:
+            raise ValueError("Voice and music tracks must be different")
+        if not math.isfinite(reduction) or not 0.0 <= reduction <= 24.0:
+            raise ValueError("Ducking reduction must be between 0 and 24 dB")
+        if not 1 <= attack <= 500 or not 20 <= release <= 3000:
+            raise ValueError("Ducking attack/release values are out of range")
+        self.audio_ducking = {
+            "enabled": bool(duck.get("enabled", False)),
+            "voice_track": voice_track, "music_track": music_track,
+            "reduction_db": reduction, "attack_ms": attack, "release_ms": release,
+        }
         for clip in self.clips:
             clip.validate()
 
@@ -237,6 +279,7 @@ class TimelineProject:
             "audio_tracks": self.audio_tracks,
             "playhead_frame": self.playhead_frame,
             "audio_track_settings": self.audio_track_settings,
+            "audio_ducking": self.audio_ducking,
             "clips": [clip.to_dict() for clip in self.clips],
         }
 
@@ -288,4 +331,5 @@ class TimelineProject:
             clips=clips,
             playhead_frame=max(0, int(data.get("playhead_frame", 0) or 0)),
             audio_track_settings=dict(data.get("audio_track_settings") or {}),
+            audio_ducking=dict(data.get("audio_ducking") or {}),
         )
