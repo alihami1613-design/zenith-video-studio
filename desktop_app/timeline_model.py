@@ -218,6 +218,7 @@ class TimelineProject:
         clip.video_fade_in_frames = max(0, clip.video_fade_in_frames - removed_from_left)
         clip.video_fade_in_frames = min(clip.video_fade_in_frames, clip.duration_frames)
         clip.video_fade_out_frames = min(clip.video_fade_out_frames, clip.duration_frames)
+        clip.transition_in_frames = min(clip.transition_in_frames, clip.duration_frames)
         clip.validate()
         return clip
 
@@ -245,6 +246,7 @@ class TimelineProject:
         original.fade_out_frames = 0
         original.video_fade_out_frames = 0
         original.video_fade_in_frames = min(original.video_fade_in_frames, original.duration_frames)
+        original.transition_in_frames = min(original.transition_in_frames, original.duration_frames)
         original.fade_in_frames = min(original.fade_in_frames, original.duration_frames)
         self.clips.append(right)
         return original, right
