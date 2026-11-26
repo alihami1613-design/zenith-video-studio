@@ -451,6 +451,15 @@ class ZenithEditor(QMainWindow):
         self.transition_type_combo.addItem('Push از چپ', 'push_left')
         self.transition_type_combo.currentIndexChanged.connect(self._cross_dissolve_changed)
         inspector_layout.addWidget(self.transition_type_combo)
+        inspector_layout.addWidget(QLabel("Blend Mode — ترکیب لایه"))
+        self.blend_mode_combo = QComboBox()
+        self.blend_mode_combo.addItem("Normal", "normal")
+        self.blend_mode_combo.addItem("Multiply", "multiply")
+        self.blend_mode_combo.addItem("Screen", "screen")
+        self.blend_mode_combo.addItem("Addition", "addition")
+        self.blend_mode_combo.addItem("Overlay", "overlay")
+        self.blend_mode_combo.currentIndexChanged.connect(self._blend_mode_changed)
+        inspector_layout.addWidget(self.blend_mode_combo)
 
 
         transform_heading = QLabel("حرکت و Transform با Keyframe")
@@ -1014,6 +1023,27 @@ class ZenithEditor(QMainWindow):
         self.statusBar().showMessage("Cross Dissolve ذخیره شد؛ پیش‌نمایش نهایی در رندر MP4 اعمال می‌شود.")
 
 
+    def _blend_mode_changed(self, *_args) -> None:
+        clip_id = self.timeline_widget.canvas.selected_clip_id
+        if not clip_id:
+            return
+        mode = str(self.blend_mode_combo.currentData() or "normal")
+        try:
+            self._push_undo()
+            clip = self.timeline_project.get_clip(clip_id)
+            clip.blend_mode = mode
+            clip.validate()
+        except (KeyError, ValueError) as exc:
+            if self._undo_stack:
+                self._undo_stack.pop()
+            self._update_history_buttons()
+            self.statusBar().showMessage(f"Blend Mode اعمال نشد: {exc}")
+            return
+        self.timeline_widget.refresh()
+        self.statusBar().showMessage(
+            f"Blend Mode: {mode} — هنگام رندر نهایی اعمال می‌شود؛ پیش‌نمایش زنده نیست."
+        )
+
     def _sync_transform_controls(self) -> None:
         clip_id = self.timeline_widget.canvas.selected_clip_id
         clip = None
@@ -1024,6 +1054,13 @@ class ZenithEditor(QMainWindow):
                 pass
         enabled = bool(clip and clip.media_type == "video" and clip.track.startswith("V"))
         self.add_transform_keyframe_button.setEnabled(enabled)
+        self.blend_mode_combo.setEnabled(enabled)
+        if enabled:
+            blend_index = self.blend_mode_combo.findData(str(getattr(clip, "blend_mode", "normal")))
+            if blend_index >= 0:
+                blocker = QSignalBlocker(self.blend_mode_combo)
+                self.blend_mode_combo.setCurrentIndex(blend_index)
+                del blocker
         selected_frame = self.timeline_widget.canvas.selected_transform_keyframe_frame
         self.delete_transform_keyframe_button.setEnabled(bool(enabled and selected_frame is not None and any(int(item['frame']) == selected_frame for item in clip.transform_keyframes)))
         self.playback_speed_combo.setEnabled(enabled)
