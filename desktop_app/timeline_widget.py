@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal, QPoint, QSize
-from PySide6.QtGui import QColor, QFont, QPainter, QPen, QBrush
+from PySide6.QtGui import QColor, QFont, QPainter, QPen, QBrush, QPainterPath
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QScrollArea, QSlider, QFrame
 
 TRACKS = ("V4", "V3", "V2", "V1", "A1", "A2", "A3", "A4")
@@ -172,6 +172,35 @@ class TimelineCanvas(QWidget):
                         px = x1 + 4 + pixel_offset
                         painter.setPen(QPen(QColor("#B7D8E5"), 1))
                         painter.drawLine(px, center_y - bar_height, px, center_y + bar_height)
+                ramp_points = sorted(
+                    getattr(clip, "speed_ramp", []) or [],
+                    key=lambda point: int(point["frame"]),
+                ) if clip.media_type == "video" else []
+                if ramp_points and duration_frames > 0:
+                    def ramp_y(rate):
+                        normalized = (max(0.25, min(4.0, float(rate))) - 0.25) / 3.75
+                        return rect_y + rect_h - 5 - int(normalized * max(1, rect_h - 10))
+                    path = QPainterPath()
+                    first_x = x1 + 3
+                    last_x = x2 - 3
+                    first_rate = float(ramp_points[0]["rate"])
+                    path.moveTo(first_x, ramp_y(first_rate))
+                    for point in ramp_points:
+                        point_x = x1 + int(
+                            max(0, min(duration_frames, int(point["frame"]))) /
+                            max(1, duration_frames) * (x2 - x1)
+                        )
+                        path.lineTo(point_x, ramp_y(point["rate"]))
+                    path.lineTo(last_x, ramp_y(ramp_points[-1]["rate"]))
+                    painter.setPen(QPen(QColor("#FFF0A6"), 2))
+                    painter.setBrush(QBrush(QColor("#FFF0A6")))
+                    painter.drawPath(path)
+                    for point in ramp_points:
+                        point_x = x1 + int(
+                            max(0, min(duration_frames, int(point["frame"]))) /
+                            max(1, duration_frames) * (x2 - x1)
+                        )
+                        painter.drawEllipse(point_x - 3, ramp_y(point["rate"]) - 3, 6, 6)
                 if selected:
                     painter.fillRect(x1, rect_y, 4, rect_h, QColor("#FFF0C2"))
                     painter.fillRect(x2 - 4, rect_y, 4, rect_h, QColor("#FFF0C2"))
