@@ -503,6 +503,25 @@ class ZenithEditor(QMainWindow):
             spin.valueChanged.connect(self._clip_effects_changed)
             self.mask_controls[key] = spin
             inspector_layout.addWidget(spin)
+        inspector_layout.addWidget(QLabel("Mask Shape"))
+        self.mask_shape_combo = QComboBox()
+        self.mask_shape_combo.addItem("Rectangle", "rectangle")
+        self.mask_shape_combo.addItem("Ellipse / Circle", "ellipse")
+        self.mask_shape_combo.addItem("Polygon (3–8 points)", "polygon")
+        self.mask_shape_combo.currentIndexChanged.connect(self._clip_effects_changed)
+        inspector_layout.addWidget(self.mask_shape_combo)
+        inspector_layout.addWidget(QLabel("Mask Feather (pixels)"))
+        self.mask_feather_spin = QDoubleSpinBox()
+        self.mask_feather_spin.setRange(0.0, 40.0)
+        self.mask_feather_spin.setSingleStep(1.0)
+        self.mask_feather_spin.setDecimals(1)
+        self.mask_feather_spin.valueChanged.connect(self._clip_effects_changed)
+        inspector_layout.addWidget(self.mask_feather_spin)
+        inspector_layout.addWidget(QLabel("Polygon Points — x,y; x,y; ... (0–1)"))
+        self.mask_points_edit = QLineEdit("0.5,0.1; 0.9,0.9; 0.1,0.9")
+        self.mask_points_edit.setToolTip("۳ تا ۸ نقطه با مختصات نسبی تصویر؛ نمونه: 0.5,0.1; 0.9,0.9; 0.1,0.9")
+        self.mask_points_edit.editingFinished.connect(self._clip_effects_changed)
+        inspector_layout.addWidget(self.mask_points_edit)
 
 
         transform_heading = QLabel("حرکت و Transform با Keyframe")
@@ -1101,6 +1120,16 @@ class ZenithEditor(QMainWindow):
             clip.mask_enabled = self.mask_checkbox.isChecked()
             for key, control in self.mask_controls.items():
                 setattr(clip, key, control.value())
+            clip.mask_shape = str(self.mask_shape_combo.currentData() or "rectangle")
+            clip.mask_feather_px = self.mask_feather_spin.value()
+            points = []
+            for raw_point in self.mask_points_edit.text().split(";"):
+                if raw_point.strip():
+                    coords = [float(value.strip()) for value in raw_point.split(",")]
+                    if len(coords) != 2:
+                        raise ValueError("هر نقطه ماسک باید دقیقاً دو مختصات x,y داشته باشد")
+                    points.append(coords)
+            clip.mask_points = points
             clip.validate()
         except (KeyError, ValueError) as exc:
             if self._undo_stack:
@@ -1128,6 +1157,7 @@ class ZenithEditor(QMainWindow):
             self.chroma_key_checkbox, self.chroma_key_color_edit,
             self.chroma_key_similarity_spin, self.chroma_key_blend_spin,
             self.mask_checkbox, *self.mask_controls.values(),
+            self.mask_shape_combo, self.mask_feather_spin, self.mask_points_edit,
         ]
         for control in effect_controls:
             control.setEnabled(enabled)
@@ -1152,6 +1182,18 @@ class ZenithEditor(QMainWindow):
                 blocker = QSignalBlocker(control)
                 control.setValue(float(getattr(clip, key)))
                 del blocker
+            blocker = QSignalBlocker(self.mask_shape_combo)
+            shape_index = self.mask_shape_combo.findData(str(clip.mask_shape))
+            self.mask_shape_combo.setCurrentIndex(max(0, shape_index))
+            del blocker
+            blocker = QSignalBlocker(self.mask_feather_spin)
+            self.mask_feather_spin.setValue(float(clip.mask_feather_px))
+            del blocker
+            blocker = QSignalBlocker(self.mask_points_edit)
+            self.mask_points_edit.setText("; ".join(
+                f"{float(point[0]):.3f},{float(point[1]):.3f}" for point in clip.mask_points
+            ))
+            del blocker
         if enabled:
             blend_index = self.blend_mode_combo.findData(str(getattr(clip, "blend_mode", "normal")))
             if blend_index >= 0:
