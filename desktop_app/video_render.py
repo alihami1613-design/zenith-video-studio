@@ -11,7 +11,7 @@ from audio_render import render_audio_mix
 from proxy_manager import find_ffmpeg
 from video_color import build_color_filter
 
-RENDER_VERSION = "timeline-h264-v7-speed"
+RENDER_VERSION = "timeline-h264-v8-motion-blur"
 STILL_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".webp", ".tif", ".tiff"}
 
 
@@ -185,6 +185,8 @@ def build_video_render_command(ffmpeg: str, project: object,
         grade = build_color_filter(getattr(clip, "color_grade", {}))
         if grade:
             chain += "," + grade
+        if bool(getattr(clip, "motion_blur", False)):
+            chain += ",tmix=frames=3:weights='1 2 1'"
         chain += f"[v{index}]"
         filters.append(chain)
         out_label = f"base{index + 1}"
