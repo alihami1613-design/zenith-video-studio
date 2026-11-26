@@ -6,6 +6,7 @@ on:
       - desktop-editor-foundation
     paths:
       - "desktop_app/timeline_model.py"
+      - "desktop_app/ROADMAP_FA.md"
       - "desktop_app/main.py"
       - "desktop_app/test_timeline_model.py"
       - "desktop_app/media_probe.py"
