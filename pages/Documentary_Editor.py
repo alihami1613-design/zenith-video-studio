@@ -227,7 +227,7 @@ def make_scene_art(index, label, folder):
                 d.ellipse((x-r,y-r,x+r,y+r),fill=gold if (j+li)%4==0 else blue,outline=white,width=2)
         d.ellipse((cx-145,cy-145,cx+145,cy+145),fill=(10,33,58,255),outline=teal,width=9)
         d.ellipse((cx-110,cy-110,cx+110,cy+110),outline=(80,220,210,100),width=3)
-        d.text((cx-54,cy-42),"AI",font=ImageFont.truetype(bold,72) if os.path.exists(bold) else f_title,fill=white)
+        d.text((cx-54,cy-42),"AI",font=f_title,fill=white)
     elif index == 5:
         human(315,cy,.76)
         d.rounded_rectangle((510,650,955,1600),radius=42,fill=(9,29,52,235),outline=teal,width=6)
