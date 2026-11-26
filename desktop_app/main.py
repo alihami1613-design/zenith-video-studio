@@ -1333,9 +1333,9 @@ class ZenithEditor(QMainWindow):
             return
         timestamp = clip.source_in / max(1, self.timeline_project.fps)
         task = RGBHistogramTask(clip_id, clip.path, timestamp, dict(clip.color_grade))
-        task.signals.finished.connect(self._rgb_histogram_finished)
+        task.signals.finished.connect(lambda cid, data, error: self._video_scope_finished(cid, "histogram", data, error))
         self._scope_tasks.append(task)
-        self.rgb_histogram_button.setEnabled(False)
+        self._set_scope_buttons_enabled(False)
         self.statusBar().showMessage("در حال نمونه‌برداری یک فریم ۲۵۶×۱۴۴ برای هیستوگرام RGB...")
         self._scope_pool.start(task)
 
@@ -1371,16 +1371,16 @@ class ZenithEditor(QMainWindow):
             clip = self.timeline_project.get_clip(clip_id) if clip_id else None
         except KeyError:
             clip = None
-        ready = bool(enabled and clip and clip.media_type == "video")
+        ready = bool(enabled and not self._scope_tasks and clip and clip.media_type == "video")
         self.rgb_histogram_button.setEnabled(ready)
         self.waveform_button.setEnabled(ready)
         self.rgb_parade_button.setEnabled(ready)
 
     def _video_scope_finished(self, clip_id: str, scope_kind: str, data: object, error: str) -> None:
         self._scope_tasks = [task for task in self._scope_tasks if task.clip_id != clip_id]
+        self._set_scope_buttons_enabled(True)
         if self.timeline_widget.canvas.selected_clip_id != clip_id:
             return
-        self._set_scope_buttons_enabled(True)
         if data is None:
             self.statusBar().showMessage(f"محاسبه {scope_kind} ناموفق بود: {error}")
             return
@@ -1392,17 +1392,6 @@ class ZenithEditor(QMainWindow):
             self.rgb_histogram_widget.set_histogram(data)
         self._scope_clip_id = clip_id
         self.statusBar().showMessage(f"{scope_kind} فریم نمونه با Grade فعلی محاسبه شد؛ تصویر اصلی تغییر نکرد.")
-
-    def _rgb_histogram_finished(self, clip_id: str, histogram: object, error: str) -> None:
-        self._scope_tasks = [task for task in self._scope_tasks if task.clip_id != clip_id]
-        if self.timeline_widget.canvas.selected_clip_id == clip_id:
-            self.rgb_histogram_button.setEnabled(True)
-            if histogram is not None:
-                self.rgb_histogram_widget.set_histogram(histogram)
-                self._scope_clip_id = clip_id
-                self.statusBar().showMessage("هیستوگرام RGB فریم آغازین کلیپ محاسبه شد؛ نمودار صرفاً ابزار تحلیل است و تصویر را تغییر نمی‌دهد.")
-            else:
-                self.statusBar().showMessage(f"محاسبه هیستوگرام ناموفق بود: {error}")
 
     def _color_controls_changed(self, *_: Any) -> None:
         clip_id = self.timeline_widget.canvas.selected_clip_id
