@@ -655,5 +655,16 @@ class TimelineModelTests(unittest.TestCase):
             ])
 
 
+    def test_polygon_overlay_letterbox_and_normalized_round_trip(self):
+        from polygon_mask_overlay import fitted_video_rect, normalized_point_to_widget, widget_point_to_normalized
+        rect = fitted_video_rect(1000, 700, 1920, 1080)
+        self.assertAlmostEqual(rect.width(), 1000.0)
+        self.assertAlmostEqual(rect.height(), 562.5)
+        point = [0.25, 0.75]
+        widget_point = normalized_point_to_widget(point, rect)
+        restored = widget_point_to_normalized(widget_point, rect)
+        self.assertAlmostEqual(restored[0], point[0])
+        self.assertAlmostEqual(restored[1], point[1])
+
 if __name__ == "__main__":
     unittest.main()
