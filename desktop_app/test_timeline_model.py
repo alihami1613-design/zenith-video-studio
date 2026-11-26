@@ -51,6 +51,30 @@ class TimelineModelTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             project.set_clip_color(clip.clip_id, saturation=float("nan"))
 
+    def test_visual_fades_round_trip_split_and_validation(self):
+        project = TimelineProject()
+        clip = project.add_clip("shot.mp4", "shot.mp4", duration_frames=120)
+        project.set_clip_video_fade(clip.clip_id, fade_in_frames=20, fade_out_frames=30)
+        restored = TimelineProject.from_dict(project.to_dict())
+        saved = restored.get_clip(clip.clip_id)
+        self.assertEqual(saved.video_fade_in_frames, 20)
+        self.assertEqual(saved.video_fade_out_frames, 30)
+        left, right = restored.split_clip(clip.clip_id, 60)
+        self.assertEqual(left.video_fade_in_frames, 20)
+        self.assertEqual(left.video_fade_out_frames, 0)
+        self.assertEqual(right.video_fade_in_frames, 0)
+        self.assertEqual(right.video_fade_out_frames, 30)
+        with self.assertRaises(ValueError):
+            restored.set_clip_video_fade(left.clip_id, fade_in_frames=61)
+
+    def test_legacy_clip_gets_visual_fade_defaults(self):
+        project = TimelineProject.from_dict({"clips": [
+            {"path": "old.mp4", "name": "old.mp4", "track": "V1", "duration_frames": 60}
+        ]})
+        self.assertEqual(project.clips[0].video_fade_in_frames, 0)
+        self.assertEqual(project.clips[0].video_fade_out_frames, 0)
+        self.assertEqual(project.to_dict()["schema_version"], 8)
+
     def test_add_and_round_trip(self):
         project = TimelineProject(fps=30)
         clip = project.add_clip("media/a.mp4", "a.mp4", duration_frames=240)
