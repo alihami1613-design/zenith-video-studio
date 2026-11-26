@@ -65,18 +65,18 @@ def build_color_filter(grade: Mapping[str, float] | None) -> str:
         blue = -temperature * 0.15
         green_magenta = -tint * 0.15
         channels = {
-            "rs": values["wheel_shadows_r"] + red,
-            "gs": values["wheel_shadows_g"] + green_magenta,
-            "bs": values["wheel_shadows_b"] + blue,
-            "rm": values["wheel_midtones_r"] + red,
-            "gm": values["wheel_midtones_g"] + green_magenta,
-            "bm": values["wheel_midtones_b"] + blue,
-            "rh": values["wheel_highlights_r"] + red,
-            "gh": values["wheel_highlights_g"] + green_magenta,
-            "bh": values["wheel_highlights_b"] + blue,
+            "rs": values["wheel_shadows_r"] * 0.15 + red,
+            "gs": values["wheel_shadows_g"] * 0.15 + green_magenta,
+            "bs": values["wheel_shadows_b"] * 0.15 + blue,
+            "rm": values["wheel_midtones_r"] * 0.15 + red,
+            "gm": values["wheel_midtones_g"] * 0.15 + green_magenta,
+            "bm": values["wheel_midtones_b"] * 0.15 + blue,
+            "rh": values["wheel_highlights_r"] * 0.15 + red,
+            "gh": values["wheel_highlights_g"] * 0.15 + green_magenta,
+            "bh": values["wheel_highlights_b"] * 0.15 + blue,
         }
         filters.append("colorbalance=" + ":".join(
-            f"{key}={value * 0.15:.3f}" for key, value in channels.items()
+            f"{key}={value:.3f}" for key, value in channels.items()
         ))
     # Five-point master curve adds inexpensive luma-oriented tonal controls.
     # Keep output points strictly increasing for extreme combined slider values.
