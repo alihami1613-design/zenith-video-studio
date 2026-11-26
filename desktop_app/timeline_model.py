@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-PROJECT_SCHEMA_VERSION = 22
+PROJECT_SCHEMA_VERSION = 23
 DEFAULT_FPS = 30
 DEFAULT_VIDEO_TRACKS = ("V1", "V2", "V3", "V4")
 DEFAULT_AUDIO_TRACKS = ("A1", "A2", "A3", "A4")
@@ -55,6 +55,26 @@ def _transform_value_at(keyframes: list[dict[str, float]], frame: int) -> dict[s
             return {key: float(left.get(key, default)) + (float(right.get(key, default)) - float(left.get(key, default))) * ratio for key, default in defaults.items()}
     return defaults
 
+
+
+def mask_points_at(keyframes: list[dict[str, Any]], frame: int, defaults: list[list[float]]) -> list[list[float]]:
+    """Evaluate corresponding polygon vertices between mask keyframes."""
+    if not keyframes:
+        return [list(point) for point in defaults]
+    def points_for(key):
+        return [list(point) for point in key.get("points", defaults)]
+    if frame <= int(keyframes[0]["frame"]):
+        return points_for(keyframes[0])
+    if frame >= int(keyframes[-1]["frame"]):
+        return points_for(keyframes[-1])
+    for left, right in zip(keyframes, keyframes[1:]):
+        lf, rf = int(left["frame"]), int(right["frame"])
+        if lf <= frame <= rf:
+            ratio = transform_eased_progress(left, (frame - lf) / (rf - lf))
+            a, b = points_for(left), points_for(right)
+            return [[x1 + (x2 - x1) * ratio, y1 + (y2 - y1) * ratio]
+                    for (x1, y1), (x2, y2) in zip(a, b)]
+    return [list(point) for point in defaults]
 
 
 def mask_values_at(keyframes: list[dict[str, float]], frame: int, defaults: dict[str, float]) -> dict[str, float]:
@@ -265,7 +285,23 @@ class Clip:
             easing = str(raw_key.get("ease", "linear"))
             if easing not in {"linear", "ease_in", "ease_out", "ease_in_out", "bezier"}:
                 raise ValueError("Unsupported mask keyframe easing")
-            normalized_mask_keys.append({"frame": frame, **values, "ease": easing})
+            normalized_key = {"frame": frame, **values, "ease": easing}
+            raw_points = raw_key.get("points", self.mask_points)
+            normalized_key_points = []
+            for point in raw_points:
+                if not isinstance(point, (list, tuple)) or len(point) != 2:
+                    raise ValueError("Each animated polygon point must contain x and y")
+                px, py = float(point[0]), float(point[1])
+                if not math.isfinite(px) or not math.isfinite(py) or not 0.0 <= px <= 1.0 or not 0.0 <= py <= 1.0:
+                    raise ValueError("Animated polygon points must be normalized between 0 and 1")
+                normalized_key_points.append([px, py])
+            if self.mask_shape == "polygon":
+                if not 3 <= len(normalized_key_points) <= 8:
+                    raise ValueError("Animated polygon keyframes require 3 to 8 points")
+                if normalized_mask_keys and len(normalized_key_points) != len(normalized_mask_keys[0]["points"]):
+                    raise ValueError("Polygon keyframes must keep the same number of vertices")
+                normalized_key["points"] = normalized_key_points
+            normalized_mask_keys.append(normalized_key)
             previous_mask_frame = frame
         self.mask_keyframes = normalized_mask_keys
         if any(value > self.duration_frames for value in (self.fade_in_frames, self.fade_out_frames, self.video_fade_in_frames, self.video_fade_out_frames, self.transition_in_frames)):
@@ -475,7 +511,8 @@ class TimelineProject:
             "width": original.mask_width, "height": original.mask_height,
         }
         split_mask_values = mask_values_at(original.mask_keyframes, split_local_frame, mask_defaults)
-        right_mask_keys = [{"frame": 0, **split_mask_values, "ease": "linear"}] + [
+        split_mask_points = mask_points_at(original.mask_keyframes, split_local_frame, original.mask_points)
+        right_mask_keys = [{"frame": 0, **split_mask_values, "points": split_mask_points, "ease": "linear"}] + [
             dict(key, frame=int(key["frame"]) - split_local_frame)
             for key in original.mask_keyframes if int(key["frame"]) > split_local_frame
         ]
