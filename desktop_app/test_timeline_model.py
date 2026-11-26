@@ -28,6 +28,29 @@ class TimelineModelTests(unittest.TestCase):
         self.assertFalse(legacy.clips[0].has_audio)
         self.assertEqual(legacy.clips[0].audio_track, "A1")
 
+    def test_color_grade_round_trip_and_split(self):
+        project = TimelineProject()
+        clip = project.add_clip("shot.mp4", "shot.mp4", duration_frames=120)
+        project.set_clip_color(
+            clip.clip_id, exposure=1.25, contrast=1.2, saturation=1.4,
+            temperature=0.3, tint=-0.2,
+        )
+        restored = TimelineProject.from_dict(project.to_dict())
+        saved = restored.get_clip(clip.clip_id)
+        self.assertAlmostEqual(saved.color_grade["exposure"], 1.25)
+        self.assertAlmostEqual(saved.color_grade["temperature"], 0.3)
+        left, right = restored.split_clip(clip.clip_id, 60)
+        self.assertEqual(left.color_grade, right.color_grade)
+        self.assertIsNot(left.color_grade, right.color_grade)
+
+    def test_color_grade_rejects_invalid_values(self):
+        project = TimelineProject()
+        clip = project.add_clip("shot.mp4", "shot.mp4")
+        with self.assertRaises(ValueError):
+            project.set_clip_color(clip.clip_id, exposure=5.0)
+        with self.assertRaises(ValueError):
+            project.set_clip_color(clip.clip_id, saturation=float("nan"))
+
     def test_add_and_round_trip(self):
         project = TimelineProject(fps=30)
         clip = project.add_clip("media/a.mp4", "a.mp4", duration_frames=240)
@@ -63,7 +86,7 @@ class TimelineModelTests(unittest.TestCase):
         self.assertAlmostEqual(saved.volume, 0.8)
         self.assertEqual(saved.fade_in_frames, 30)
         self.assertEqual(saved.fade_out_frames, 45)
-        self.assertEqual(project.to_dict()["schema_version"], 6)
+        self.assertEqual(project.to_dict()["schema_version"], 7)
 
     def test_audio_track_mixer_round_trip(self):
         project = TimelineProject()
