@@ -660,6 +660,7 @@ class ZenithEditor(QMainWindow):
         self.timeline_widget.clipMoved.connect(self._clip_moved)
         self.timeline_widget.clipTrimmed.connect(self._clip_trimmed)
         self.timeline_widget.editStarted.connect(self._push_undo)
+        self.timeline_widget.speedRampChanged.connect(self._speed_ramp_changed)
         timeline_layout.addWidget(self.timeline_widget, 1)
         outer.addWidget(timeline_panel, 2)
 
