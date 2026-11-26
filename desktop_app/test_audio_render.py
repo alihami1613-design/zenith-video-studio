@@ -216,5 +216,25 @@ class AudioRenderCommandTests(unittest.TestCase):
                                   reverse_playback=True)
             command = build_audio_mix_command("ffmpeg", [clip], 30, "mix.wav")
         self.assertIn("areverse", " ".join(command))
+
+    def test_embedded_video_audio_uses_same_speed_ramp_segments(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / "ramped-camera.mp4"
+            source.touch()
+            clip = self.make_clip(
+                source, clip_id="ramped-camera", track="V1", media_type="video",
+                has_audio=True, audio_track="A1", duration_frames=60,
+            )
+            clip.speed_ramp = [
+                {"frame": 0, "rate": 0.5}, {"frame": 59, "rate": 2.0}
+            ]
+            command = build_audio_mix_command("ffmpeg", [clip], 30, "mix.wav")
+        joined = " ".join(command)
+        self.assertIn("asplit=10", joined)
+        self.assertIn("concat=n=10:v=0:a=1", joined)
+        self.assertIn("atempo=0.500000", joined)
+        self.assertIn("atempo=2.000000", joined)
+        self.assertNotIn("areverse", joined)
+
 if __name__ == "__main__":
     unittest.main()
