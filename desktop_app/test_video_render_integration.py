@@ -7,6 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from video_render import build_video_render_command
+from audio_render import build_audio_mix_command
 
 FFMPEG = shutil.which("ffmpeg")
 
@@ -44,6 +45,53 @@ class TransformRenderIntegrationTests(unittest.TestCase):
                 [FFMPEG, "-hide_banner", "-loglevel", "error", "-i", str(output),
                  "-f", "null", "-"], capture_output=True, text=True, timeout=30)
             self.assertEqual(decoded.returncode, 0, decoded.stderr[-2000:])
+
+
+    def test_speed_ramp_renders_video_and_matching_embedded_audio(self):
+        with tempfile.TemporaryDirectory(prefix="zenith_speed_ramp_test_") as folder:
+            root = Path(folder)
+            source = root / "source_with_audio.mp4"
+            picture = root / "ramped_picture.mp4"
+            mixed_audio = root / "ramped_audio.wav"
+            generated = subprocess.run(
+                [FFMPEG, "-y", "-hide_banner", "-loglevel", "error",
+                 "-f", "lavfi", "-i", "testsrc2=size=96x64:rate=25:duration=4",
+                 "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000:duration=4",
+                 "-map", "0:v:0", "-map", "1:a:0",
+                 "-c:v", "libx264", "-preset", "ultrafast", "-threads", "1",
+                 "-c:a", "aac", "-shortest", str(source)],
+                capture_output=True, text=True, timeout=45)
+            self.assertEqual(generated.returncode, 0, generated.stderr[-2500:])
+            clip = SimpleNamespace(
+                path=str(source), name="ramped clip", track="V1", clip_id="ramped",
+                media_type="video", start_frame=0, source_in=0, duration_frames=50,
+                end_frame=50, color_grade={}, playback_rate=1.0,
+                reverse_playback=False, speed_ramp=[
+                    {"frame": 0, "rate": 0.5}, {"frame": 49, "rate": 2.0}
+                ],
+                has_audio=True, audio_track="A1", volume=1.0,
+                fade_in_frames=0, fade_out_frames=0,
+            )
+            project = SimpleNamespace(
+                fps=25, width=96, height=64, duration_frames=50, clips=[clip]
+            )
+            rendered_video = subprocess.run(
+                build_video_render_command(FFMPEG, project, picture),
+                capture_output=True, text=True, timeout=60)
+            self.assertEqual(rendered_video.returncode, 0, rendered_video.stderr[-3500:])
+            audio_command = build_audio_mix_command(
+                FFMPEG, [clip], 25, mixed_audio, timeline_duration_frames=50
+            )
+            rendered_audio = subprocess.run(
+                audio_command, capture_output=True, text=True, timeout=60)
+            self.assertEqual(rendered_audio.returncode, 0, rendered_audio.stderr[-3500:])
+            for output in (picture, mixed_audio):
+                self.assertGreater(output.stat().st_size, 0)
+                decoded = subprocess.run(
+                    [FFMPEG, "-hide_banner", "-loglevel", "error", "-i", str(output),
+                     "-f", "null", "-"],
+                    capture_output=True, text=True, timeout=30)
+                self.assertEqual(decoded.returncode, 0, decoded.stderr[-2500:])
 
 
 if __name__ == "__main__":
