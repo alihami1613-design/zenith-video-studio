@@ -280,6 +280,30 @@ class ZenithEditor(QMainWindow):
         self.fade_out_slider.sliderPressed.connect(self._push_undo)
         self.fade_out_slider.valueChanged.connect(self._audio_controls_changed)
         inspector_layout.addWidget(self.fade_out_slider)
+
+        color_heading = QLabel("اصلاح رنگ کلیپ")
+        color_heading.setObjectName("panel_title")
+        inspector_layout.addWidget(color_heading)
+        self.color_controls: dict[str, tuple[QSlider, QLabel, float]] = {}
+        color_specs = [
+            ("exposure", "Exposure", -200, 200, 0.02, 0, "نوردهی برحسب EV"),
+            ("contrast", "Contrast", 0, 200, 0.01, 100, "کنتراست"),
+            ("saturation", "Saturation", 0, 300, 0.01, 100, "اشباع رنگ"),
+            ("temperature", "Temperature", -100, 100, 0.01, 0, "سردی و گرمی رنگ"),
+            ("tint", "Tint", -100, 100, 0.01, 0, "اصلاح ته‌رنگ سبز/ارغوانی"),
+        ]
+        for key, title, low, high, scale, initial, tooltip in color_specs:
+            label = QLabel(f"{title}: {initial * scale:.2f}")
+            inspector_layout.addWidget(label)
+            slider = QSlider(Qt.Horizontal)
+            slider.setRange(low, high)
+            slider.setValue(initial)
+            slider.setToolTip(tooltip)
+            slider.sliderPressed.connect(self._push_undo)
+            slider.valueChanged.connect(self._color_controls_changed)
+            inspector_layout.addWidget(slider)
+            self.color_controls[key] = (slider, label, scale)
+
         mixer_heading = QLabel("میکسر ترک‌ها")
         mixer_heading.setObjectName("panel_title")
         inspector_layout.addWidget(mixer_heading)
@@ -460,6 +484,7 @@ class ZenithEditor(QMainWindow):
             return
         self.media_info.setText(f"کلیپ انتخاب‌شده: {clip.name}\nمسیر: {clip.track}")
         self._sync_audio_controls()
+        self._sync_color_controls()
         if Path(clip.path).exists():
             position_ms = int(clip.source_in * 1000 / self.timeline_project.fps)
             preview_path = Path(clip.path)
@@ -509,6 +534,50 @@ class ZenithEditor(QMainWindow):
         fps = max(1, self.timeline_project.fps)
         self.fade_in_label.setText(f"Fade In: {clip.fade_in_frames / fps:.1f} ثانیه")
         self.fade_out_label.setText(f"Fade Out: {clip.fade_out_frames / fps:.1f} ثانیه")
+
+    def _sync_color_controls(self) -> None:
+        clip_id = self.timeline_widget.canvas.selected_clip_id
+        clip = None
+        if clip_id:
+            try:
+                clip = self.timeline_project.get_clip(clip_id)
+            except KeyError:
+                pass
+        enabled = bool(clip and clip.media_type == "video")
+        for slider, label, scale in self.color_controls.values():
+            slider.setEnabled(enabled)
+            if not enabled:
+                label.setText(label.text().split(":")[0] + ": —")
+        if not enabled:
+            return
+        blockers = [QSignalBlocker(slider) for slider, _, _ in self.color_controls.values()]
+        for key, (slider, label, scale) in self.color_controls.items():
+            value = float(clip.color_grade.get(key, 0.0 if key in {"exposure", "temperature", "tint"} else 1.0))
+            slider.setValue(round(value / scale))
+            label.setText(f"{key.title()}: {value:.2f}")
+        del blockers
+
+    def _color_controls_changed(self, *_: Any) -> None:
+        clip_id = self.timeline_widget.canvas.selected_clip_id
+        if not clip_id:
+            return
+        try:
+            clip = self.timeline_project.get_clip(clip_id)
+            if clip.media_type != "video":
+                return
+            values = {
+                key: slider.value() * scale
+                for key, (slider, _, scale) in self.color_controls.items()
+            }
+            self.timeline_project.set_clip_color(clip_id, **values)
+        except (KeyError, ValueError) as exc:
+            self.statusBar().showMessage(f"اصلاح رنگ اعمال نشد: {exc}")
+            self._sync_color_controls()
+            return
+        for key, (_, label, _) in self.color_controls.items():
+            label.setText(f"{key.title()}: {clip.color_grade[key]:.2f}")
+        self.timeline_widget.refresh()
+        self.statusBar().showMessage("تنظیمات اصلاح رنگ کلیپ تغییر کرد؛ در پروژه ذخیره می‌شود.")
 
     def _audio_controls_changed(self, *_: Any) -> None:
         clip_id = self.timeline_widget.canvas.selected_clip_id
