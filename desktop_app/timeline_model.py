@@ -240,6 +240,11 @@ class TimelineProject:
         clip.video_fade_in_frames = min(clip.video_fade_in_frames, clip.duration_frames)
         clip.video_fade_out_frames = min(clip.video_fade_out_frames, clip.duration_frames)
         clip.transition_in_frames = min(clip.transition_in_frames, clip.duration_frames)
+        clip.transform_keyframes = [
+            dict(key, frame=int(key["frame"]) - removed_from_left)
+            for key in clip.transform_keyframes
+            if removed_from_left <= int(key["frame"]) < removed_from_left + clip.duration_frames
+        ]
         clip.validate()
         return clip
 
