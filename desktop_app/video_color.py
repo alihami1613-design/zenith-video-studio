@@ -11,6 +11,10 @@ DEFAULT_GRADE = {
     "saturation": 1.0,
     "temperature": 0.0,
     "tint": 0.0,
+    "highlights": 0.0,
+    "shadows": 0.0,
+    "whites": 0.0,
+    "blacks": 0.0,
 }
 
 
@@ -24,6 +28,10 @@ def build_color_filter(grade: Mapping[str, float] | None) -> str:
         "saturation": (0.0, 3.0),
         "temperature": (-1.0, 1.0),
         "tint": (-1.0, 1.0),
+        "highlights": (-1.0, 1.0),
+        "shadows": (-1.0, 1.0),
+        "whites": (-1.0, 1.0),
+        "blacks": (-1.0, 1.0),
     }
     for key, (low, high) in bounds.items():
         value = float(values[key])
@@ -50,4 +58,22 @@ def build_color_filter(grade: Mapping[str, float] | None) -> str:
             f"rm={red:.3f}:gm={green_magenta:.3f}:bm={blue:.3f}:"
             f"rh={red:.3f}:gh={green_magenta:.3f}:bh={blue:.3f}"
         )
+    # Five-point master curve adds inexpensive luma-oriented tonal controls.
+    # Keep output points strictly increasing for extreme combined slider values.
+    tonal = {key: values[key] for key in ("highlights", "shadows", "whites", "blacks")}
+    if any(value != 0 for value in tonal.values()):
+        points = [
+            (0.0, tonal["blacks"] * 0.08),
+            (0.25, 0.25 + tonal["shadows"] * 0.07 + tonal["blacks"] * 0.025),
+            (0.5, 0.5 + tonal["shadows"] * 0.015 + tonal["highlights"] * 0.015),
+            (0.75, 0.75 + tonal["highlights"] * 0.07 + tonal["whites"] * 0.025),
+            (1.0, 1.0 + tonal["whites"] * 0.08),
+        ]
+        adjusted = []
+        for index, (x, y) in enumerate(points):
+            lower = adjusted[-1][1] + 0.001 if adjusted else 0.0
+            upper = 1.0 - (len(points) - index - 1) * 0.001
+            adjusted.append((x, min(upper, max(lower, y))))
+        curve = " ".join(f"{x:.3f}/{y:.3f}" for x, y in adjusted)
+        filters.append(f"curves=master='{curve}'")
     return ",".join(filters)
