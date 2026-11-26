@@ -57,6 +57,23 @@ def _transform_value_at(keyframes: list[dict[str, float]], frame: int) -> dict[s
 
 
 
+def mask_values_at(keyframes: list[dict[str, float]], frame: int, defaults: dict[str, float]) -> dict[str, float]:
+    """Evaluate linearly interpolated mask bounds at a clip-local frame."""
+    if not keyframes:
+        return dict(defaults)
+    if frame <= int(keyframes[0]["frame"]):
+        return {key: float(keyframes[0].get(key, value)) for key, value in defaults.items()}
+    if frame >= int(keyframes[-1]["frame"]):
+        return {key: float(keyframes[-1].get(key, value)) for key, value in defaults.items()}
+    for left, right in zip(keyframes, keyframes[1:]):
+        lf, rf = int(left["frame"]), int(right["frame"])
+        if lf <= frame <= rf:
+            ratio = transform_eased_progress(left, (frame - lf) / (rf - lf))
+            return {key: float(left.get(key, value)) + (float(right.get(key, value)) - float(left.get(key, value))) * ratio
+                    for key, value in defaults.items()}
+    return dict(defaults)
+
+
 def _speed_rate_at(points: list[dict[str, float]], frame: int) -> float:
     """Evaluate a linear speed curve at a clip-local frame."""
     if not points:
@@ -452,6 +469,16 @@ class TimelineProject:
         original = self.get_clip(clip_id)
         if not original.start_frame < at_frame < original.end_frame:
             raise ValueError("Split point must be inside the clip")
+        split_local_frame = at_frame - original.start_frame
+        mask_defaults = {
+            "x": original.mask_x, "y": original.mask_y,
+            "width": original.mask_width, "height": original.mask_height,
+        }
+        split_mask_values = mask_values_at(original.mask_keyframes, split_local_frame, mask_defaults)
+        right_mask_keys = [{"frame": 0, **split_mask_values, "ease": "linear"}] + [
+            dict(key, frame=int(key["frame"]) - split_local_frame)
+            for key in original.mask_keyframes if int(key["frame"]) > split_local_frame
+        ]
         right = Clip(
             path=original.path,
             name=original.name,
@@ -486,18 +513,14 @@ class TimelineProject:
             chroma_key_similarity=original.chroma_key_similarity,
             chroma_key_blend=original.chroma_key_blend,
             mask_enabled=original.mask_enabled,
-            mask_x=original.mask_x,
-            mask_y=original.mask_y,
-            mask_width=original.mask_width,
-            mask_height=original.mask_height,
+            mask_x=split_mask_values["x"],
+            mask_y=split_mask_values["y"],
+            mask_width=split_mask_values["width"],
+            mask_height=split_mask_values["height"],
             mask_shape=original.mask_shape,
             mask_feather_px=original.mask_feather_px,
             mask_points=[list(point) for point in original.mask_points],
-            mask_keyframes=[
-                dict(key, frame=int(key["frame"]) - (at_frame - original.start_frame))
-                for key in original.mask_keyframes
-                if int(key["frame"]) >= (at_frame - original.start_frame)
-            ],
+            mask_keyframes=right_mask_keys,
             transform_keyframes=[
                 dict(key, frame=int(key["frame"]) - (at_frame - original.start_frame))
                 for key in original.transform_keyframes
