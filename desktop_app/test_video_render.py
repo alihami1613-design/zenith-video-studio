@@ -44,6 +44,20 @@ class VideoRenderTests(unittest.TestCase):
         self.assertIn("overlay=x='(W-w)/2+W*", joined)
         self.assertIn("y='(H-h)/2+H*", joined)
 
+    def test_builds_cubic_bezier_transform_easing_expression(self):
+        with tempfile.TemporaryDirectory() as folder:
+            project = self.project(folder)
+            project.clips[0].transform_keyframes = [
+                {"frame": 0, "scale": 1.0, "ease": "bezier",
+                 "bezier_y1": 0.2, "bezier_y2": 0.8},
+                {"frame": 30, "scale": 1.5},
+            ]
+            command = build_video_render_command("ffmpeg", project, "out.mp4")
+        joined = " ".join(command)
+        self.assertIn("0.200000", joined)
+        self.assertIn("0.800000", joined)
+        self.assertIn("3*(1-(min(max((t", joined)
+
     def test_builds_1080p_h264_with_grade_and_black_gap(self):
         with tempfile.TemporaryDirectory() as folder:
             project = self.project(folder)
