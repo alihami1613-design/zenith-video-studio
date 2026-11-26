@@ -39,7 +39,7 @@ class VideoRenderTests(unittest.TestCase):
             ]
             command = build_video_render_command("ffmpeg", project, "out.mp4")
         joined = " ".join(command)
-        self.assertIn("scale=w='iw*(if(lt(T", joined)
+        self.assertIn("scale=w='iw*(if(lt(t", joined)
         self.assertIn("rotate=angle=", joined)
         self.assertIn("overlay=x='(W-w)/2+W*", joined)
         self.assertIn("y='(H-h)/2+H*", joined)
