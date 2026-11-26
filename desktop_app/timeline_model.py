@@ -21,8 +21,26 @@ def _new_id() -> str:
     return uuid4().hex[:12]
 
 
+def transform_eased_progress(keyframe: dict[str, float], progress: float) -> float:
+    """Match the easing curve used by the FFmpeg transform renderer."""
+    p = max(0.0, min(1.0, float(progress)))
+    easing = str(keyframe.get("ease", "linear"))
+    if easing == "ease_in":
+        return p * p
+    if easing == "ease_out":
+        return 1.0 - (1.0 - p) * (1.0 - p)
+    if easing == "ease_in_out":
+        return p * p * (3.0 - 2.0 * p)
+    if easing == "bezier":
+        y1 = max(0.0, min(1.0, float(keyframe.get("bezier_y1", 0.0))))
+        y2 = max(0.0, min(1.0, float(keyframe.get("bezier_y2", 1.0))))
+        inverse = 1.0 - p
+        return 3.0 * inverse * inverse * p * y1 + 3.0 * inverse * p * p * y2 + p * p * p
+    return p
+
+
 def _transform_value_at(keyframes: list[dict[str, float]], frame: int) -> dict[str, float]:
-    """Evaluate the linear transform curve at a clip-local frame."""
+    """Evaluate the eased transform curve at a clip-local frame."""
     defaults = {"x": 0.0, "y": 0.0, "scale": 1.0, "rotation": 0.0}
     if not keyframes:
         return defaults
@@ -33,7 +51,7 @@ def _transform_value_at(keyframes: list[dict[str, float]], frame: int) -> dict[s
     for left, right in zip(keyframes, keyframes[1:]):
         lf, rf = int(left["frame"]), int(right["frame"])
         if lf <= frame <= rf:
-            ratio = (frame - lf) / (rf - lf)
+            ratio = transform_eased_progress(left, (frame - lf) / (rf - lf))
             return {key: float(left.get(key, default)) + (float(right.get(key, default)) - float(left.get(key, default))) * ratio for key, default in defaults.items()}
     return defaults
 
