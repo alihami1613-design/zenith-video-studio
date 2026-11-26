@@ -1087,6 +1087,32 @@ class ZenithEditor(QMainWindow):
             f"Blend Mode: {mode} — هنگام رندر نهایی اعمال می‌شود؛ پیش‌نمایش زنده نیست."
         )
 
+    def _clip_effects_changed(self, *_args) -> None:
+        clip_id = self.timeline_widget.canvas.selected_clip_id
+        if not clip_id:
+            return
+        try:
+            self._push_undo()
+            clip = self.timeline_project.get_clip(clip_id)
+            clip.chroma_key_enabled = self.chroma_key_checkbox.isChecked()
+            clip.chroma_key_color = self.chroma_key_color_edit.text().strip()
+            clip.chroma_key_similarity = self.chroma_key_similarity_spin.value()
+            clip.chroma_key_blend = self.chroma_key_blend_spin.value()
+            clip.mask_enabled = self.mask_checkbox.isChecked()
+            for key, control in self.mask_controls.items():
+                setattr(clip, key, control.value())
+            clip.validate()
+        except (KeyError, ValueError) as exc:
+            if self._undo_stack:
+                self._undo_stack.pop()
+            self._update_history_buttons()
+            self.statusBar().showMessage(str(exc))
+            return
+        self.timeline_widget.refresh()
+        self.statusBar().showMessage(
+            "Chroma Key / Mask ذخیره شد؛ در رندر نهایی اعمال می‌شود، نه پیش‌نمایش زنده."
+        )
+
     def _sync_transform_controls(self) -> None:
         clip_id = self.timeline_widget.canvas.selected_clip_id
         clip = None
@@ -1098,6 +1124,34 @@ class ZenithEditor(QMainWindow):
         enabled = bool(clip and clip.media_type == "video" and clip.track.startswith("V"))
         self.add_transform_keyframe_button.setEnabled(enabled)
         self.blend_mode_combo.setEnabled(enabled)
+        effect_controls = [
+            self.chroma_key_checkbox, self.chroma_key_color_edit,
+            self.chroma_key_similarity_spin, self.chroma_key_blend_spin,
+            self.mask_checkbox, *self.mask_controls.values(),
+        ]
+        for control in effect_controls:
+            control.setEnabled(enabled)
+        if enabled:
+            blocker = QSignalBlocker(self.chroma_key_checkbox)
+            self.chroma_key_checkbox.setChecked(bool(clip.chroma_key_enabled))
+            del blocker
+            blocker = QSignalBlocker(self.chroma_key_color_edit)
+            self.chroma_key_color_edit.setText(str(clip.chroma_key_color))
+            del blocker
+            for control, value in (
+                (self.chroma_key_similarity_spin, clip.chroma_key_similarity),
+                (self.chroma_key_blend_spin, clip.chroma_key_blend),
+            ):
+                blocker = QSignalBlocker(control)
+                control.setValue(float(value))
+                del blocker
+            blocker = QSignalBlocker(self.mask_checkbox)
+            self.mask_checkbox.setChecked(bool(clip.mask_enabled))
+            del blocker
+            for key, control in self.mask_controls.items():
+                blocker = QSignalBlocker(control)
+                control.setValue(float(getattr(clip, key)))
+                del blocker
         if enabled:
             blend_index = self.blend_mode_combo.findData(str(getattr(clip, "blend_mode", "normal")))
             if blend_index >= 0:
