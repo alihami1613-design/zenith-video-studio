@@ -13,7 +13,7 @@ from PySide6.QtMultimediaWidgets import QVideoWidget
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QFileDialog, QMessageBox,
     QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QListWidget,
-    QListWidgetItem, QSplitter, QFrame, QStatusBar, QSlider
+    QListWidgetItem, QSplitter, QFrame, QStatusBar, QSlider, QCheckBox
 )
 
 from timeline_model import TimelineProject
@@ -117,6 +117,7 @@ class AudioRenderTask(QRunnable):
             result = render_audio_mix(
                 project.clips, project.fps, self.output_path,
                 timeline_duration_frames=project.duration_frames,
+                audio_track_settings=project.audio_track_settings,
             )
             self.signals.finished.emit(str(result), "")
         except Exception as exc:
@@ -277,6 +278,42 @@ class ZenithEditor(QMainWindow):
         self.fade_out_slider.sliderPressed.connect(self._push_undo)
         self.fade_out_slider.valueChanged.connect(self._audio_controls_changed)
         inspector_layout.addWidget(self.fade_out_slider)
+        mixer_heading = QLabel("میکسر ترک‌ها")
+        mixer_heading.setObjectName("panel_title")
+        inspector_layout.addWidget(mixer_heading)
+        self.track_mixer_controls: dict[str, dict[str, Any]] = {}
+        for track in self.timeline_project.audio_tracks:
+            row = QHBoxLayout()
+            track_label = QLabel(track)
+            track_label.setFixedWidth(22)
+            gain = QSlider(Qt.Horizontal)
+            gain.setRange(0, 200)
+            gain.setValue(100)
+            gain.setToolTip(f"حجم کلی ترک {track} از صفر تا ۲۰۰ درصد")
+            mute = QCheckBox("M")
+            mute.setToolTip(f"بی‌صدا کردن ترک {track}")
+            solo = QCheckBox("S")
+            solo.setToolTip(f"شنیدن فقط ترک {track}")
+            gain.sliderPressed.connect(self._push_undo)
+            gain.valueChanged.connect(
+                lambda value, name=track: self._audio_track_changed(name, volume=value / 100.0)
+            )
+            mute.pressed.connect(self._push_undo)
+            mute.toggled.connect(
+                lambda checked, name=track: self._audio_track_changed(name, muted=checked)
+            )
+            solo.pressed.connect(self._push_undo)
+            solo.toggled.connect(
+                lambda checked, name=track: self._audio_track_changed(name, solo=checked)
+            )
+            row.addWidget(track_label)
+            row.addWidget(gain, 1)
+            row.addWidget(mute)
+            row.addWidget(solo)
+            inspector_layout.addLayout(row)
+            self.track_mixer_controls[track] = {
+                "gain": gain, "mute": mute, "solo": solo
+            }
         inspector_layout.addStretch(1)
 
         top_split.addWidget(media_panel)
@@ -761,6 +798,31 @@ class ZenithEditor(QMainWindow):
         self.timeline_widget.canvas.selected_clip_id = right.clip_id
         self._refresh_timeline()
         self.statusBar().showMessage(f"کلیپ در فریم {self.timeline_project.playhead_frame} تقسیم شد")
+
+    def _sync_audio_track_controls(self) -> None:
+        for track, controls in self.track_mixer_controls.items():
+            settings = self.timeline_project.audio_track_settings.get(
+                track, {"volume": 1.0, "muted": False, "solo": False}
+            )
+            blockers = [
+                QSignalBlocker(controls["gain"]),
+                QSignalBlocker(controls["mute"]),
+                QSignalBlocker(controls["solo"]),
+            ]
+            controls["gain"].setValue(round(float(settings.get("volume", 1.0)) * 100))
+            controls["mute"].setChecked(bool(settings.get("muted", False)))
+            controls["solo"].setChecked(bool(settings.get("solo", False)))
+            del blockers
+
+    def _audio_track_changed(self, track: str, **changes: Any) -> None:
+        try:
+            self.timeline_project.set_audio_track(track, **changes)
+        except (KeyError, ValueError) as exc:
+            self.statusBar().showMessage(f"تنظیم میکسر اعمال نشد: {exc}")
+            self._sync_audio_track_controls()
+            return
+        self.statusBar().showMessage(f"تنظیمات میکسر {track} تغییر کرد")
+        self.timeline_widget.refresh()
 
     def export_audio_mix(self) -> None:
         if self._audio_render_task is not None:
