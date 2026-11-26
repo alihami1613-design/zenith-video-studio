@@ -83,6 +83,33 @@ class VideoRenderTests(unittest.TestCase):
         self.assertIn("colorchannelmixer=aa=0.500000", joined)
         self.assertNotIn("geq=r='r(X,Y)'", joined)
 
+    def test_chroma_key_and_rectangular_mask_filters(self):
+        with tempfile.TemporaryDirectory() as folder:
+            project = self.project(folder)
+            clip = project.clips[0]
+            clip.chroma_key_enabled = True
+            clip.chroma_key_color = "#00FF00"
+            clip.chroma_key_similarity = 0.30
+            clip.chroma_key_blend = 0.10
+            clip.mask_enabled = True
+            clip.mask_x = 0.1
+            clip.mask_y = 0.2
+            clip.mask_width = 0.7
+            clip.mask_height = 0.6
+            command = build_video_render_command("ffmpeg", project, "out.mp4")
+        joined = " ".join(command)
+        self.assertIn("colorkey=0x00FF00:0.3000:0.1000", joined)
+        self.assertIn("crop=w='max(2\\,trunc(iw*0.700000))'", joined)
+        self.assertIn("pad=1920:1080:(ow-iw)/2:(oh-ih)/2:color=black@0", joined)
+
+    def test_disabled_chroma_key_and_mask_keep_render_pipeline_light(self):
+        with tempfile.TemporaryDirectory() as folder:
+            project = self.project(folder)
+            command = build_video_render_command("ffmpeg", project, "out.mp4")
+        joined = " ".join(command)
+        self.assertNotIn("colorkey=", joined)
+        self.assertNotIn("crop=w=", joined)
+
     def test_builds_alpha_aware_multiply_blend_pipeline(self):
         with tempfile.TemporaryDirectory() as folder:
             project = self.project(folder)
