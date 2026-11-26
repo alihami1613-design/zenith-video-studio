@@ -414,7 +414,7 @@ class TimelineProject:
             if frames > previous.duration_frames:
                 raise ValueError("Cross Dissolve duration exceeds the previous clip")
             still_extensions = {".png", ".jpg", ".jpeg", ".bmp", ".webp", ".tif", ".tiff"}
-            if Path(clip.path).suffix.lower() not in still_extensions and clip.source_in < frames:
+            if Path(clip.path).suffix.lower() not in still_extensions and clip.source_in < round(frames * clip.playback_rate):
                 raise ValueError("Cross Dissolve needs source handle frames before the incoming clip in-point")
             before_previous = next((item for item in reversed(self.clips_on_track(clip.track))
                                      if item.start_frame < previous.start_frame), None)
