@@ -11,7 +11,7 @@ from audio_render import render_audio_mix
 from proxy_manager import find_ffmpeg
 from video_color import build_color_filter
 
-RENDER_VERSION = "timeline-h264-v6-anchor-easing"
+RENDER_VERSION = "timeline-h264-v7-speed"
 STILL_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".webp", ".tif", ".tiff"}
 
 
@@ -123,7 +123,9 @@ def build_video_render_command(ffmpeg: str, project: object,
     command = [str(ffmpeg), "-y", "-hide_banner", "-loglevel", "error"]
     for clip in clips:
         transition = int(getattr(clip, "transition_in_frames", 0))
+        playback_rate = float(getattr(clip, "playback_rate", 1.0))
         clip_duration = _seconds(clip.duration_frames + transition, fps)
+        source_duration = clip_duration * playback_rate
         if _is_still(clip):
             command.extend([
                 "-loop", "1", "-framerate", str(fps),
@@ -132,7 +134,7 @@ def build_video_render_command(ffmpeg: str, project: object,
             ])
         else:
             command.extend([
-                "-ss", f"{_seconds(max(0, clip.source_in - transition), fps):.6f}",
+                "-ss", f"{_seconds(max(0, clip.source_in - round(transition * playback_rate)), fps):.6f}",
                 "-i", str(Path(clip.path).expanduser().resolve()),
             ])
 
@@ -143,11 +145,13 @@ def build_video_render_command(ffmpeg: str, project: object,
     previous = "base0"
     for index, clip in enumerate(clips):
         transition = int(getattr(clip, "transition_in_frames", 0))
+        playback_rate = float(getattr(clip, "playback_rate", 1.0))
         clip_duration = _seconds(clip.duration_frames + transition, fps)
+        source_duration = clip_duration * playback_rate
         start = _seconds(clip.start_frame - transition, fps)
         chain = (
-            f"[{index}:v:0]trim=duration={clip_duration:.6f},"
-            "setpts=PTS-STARTPTS,"
+            f"[{index}:v:0]trim=duration={source_duration:.6f},"
+            f"setpts=(PTS-STARTPTS)/{playback_rate:.6f},"
             f"scale={width}:{height}:force_original_aspect_ratio=decrease,"
             f"format=rgba,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:"
             "color=black@0"
