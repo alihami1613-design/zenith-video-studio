@@ -6,7 +6,7 @@ single source of truth.
 """
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal, QPoint
+from PySide6.QtCore import Qt, Signal, QPoint, QSize
 from PySide6.QtGui import QColor, QFont, QPainter, QPen, QBrush
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
@@ -38,6 +38,11 @@ class TimelineCanvas(QWidget):
         self.setMouseTracking(True)
         self.setMinimumHeight(RULER_HEIGHT + len(TRACKS) * TRACK_HEIGHT + 2)
         self.setMinimumWidth(900)
+
+    def sizeHint(self):
+        seconds = max(30, (self.project.duration_frames / max(1, self.project.fps)) + 10)
+        return QSize(min(20000, max(900, LABEL_WIDTH + int(seconds * self.pixels_per_second))),
+                     RULER_HEIGHT + len(TRACKS) * TRACK_HEIGHT)
 
     def set_project(self, project):
         self.project = project
@@ -127,9 +132,9 @@ class TimelineCanvas(QWidget):
         painter.drawLine(playhead_x, 0, playhead_x, height)
         painter.setBrush(QColor("#E45D5D"))
         painter.setPen(Qt.NoPen)
-        painter.drawPolygon([
-            QPoint(playhead_x - 5, 0), QPoint(playhead_x + 5, 0), QPoint(playhead_x, 8)
-        ])
+        painter.drawLine(playhead_x - 5, 0, playhead_x + 5, 0)
+        painter.drawLine(playhead_x - 5, 0, playhead_x, 8)
+        painter.drawLine(playhead_x + 5, 0, playhead_x, 8)
         painter.end()
 
     def mousePressEvent(self, event):
