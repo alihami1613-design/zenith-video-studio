@@ -257,11 +257,17 @@ class TimelineProject:
         clip.video_fade_in_frames = min(clip.video_fade_in_frames, clip.duration_frames)
         clip.video_fade_out_frames = min(clip.video_fade_out_frames, clip.duration_frames)
         clip.transition_in_frames = min(clip.transition_in_frames, clip.duration_frames)
-        clip.transform_keyframes = [
+        original_keys = [dict(key) for key in clip.transform_keyframes]
+        retained_keys = [
             dict(key, frame=int(key["frame"]) - removed_from_left)
-            for key in clip.transform_keyframes
+            for key in original_keys
             if removed_from_left <= int(key["frame"]) < removed_from_left + clip.duration_frames
         ]
+        if removed_from_left > 0 and original_keys and (
+            not retained_keys or retained_keys[0]["frame"] > 0
+        ):
+            retained_keys.insert(0, {"frame": 0, **_transform_value_at(original_keys, removed_from_left)})
+        clip.transform_keyframes = retained_keys
         clip.validate()
         return clip
 
