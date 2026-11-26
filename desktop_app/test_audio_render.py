@@ -58,6 +58,61 @@ class AudioRenderCommandTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 build_audio_mix_command("ffmpeg", [clip], 30, "out.wav")
 
+    def test_applies_per_track_gain_and_mute(self):
+        with tempfile.TemporaryDirectory() as folder:
+            voice = Path(folder) / "voice.wav"
+            music = Path(folder) / "music.wav"
+            voice.touch()
+            music.touch()
+            clips = [
+                self.make_clip(voice, clip_id="voice", track="A1"),
+                self.make_clip(music, clip_id="music", track="A2"),
+            ]
+            command = build_audio_mix_command(
+                "ffmpeg", clips, 30, "mix.wav",
+                audio_track_settings={
+                    "A1": {"volume": 0.7, "muted": False, "solo": False},
+                    "A2": {"volume": 0.4, "muted": True, "solo": False},
+                },
+            )
+        joined = " ".join(command)
+        self.assertIn("volume=0.7000", joined)
+        self.assertNotIn("music.wav", joined)
+        self.assertIn("amix=inputs=1", joined)
+
+    def test_solo_keeps_only_solo_track(self):
+        with tempfile.TemporaryDirectory() as folder:
+            voice = Path(folder) / "voice.wav"
+            music = Path(folder) / "music.wav"
+            voice.touch()
+            music.touch()
+            clips = [
+                self.make_clip(voice, clip_id="voice", track="A1"),
+                self.make_clip(music, clip_id="music", track="A2"),
+            ]
+            command = build_audio_mix_command(
+                "ffmpeg", clips, 30, "mix.wav",
+                audio_track_settings={
+                    "A1": {"volume": 1.0, "muted": False, "solo": True},
+                    "A2": {"volume": 1.0, "muted": False, "solo": False},
+                },
+            )
+        joined = " ".join(command)
+        self.assertIn("voice.wav", joined)
+        self.assertNotIn("music.wav", joined)
+
+    def test_rejects_all_muted_tracks(self):
+        with tempfile.TemporaryDirectory() as folder:
+            voice = Path(folder) / "voice.wav"
+            voice.touch()
+            with self.assertRaises(ValueError):
+                build_audio_mix_command(
+                    "ffmpeg", [self.make_clip(voice)], 30, "mix.wav",
+                    audio_track_settings={
+                        "A1": {"volume": 1.0, "muted": True, "solo": False}
+                    },
+                )
+
     def test_sorts_clips_by_timeline_position(self):
         with tempfile.TemporaryDirectory() as folder:
             first = Path(folder) / "first.wav"
