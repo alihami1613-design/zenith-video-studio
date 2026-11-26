@@ -1,4 +1,4 @@
-"""Conservative CPU-friendly H.264 render for the supported single-track timeline."""
+"""CPU-conscious multi-layer H.264 timeline renderer."""
 from __future__ import annotations
 
 import os
@@ -11,7 +11,8 @@ from audio_render import render_audio_mix
 from proxy_manager import find_ffmpeg
 from video_color import build_color_filter
 
-RENDER_VERSION = "timeline-h264-v1"
+RENDER_VERSION = "timeline-h264-v2"
+STILL_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".webp", ".tif", ".tiff"}
 
 
 def _seconds(frames: int, fps: int) -> float:
@@ -21,8 +22,12 @@ def _seconds(frames: int, fps: int) -> float:
 def _video_clips(clips: Iterable[object]) -> list[object]:
     return sorted(
         (clip for clip in clips if str(getattr(clip, "track", "")).startswith("V")),
-        key=lambda clip: (clip.start_frame, clip.track, clip.clip_id),
+        key=lambda clip: (clip.track, clip.start_frame, clip.clip_id),
     )
+
+
+def _is_still(clip: object) -> bool:
+    return Path(clip.path).suffix.lower() in STILL_EXTENSIONS
 
 
 def validate_render_project(project: object) -> list[object]:
@@ -36,53 +41,69 @@ def validate_render_project(project: object) -> list[object]:
         raise ValueError("برای حفظ کارایی، خروجی این نسخه حداکثر ۱۹۲۰ پیکسل در هر ضلع است.")
     clips = _video_clips(project.clips)
     if not clips:
-        raise ValueError("برای خروجی MP4 حداقل یک کلیپ ویدیویی روی V1 لازم است.")
-    if any(clip.track != "V1" for clip in clips):
-        raise ValueError("این نسخه فعلاً فقط ترک تصویر V1 را رندر می‌کند؛ کلیپ‌های V2 تا V4 را موقتاً خارج کنید.")
-    previous_end = 0
+        raise ValueError("برای خروجی MP4 حداقل یک کلیپ تصویری روی V1 تا V4 لازم است.")
+    previous_end: dict[str, int] = {}
     for clip in clips:
+        if clip.track not in {"V1", "V2", "V3", "V4"}:
+            raise ValueError(f"ترک تصویری پشتیبانی‌نشده: {clip.track}")
         if getattr(clip, "media_type", "video") != "video":
             raise ValueError(f"نوع رسانه در خروجی تصویر پشتیبانی نمی‌شود: {clip.name}")
-        if Path(clip.path).suffix.lower() in {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"}:
-            raise ValueError("تصویر ثابت هنوز در خروجی MP4 پشتیبانی نمی‌شود؛ فقط فایل ویدیویی وارد V1 کنید.")
         source = Path(clip.path).expanduser()
         if not source.is_file():
-            raise FileNotFoundError(f"فایل ویدیویی پیدا نشد: {source}")
-        if clip.start_frame < previous_end:
-            raise ValueError("هم‌پوشانی کلیپ‌های V1 هنوز در موتور خروجی پشتیبانی نمی‌شود؛ کلیپ‌ها را بدون overlap بچینید.")
+            raise FileNotFoundError(f"فایل رسانه پیدا نشد: {source}")
         if clip.start_frame < 0 or clip.source_in < 0 or clip.duration_frames < 1:
             raise ValueError(f"زمان‌بندی کلیپ معتبر نیست: {clip.name}")
-        previous_end = clip.end_frame
+        if clip.start_frame < previous_end.get(clip.track, 0):
+            raise ValueError(
+                f"هم‌پوشانی دو کلیپ روی {clip.track} هنوز پشتیبانی نمی‌شود؛ "
+                "برای ترکیب تصویر، کلیپ بالایی را روی ترک بالاتر قرار دهید."
+            )
+        if _is_still(clip) and clip.source_in:
+            raise ValueError("برای عکس ثابت، زمان ورود منبع باید صفر باشد.")
+        previous_end[clip.track] = clip.end_frame
     if int(project.duration_frames) < 1:
         raise ValueError("تایم‌لاین خالی است.")
+    if any(c.end_frame > int(project.duration_frames) for c in clips):
+        raise ValueError("پایان کلیپ از طول تایم‌لاین پروژه بیشتر است.")
     return clips
 
 
 def build_video_render_command(ffmpeg: str, project: object,
                                output_path: str | Path) -> list[str]:
-    """Build a single-pass V1 render; gaps become black and color grade is baked in."""
+    """Composite V1-V4 bottom-to-top; still images loop for their clip duration."""
     clips = validate_render_project(project)
     fps, width, height = int(project.fps), int(project.width), int(project.height)
     duration = _seconds(int(project.duration_frames), fps)
     command = [str(ffmpeg), "-y", "-hide_banner", "-loglevel", "error"]
     for clip in clips:
-        command.extend(["-ss", f"{_seconds(clip.source_in, fps):.6f}",
-                        "-i", str(Path(clip.path).expanduser().resolve())])
+        clip_duration = _seconds(clip.duration_frames, fps)
+        if _is_still(clip):
+            command.extend([
+                "-loop", "1", "-framerate", str(fps),
+                "-t", f"{clip_duration:.6f}",
+                "-i", str(Path(clip.path).expanduser().resolve()),
+            ])
+        else:
+            command.extend([
+                "-ss", f"{_seconds(clip.source_in, fps):.6f}",
+                "-i", str(Path(clip.path).expanduser().resolve()),
+            ])
 
     filters = [
-        f"color=c=black:s={width}x{height}:r={fps}:d={duration:.6f},format=yuv420p[base0]"
+        f"color=c=black:s={width}x{height}:r={fps}:d={duration:.6f},"
+        "format=rgba[base0]"
     ]
     previous = "base0"
     for index, clip in enumerate(clips):
         clip_duration = _seconds(clip.duration_frames, fps)
         start = _seconds(clip.start_frame, fps)
-        end = _seconds(clip.end_frame, fps)
         chain = (
             f"[{index}:v:0]trim=duration={clip_duration:.6f},"
             "setpts=PTS-STARTPTS,"
             f"scale={width}:{height}:force_original_aspect_ratio=decrease,"
-            f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black,"
-            f"fps={fps},setsar=1,format=yuv420p"
+            f"format=rgba,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:"
+            "color=black@0,"
+            f"setpts=PTS+{start:.6f}/TB"
         )
         grade = build_color_filter(getattr(clip, "color_grade", {}))
         if grade:
@@ -92,8 +113,8 @@ def build_video_render_command(ffmpeg: str, project: object,
         out_label = f"base{index + 1}"
         filters.append(
             f"[{previous}][v{index}]overlay=0:0:"
-            f"enable='gte(t,{start:.6f})*lt(t,{end:.6f})':"
-            f"eof_action=pass:repeatlast=0[{out_label}]"
+            "eof_action=pass:repeatlast=0:shortest=0:format=auto"
+            f"[{out_label}]"
         )
         previous = out_label
 
@@ -122,8 +143,8 @@ def _run(command: list[str], timeout_seconds: int, description: str) -> None:
 
 def render_timeline_mp4(project: object, output_path: str | Path,
                         timeout_seconds: int = 14400) -> Path:
-    """Render a V1 picture timeline and optional mixed audio, then atomically publish MP4."""
-    clips = validate_render_project(project)
+    """Render multi-layer picture timeline and optional mixed audio atomically."""
+    validate_render_project(project)
     target = Path(output_path).expanduser().resolve()
     if target.suffix.lower() != ".mp4":
         target = target.with_suffix(".mp4")
@@ -131,14 +152,16 @@ def render_timeline_mp4(project: object, output_path: str | Path,
     ffmpeg = find_ffmpeg()
     has_audio = any(
         getattr(c, "media_type", "") == "audio"
-        or (getattr(c, "media_type", "") == "video" and getattr(c, "has_audio", False))
+        or (getattr(c, "media_type", "") == "video"
+            and getattr(c, "has_audio", False)
+            and not _is_still(c))
         for c in project.clips
     )
     with tempfile.TemporaryDirectory(prefix="zenith_render_", dir=str(target.parent)) as work:
         work_dir = Path(work)
         silent_video = work_dir / "picture.mp4"
-        video_command = build_video_render_command(ffmpeg, project, silent_video)
-        _run(video_command, timeout_seconds, "رندر تصویر ناموفق بود")
+        _run(build_video_render_command(ffmpeg, project, silent_video),
+             timeout_seconds, "رندر تصویر ناموفق بود")
         if not silent_video.is_file() or silent_video.stat().st_size <= 0:
             raise RuntimeError("FFmpeg فایل ویدیویی معتبر تولید نکرد.")
 
