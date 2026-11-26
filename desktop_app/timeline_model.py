@@ -10,7 +10,7 @@ import math
 from typing import Any
 from uuid import uuid4
 
-PROJECT_SCHEMA_VERSION = 6
+PROJECT_SCHEMA_VERSION = 7
 DEFAULT_FPS = 30
 DEFAULT_VIDEO_TRACKS = ("V1", "V2", "V3", "V4")
 DEFAULT_AUDIO_TRACKS = ("A1", "A2", "A3", "A4")
@@ -37,6 +37,10 @@ class Clip:
     volume: float = 1.0
     fade_in_frames: int = 0
     fade_out_frames: int = 0
+    color_grade: dict[str, float] = field(default_factory=lambda: {
+        "exposure": 0.0, "contrast": 1.0, "saturation": 1.0,
+        "temperature": 0.0, "tint": 0.0,
+    })
 
     @property
     def end_frame(self) -> int:
@@ -57,6 +61,20 @@ class Clip:
             raise ValueError("Fade durations cannot be negative")
         if self.fade_in_frames > self.duration_frames or self.fade_out_frames > self.duration_frames:
             raise ValueError("Fade duration cannot exceed clip duration")
+        grade = dict(self.color_grade or {})
+        defaults = {"exposure": 0.0, "contrast": 1.0, "saturation": 1.0,
+                    "temperature": 0.0, "tint": 0.0}
+        bounds = {"exposure": (-4.0, 4.0), "contrast": (0.0, 2.0),
+                  "saturation": (0.0, 3.0), "temperature": (-1.0, 1.0),
+                  "tint": (-1.0, 1.0)}
+        normalized = {}
+        for key, default in defaults.items():
+            value = float(grade.get(key, default))
+            low, high = bounds[key]
+            if not math.isfinite(value) or not low <= value <= high:
+                raise ValueError(f"Invalid color grade value: {key}")
+            normalized[key] = value
+        self.color_grade = normalized
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -208,6 +226,9 @@ class TimelineProject:
             source_in=original.source_in + (at_frame - original.start_frame),
             duration_frames=original.end_frame - at_frame,
             media_type=original.media_type,
+            has_audio=original.has_audio,
+            audio_track=original.audio_track,
+            color_grade=dict(original.color_grade),
             volume=original.volume,
             fade_out_frames=original.fade_out_frames,
         )
@@ -216,6 +237,18 @@ class TimelineProject:
         original.fade_in_frames = min(original.fade_in_frames, original.duration_frames)
         self.clips.append(right)
         return original, right
+
+    def set_clip_color(self, clip_id: str, **values: float) -> Clip:
+        """Set validated, non-destructive per-clip color grading controls."""
+        clip = self.get_clip(clip_id)
+        allowed = {"exposure", "contrast", "saturation", "temperature", "tint"}
+        if set(values) - allowed:
+            raise ValueError("Unknown color grading control")
+        grade = dict(clip.color_grade)
+        grade.update({key: float(value) for key, value in values.items()})
+        clip.color_grade = grade
+        clip.validate()
+        return clip
 
     def set_clip_audio(self, clip_id: str, *, volume: float | None = None,
                         fade_in_frames: int | None = None,
@@ -298,7 +331,7 @@ class TimelineProject:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "TimelineProject":
-        """Load schema v1-v5 and migrate older path/name/track list projects."""
+        """Load schema v1-v6 and migrate older path/name/track list projects."""
         fps = int(data.get("fps", DEFAULT_FPS) or DEFAULT_FPS)
         raw_clips = data.get("clips")
         if raw_clips is None:
@@ -336,6 +369,7 @@ class TimelineProject:
                 volume=float(raw.get("volume", 1.0)),
                 fade_in_frames=max(0, int(raw.get("fade_in_frames", 0) or 0)),
                 fade_out_frames=max(0, int(raw.get("fade_out_frames", 0) or 0)),
+                color_grade=dict(raw.get("color_grade") or {}),
             ))
         return cls(
             fps=fps,
