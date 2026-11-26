@@ -1,6 +1,8 @@
 import unittest
+import subprocess
 
 from video_color import build_color_filter
+from proxy_manager import find_ffmpeg
 
 
 class VideoColorTests(unittest.TestCase):
@@ -26,6 +28,30 @@ class VideoColorTests(unittest.TestCase):
             build_color_filter({"exposure": 5})
         with self.assertRaises(ValueError):
             build_color_filter({"contrast": float("nan")})
+
+    def test_builds_tonal_curve_for_highlights_shadows_whites_blacks(self):
+        result = build_color_filter({
+            "highlights": 0.5, "shadows": -0.3, "whites": 0.2, "blacks": -0.4,
+        })
+        self.assertIn("curves=master=", result)
+        self.assertIn("0.000/", result)
+        self.assertIn("1.000/", result)
+
+    def test_tonal_curve_rejects_out_of_range_values(self):
+        with self.assertRaises(ValueError):
+            build_color_filter({"highlights": 1.1})
+
+    def test_tonal_curve_filter_is_accepted_by_ffmpeg(self):
+        ffmpeg = find_ffmpeg()
+        command = [
+            ffmpeg, "-hide_banner", "-loglevel", "error",
+            "-f", "lavfi", "-i", "testsrc2=size=64x64:rate=10:duration=0.3",
+            "-vf", build_color_filter({
+                "highlights": 0.4, "shadows": -0.3, "whites": 0.2, "blacks": -0.2,
+            }),
+            "-frames:v", "3", "-f", "null", "-",
+        ]
+        subprocess.run(command, check=True, capture_output=True, text=True, timeout=30)
 
 
 if __name__ == "__main__":
