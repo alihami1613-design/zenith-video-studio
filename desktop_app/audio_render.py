@@ -19,6 +19,7 @@ def build_audio_mix_command(
     fps: int,
     output_path: str | Path,
     timeline_duration_frames: int | None = None,
+    audio_track_settings: dict[str, dict] | None = None,
 ) -> list[str]:
     """Build an audio-only WAV mix from timeline audio clips.
 
@@ -34,9 +35,23 @@ def build_audio_mix_command(
     if not audio_clips:
         raise ValueError("هیچ کلیپ صوتی روی تایم‌لاین وجود ندارد.")
 
+    settings = audio_track_settings or {}
+    solo_tracks = {track for track, value in settings.items() if value.get("solo", False)}
+    active_tracks = []
+    for track in sorted({clip.track for clip in audio_clips}):
+        value = settings.get(track, {})
+        if value.get("muted", False):
+            continue
+        if solo_tracks and track not in solo_tracks:
+            continue
+        active_tracks.append(track)
+    audio_clips = [clip for clip in audio_clips if clip.track in active_tracks]
+    if not audio_clips:
+        raise ValueError("همه ترک‌های صوتی Mute هستند یا از حالت Solo خارج شده‌اند.")
+
     command = [str(ffmpeg), "-y", "-hide_banner", "-loglevel", "error"]
     filters: list[str] = []
-    labels: list[str] = []
+    clip_labels: dict[str, list[str]] = {}
     for index, clip in enumerate(audio_clips):
         source = Path(clip.path)
         if not source.is_file():
@@ -69,7 +84,7 @@ def build_audio_mix_command(
         chain.append(f"adelay={delay_ms}:all=1")
         label = f"a{index}"
         filters.append(f"[{index}:a:0]{','.join(chain)}[{label}]")
-        labels.append(f"[{label}]")
+        clip_labels.setdefault(clip.track, []).append(f"[{label}]")
 
     if timeline_duration_frames is not None:
         if timeline_duration_frames < 1:
@@ -79,9 +94,27 @@ def build_audio_mix_command(
         output_duration = max(
             _seconds(clip.end_frame, fps) for clip in audio_clips
         )
-    mix_inputs = "".join(labels)
+    track_labels: list[str] = []
+    for track_index, track in enumerate(active_tracks):
+        labels = clip_labels.get(track, [])
+        if not labels:
+            continue
+        track_settings = settings.get(track, {})
+        track_volume = float(track_settings.get("volume", 1.0))
+        if not math.isfinite(track_volume) or not 0.0 <= track_volume <= 2.0:
+            raise ValueError(f"تنظیم حجم ترک {track} معتبر نیست.")
+        track_label = f"track{track_index}"
+        if len(labels) == 1:
+            filters.append(f"{labels[0]}volume={track_volume:.4f}[{track_label}]")
+        else:
+            filters.append(
+                f"{''.join(labels)}amix=inputs={len(labels)}:duration=longest:"
+                f"dropout_transition=0:normalize=0,volume={track_volume:.4f}[{track_label}]"
+            )
+        track_labels.append(f"[{track_label}]")
+    mix_inputs = "".join(track_labels)
     filters.append(
-        f"{mix_inputs}amix=inputs={len(labels)}:duration=longest:"
+        f"{mix_inputs}amix=inputs={len(track_labels)}:duration=longest:"
         "dropout_transition=0:normalize=0,alimiter=limit=0.95,"
         f"apad,atrim=duration={output_duration:.6f}[mixout]"
     )
@@ -103,6 +136,7 @@ def render_audio_mix(
     output_path: str | Path,
     timeline_duration_frames: int | None = None,
     timeout_seconds: int = 7200,
+    audio_track_settings: dict[str, dict] | None = None,
 ) -> Path:
     """Render a stereo 48 kHz WAV mix with one FFmpeg process."""
     target = Path(output_path).expanduser().resolve()
@@ -110,7 +144,8 @@ def render_audio_mix(
     partial = target.with_name(target.stem + ".partial" + target.suffix)
     partial.unlink(missing_ok=True)
     command = build_audio_mix_command(
-        find_ffmpeg(), clips, fps, partial, timeline_duration_frames
+        find_ffmpeg(), clips, fps, partial, timeline_duration_frames,
+        audio_track_settings=audio_track_settings,
     )
     try:
         subprocess.run(command, capture_output=True, text=True,
