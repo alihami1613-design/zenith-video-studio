@@ -326,6 +326,7 @@
 - [x] دستگیره‌های گرافیکی Rectangle و Ellipse در Program Monitor برای جابه‌جایی و تغییر اندازه با چهار گوشه
 - [x] ثبت تغییرات هندسی در Mask Keyframe فعال و Undo یکپارچه برای کل drag
 - [x] چرخش مستقل Rectangle و Ellipse با دستگیره چرخش روی Program Monitor
+- [x] دستگیره گرافیکی Feather برای ماسک مستطیلی و بیضی؛ drag عمودی، هماهنگ با Inspector و Undo
 - [x] چرخش Polygon از Inspector و نمایش چرخیده‌شده روی پیش‌نمایش
 - [x] ذخیره Mask Rotation در پروژه و Keyframeها، درون‌یابی، Split continuity و اعتبارسنجی زاویه
 - [x] اعمال چرخش ثابت و متحرک در FFmpeg با مختصات معکوس‌شده حول مرکز ماسک (Schema v24؛ Render v16)
