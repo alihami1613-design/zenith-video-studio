@@ -221,5 +221,6 @@
 - [ ] پیش‌نمایش زنده، نمایش گرافیکی Keyframeها و منحنی Bezier قابل‌ویرایش
 - [x] Anchor Point مستقل برای pivot مقیاس‌گذاری و منحنی‌های Linear/Ease In/Ease Out/Ease In-Out
 - [x] کنترل سرعت ۰٫۲۵× تا ۴×، تغییر طول کلیپ با حفظ محدوده منبع، و هماهنگی صدای تعبیه‌شده
-- [ ] Motion Blur، Reverse و Speed Ramp/Time Remapping
+- [x] Motion Blur سبک سه‌فریمی با وزن‌دهی زمانی و حالت پیش‌فرض خاموش
+- [ ] Reverse و Speed Ramp/Time Remapping
 - [ ] رندر واقعی روی Windows و رسانه‌های کاربر
