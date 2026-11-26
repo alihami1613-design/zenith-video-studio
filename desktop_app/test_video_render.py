@@ -100,7 +100,7 @@ class VideoRenderTests(unittest.TestCase):
         joined = " ".join(command)
         self.assertIn("colorkey=0x00FF00:0.3000:0.1000", joined)
         self.assertIn("crop=w='max(2\\,trunc(iw*0.700000))'", joined)
-        self.assertIn("pad=1920:1080:(ow-iw)/2:(oh-ih)/2:color=black@0", joined)
+        self.assertIn("pad=1920:1080:x='trunc(1920*0.100000)':y='trunc(1080*0.200000)':color=black@0", joined)
 
     def test_disabled_chroma_key_and_mask_keep_render_pipeline_light(self):
         with tempfile.TemporaryDirectory() as folder:
