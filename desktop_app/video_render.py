@@ -12,7 +12,7 @@ from proxy_manager import find_ffmpeg
 from video_color import build_color_filter
 from speed_ramp import build_speed_segments
 
-RENDER_VERSION = "timeline-h264-v14-animated-mask"
+RENDER_VERSION = "timeline-h264-v15-polygon-overlay"
 STILL_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".webp", ".tif", ".tiff"}
 
 
