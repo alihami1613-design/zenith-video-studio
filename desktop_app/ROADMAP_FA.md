@@ -212,13 +212,13 @@
 - [ ] رندر آزمایشی روی Windows با رسانه‌های واقعی
 
 
-## وضعیت Transform و Keyframe — مرحله ششم
+## وضعیت Transform و Keyframe — مرحله ششم و هفتم
 - [x] مدل ذخیره‌سازی Keyframe برای Position X/Y، Scale و Rotation (schema v11)
 - [x] کنترل ثبت Keyframe در Inspector در موقعیت فعلی Playhead
 - [x] درون‌یابی خطی بین نقاط و تولید expressionهای FFmpeg
 - [x] حفظ/جابجایی Keyframeها در Split و Trim
 - [x] تست اعتبارسنجی، ذخیره/بازیابی و ساخت فیلتر رندر
-- [ ] پیش‌نمایش زنده و نمایش گرافیکی Keyframeها
-- [ ] منحنی Bezier/Easing و Anchor Point مستقل
+- [ ] پیش‌نمایش زنده، نمایش گرافیکی Keyframeها و منحنی Bezier قابل‌ویرایش
+- [x] Anchor Point مستقل برای pivot مقیاس‌گذاری و منحنی‌های Linear/Ease In/Ease Out/Ease In-Out
 - [ ] Motion Blur و کنترل سرعت/Time Remapping
 - [ ] رندر واقعی روی Windows و رسانه‌های کاربر
