@@ -1,4 +1,6 @@
 """Tests for bounded low-resolution Speed Ramp preview generation."""
+import shutil
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -7,6 +9,7 @@ from speed_ramp_preview import (
     _preview_segments, build_speed_ramp_preview_command,
     create_speed_ramp_preview,
 )
+from proxy_manager import find_ffmpeg
 
 
 class SpeedRampPreviewTests(unittest.TestCase):
@@ -49,6 +52,32 @@ class SpeedRampPreviewTests(unittest.TestCase):
                     "ffmpeg", source, Path(folder) / "preview.mp4",
                     0, 30, 30, [{"frame": 0, "rate": 1.0}], 30, 10,
                 )
+
+
+    @unittest.skipUnless(shutil.which("ffmpeg"), "FFmpeg is required for preview integration")
+    def test_real_ffmpeg_speed_ramp_preview_decodes(self):
+        ffmpeg = find_ffmpeg()
+        with tempfile.TemporaryDirectory(prefix="zenith_speed_preview_") as folder:
+            root = Path(folder)
+            source = root / "source.mp4"
+            generated = subprocess.run(
+                [ffmpeg, "-y", "-hide_banner", "-loglevel", "error",
+                 "-f", "lavfi", "-i", "testsrc2=size=96x64:rate=30:duration=3",
+                 "-an", "-c:v", "libx264", "-preset", "ultrafast",
+                 "-threads", "1", str(source)],
+                capture_output=True, text=True, timeout=30)
+            self.assertEqual(generated.returncode, 0, generated.stderr[-2000:])
+            preview = create_speed_ramp_preview(
+                source, 0, 90, 30,
+                [{"frame": 0, "rate": 0.5}, {"frame": 89, "rate": 2.0}],
+                15, 30, cache_dir=root / "cache",
+            )
+            self.assertGreater(preview.stat().st_size, 0)
+            decoded = subprocess.run(
+                [ffmpeg, "-hide_banner", "-loglevel", "error", "-i", str(preview),
+                 "-f", "null", "-"],
+                capture_output=True, text=True, timeout=30)
+            self.assertEqual(decoded.returncode, 0, decoded.stderr[-2000:])
 
 
 if __name__ == "__main__":
