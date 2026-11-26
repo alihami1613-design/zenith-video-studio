@@ -1,4 +1,4 @@
-"""Tests for conservative H.264 timeline render command generation."""
+"""Tests for CPU-conscious multi-layer H.264 timeline render command generation."""
 import tempfile
 import unittest
 from pathlib import Path
@@ -36,21 +36,39 @@ class VideoRenderTests(unittest.TestCase):
         joined = " ".join(command)
         self.assertIn("scale=1920:1080:force_original_aspect_ratio=decrease", joined)
         self.assertIn("color=c=black:s=1920x1080:r=30:d=4.000000", joined)
-        self.assertIn("enable='gte(t,3.000000)*lt(t,4.000000)'", joined)
+        self.assertIn("setpts=PTS+3.000000/TB", joined)
         self.assertIn("exposure=exposure=1.000", joined)
         self.assertIn("libx264", joined)
         self.assertIn("-crf 22", joined)
         self.assertIn("-threads 2", joined)
+        self.assertIn("-filter_complex_threads 1", joined)
         self.assertIn("-pix_fmt yuv420p", joined)
 
-    def test_rejects_multiple_video_tracks(self):
+    def test_composites_upper_track_over_lower_track(self):
+        with tempfile.TemporaryDirectory() as folder:
+            project = self.project(folder)
+            upper = Path(folder) / "upper.mp4"
+            upper.touch()
+            overlay = SimpleNamespace(
+                path=str(upper), name="overlay", track="V2", clip_id="overlay",
+                media_type="video", start_frame=30, source_in=0,
+                duration_frames=30, end_frame=60, color_grade={},
+            )
+            project.clips.append(overlay)
+            command = build_video_render_command("ffmpeg", project, "out.mp4")
+        joined = " ".join(command)
+        self.assertIn("setpts=PTS+1.000000/TB", joined)
+        self.assertIn("[base1][v1]overlay", joined)
+        self.assertIn("[base2][v2]overlay", joined)
+
+    def test_allows_overlap_between_different_video_tracks(self):
         with tempfile.TemporaryDirectory() as folder:
             project = self.project(folder)
             project.clips[1].track = "V2"
-            with self.assertRaisesRegex(ValueError, "V1"):
-                validate_render_project(project)
+            clips = validate_render_project(project)
+            self.assertEqual(len(clips), 2)
 
-    def test_rejects_overlapping_v1_clips(self):
+    def test_rejects_overlap_on_same_track(self):
         with tempfile.TemporaryDirectory() as folder:
             project = self.project(folder)
             project.clips[1].start_frame = 50
@@ -58,14 +76,16 @@ class VideoRenderTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "هم‌پوشانی"):
                 validate_render_project(project)
 
-    def test_rejects_still_image_inputs_until_looped_image_support_exists(self):
+    def test_still_image_is_looped_for_its_timeline_duration(self):
         with tempfile.TemporaryDirectory() as folder:
             project = self.project(folder)
             image = Path(folder) / "still.png"
             image.touch()
             project.clips[0].path = str(image)
-            with self.assertRaisesRegex(ValueError, "تصویر ثابت"):
-                validate_render_project(project)
+            command = build_video_render_command("ffmpeg", project, "out.mp4")
+        joined = " ".join(command)
+        self.assertIn("-loop 1 -framerate 30 -t 2.000000", joined)
+        self.assertIn("color=black@0", joined)
 
     def test_rejects_unsupported_frame_rate_and_missing_media(self):
         with tempfile.TemporaryDirectory() as folder:
