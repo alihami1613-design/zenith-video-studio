@@ -20,7 +20,7 @@ class SpeedRampPreviewTests(unittest.TestCase):
             30, 60,
         )
         self.assertTrue(segments)
-        self.assertAlmostEqual(segments[0]["source_start_frames"], 22.58, delta=0.15)
+        self.assertAlmostEqual(segments[0]["source_start_frames"], 22.6, delta=0.02)
         self.assertAlmostEqual(
             sum(item["source_duration_frames"] for item in segments), 37.75, delta=0.5
         )
