@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-PROJECT_SCHEMA_VERSION = 13
+PROJECT_SCHEMA_VERSION = 14
 DEFAULT_FPS = 30
 DEFAULT_VIDEO_TRACKS = ("V1", "V2", "V3", "V4")
 DEFAULT_AUDIO_TRACKS = ("A1", "A2", "A3", "A4")
@@ -63,6 +63,7 @@ class Clip:
     anchor_x: float = 0.5
     anchor_y: float = 0.5
     playback_rate: float = 1.0
+    motion_blur: bool = False
     color_grade: dict[str, float] = field(default_factory=lambda: {
         "exposure": 0.0, "contrast": 1.0, "saturation": 1.0,
         "temperature": 0.0, "tint": 0.0,
@@ -356,6 +357,15 @@ class TimelineProject:
         clip.validate()
         return clip
 
+    def set_clip_motion_blur(self, clip_id: str, enabled: bool) -> Clip:
+        """Enable a lightweight three-frame temporal blend on a video clip."""
+        clip = self.get_clip(clip_id)
+        if clip.media_type != "video" or not clip.track.startswith("V"):
+            raise ValueError("Motion Blur requires a video-track clip")
+        clip.motion_blur = bool(enabled)
+        clip.validate()
+        return clip
+
     def set_clip_speed(self, clip_id: str, playback_rate: float) -> Clip:
         """Change playback rate while preserving the source-media span."""
         clip = self.get_clip(clip_id)
@@ -538,6 +548,7 @@ class TimelineProject:
                 anchor_x=float(raw.get("anchor_x", 0.5)),
                 anchor_y=float(raw.get("anchor_y", 0.5)),
                 playback_rate=float(raw.get("playback_rate", 1.0)),
+                motion_blur=bool(raw.get("motion_blur", False)),
                 color_grade=dict(raw.get("color_grade") or {}),
             ))
         return cls(
