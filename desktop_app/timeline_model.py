@@ -94,6 +94,7 @@ class Clip:
     video_fade_out_frames: int = 0
     transition_in_frames: int = 0
     transition_in_type: str = "dissolve"
+    blend_mode: str = "normal"
     transform_keyframes: list[dict[str, float]] = field(default_factory=list)
     anchor_x: float = 0.5
     anchor_y: float = 0.5
@@ -177,6 +178,8 @@ class Clip:
         self.transform_keyframes = normalized_keys
         if self.transition_in_type not in {"dissolve", "wipe_left", "push_left"}:
             raise ValueError("Unsupported video transition type")
+        if self.blend_mode not in {"normal", "multiply", "screen", "addition", "overlay"}:
+            raise ValueError("Unsupported video blend mode")
         if any(value > self.duration_frames for value in (self.fade_in_frames, self.fade_out_frames, self.video_fade_in_frames, self.video_fade_out_frames, self.transition_in_frames)):
             raise ValueError("Fade duration cannot exceed clip duration")
         grade = dict(self.color_grade or {})
@@ -406,6 +409,7 @@ class TimelineProject:
             fade_out_frames=original.fade_out_frames,
             video_fade_out_frames=original.video_fade_out_frames,
             transition_in_frames=0,
+            blend_mode=original.blend_mode,
             transform_keyframes=[
                 dict(key, frame=int(key["frame"]) - (at_frame - original.start_frame))
                 for key in original.transform_keyframes
