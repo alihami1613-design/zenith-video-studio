@@ -797,12 +797,12 @@ class ZenithEditor(QMainWindow):
                                  self.timeline_project.playhead_frame - clip.start_frame))
         current = max((key for key in clip.transform_keyframes if key["frame"] <= local_frame),
                       key=lambda item: item["frame"], default=None)
-        if current:
-            defaults = {"x": 0.0, "y": 0.0, "scale": 1.0, "rotation": 0.0}
-            for key, control in self.transform_controls.items():
-                blocker = QSignalBlocker(control)
-                control.setValue(float(current.get(key, defaults[key])))
-                del blocker
+        defaults = {"x": 0.0, "y": 0.0, "scale": 1.0, "rotation": 0.0}
+        values = current or defaults
+        for key, control in self.transform_controls.items():
+            blocker = QSignalBlocker(control)
+            control.setValue(float(values.get(key, defaults[key])))
+            del blocker
         self.transform_keyframes_label.setText(
             f"{len(clip.transform_keyframes)} Keyframe | فریم فعلی کلیپ: {local_frame}"
         )
@@ -1024,6 +1024,7 @@ class ZenithEditor(QMainWindow):
         self.timeline_project.playhead_frame = max(0, frame)
         seconds = self.timeline_project.playhead_frame // max(1, self.timeline_project.fps)
         self.playhead_label.setText(f"مکان‌نما: {seconds // 60:02d}:{seconds % 60:02d}")
+        self._sync_transform_controls()
         self.timeline_widget.refresh()
 
     def _push_undo(self) -> None:
