@@ -308,6 +308,9 @@ class ZenithEditor(QMainWindow):
             return
         item = self.media_items[row]
         source = Path(item["path"])
+        if item.get("probe_state") == "pending":
+            self.statusBar().showMessage("ابتدا باید بررسی مشخصات رسانه تمام شود")
+            return
         metadata = item.get("metadata") or {}
         if source.suffix.lower() in {".png", ".jpg", ".jpeg"} or not metadata.get("has_video"):
             self.statusBar().showMessage("برای این فایل ویدیویی، ساخت Proxy لازم یا پشتیبانی‌شده نیست")
