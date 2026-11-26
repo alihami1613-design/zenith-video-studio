@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import Qt, QUrl, QSignalBlocker
+from PySide6.QtCore import Qt, QUrl, QSignalBlocker, QObject, Signal, QRunnable, QThreadPool
 from PySide6.QtGui import QAction, QFont
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtMultimediaWidgets import QVideoWidget
@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 
 from timeline_model import TimelineProject
 from timeline_widget import TimelineWidget
+from media_probe import probe_media, duration_to_frames
 
 APP_NAME = "ZENITH Desktop"
 PROJECT_VERSION = 2
@@ -33,11 +34,33 @@ def format_time(milliseconds: int) -> str:
     return f"{seconds // 60:02d}:{seconds % 60:02d}"
 
 
+class MediaProbeSignals(QObject):
+    finished = Signal(str, object, str)
+
+
+class MediaProbeTask(QRunnable):
+    """Run metadata probing off the GUI thread; it never decodes media frames."""
+
+    def __init__(self, path: str) -> None:
+        super().__init__()
+        self.path = path
+        self.signals = MediaProbeSignals()
+
+    def run(self) -> None:
+        try:
+            result = probe_media(self.path)
+            self.signals.finished.emit(self.path, result, "")
+        except Exception as exc:
+            self.signals.finished.emit(self.path, None, str(exc))
+
+
 class ZenithEditor(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.project_path: Path | None = None
         self.media_items: list[dict[str, Any]] = []
+        self._probe_pool = QThreadPool.globalInstance()
+        self._probe_tasks: list[MediaProbeTask] = []
         self.timeline_project = TimelineProject()
         self.player = QMediaPlayer(self)
         self.audio_output = QAudioOutput(self)
@@ -309,12 +332,45 @@ class ZenithEditor(QMainWindow):
             path = str(Path(raw_path).resolve())
             if path in known:
                 continue
-            record = {"path": path, "name": Path(path).name}
+            record = {
+                "path": path, "name": Path(path).name,
+                "metadata": None, "probe_state": "pending",
+            }
             self.media_items.append(record)
-            self.media_list.addItem(QListWidgetItem(record["name"]))
+            self.media_list.addItem(QListWidgetItem(record["name"] + "  •  در حال بررسی"))
+            task = MediaProbeTask(path)
+            task.signals.finished.connect(self._media_probe_finished)
+            self._probe_tasks.append(task)
+            self._probe_pool.start(task)
             known.add(path)
             added += 1
         self.statusBar().showMessage(f"{added} فایل جدید وارد شد")
+
+    def _media_probe_finished(self, path: str, metadata: object, error: str) -> None:
+        for index, item in enumerate(self.media_items):
+            if item.get("path") != path:
+                continue
+            if metadata is not None:
+                item["metadata"] = metadata
+                item["probe_state"] = "ready"
+                details = []
+                seconds = metadata.get("duration_seconds")
+                if seconds:
+                    details.append(format_time(round(seconds * 1000)))
+                if metadata.get("width") and metadata.get("height"):
+                    details.append(f"{metadata['width']}×{metadata['height']}")
+                if metadata.get("fps"):
+                    details.append(f"{metadata['fps']:.2f} fps")
+                if metadata.get("has_audio"):
+                    details.append("صدا")
+                label = item["name"] + ("  •  " + " | ".join(details) if details else "  •  مشخصات خوانده شد")
+                self.media_list.item(index).setText(label)
+            else:
+                item["probe_state"] = "failed"
+                item["probe_error"] = error
+                self.media_list.item(index).setText(item["name"] + "  •  خطا در خواندن مشخصات")
+                self.statusBar().showMessage(f"خواندن مشخصات {item['name']} ناموفق بود: {error}")
+            break
 
     def add_selected_to_timeline(self, *_: Any) -> None:
         row = self.media_list.currentRow()
@@ -323,20 +379,34 @@ class ZenithEditor(QMainWindow):
         source = self.media_items[row]
         extension = Path(source["path"]).suffix.lower()
         track = "A1" if extension in AUDIO_EXTENSIONS else "V1"
+        metadata = source.get("metadata")
+        if source.get("probe_state") == "pending":
+            self.statusBar().showMessage("در حال خواندن مدت واقعی فایل؛ کمی صبر کنید و دوباره افزودن را بزنید.")
+            return
+        duration_frames = duration_to_frames(
+            (metadata or {}).get("duration_seconds"), self.timeline_project.fps
+        )
+        if duration_frames is None:
+            if extension in {".png", ".jpg", ".jpeg"}:
+                duration_frames = 5 * self.timeline_project.fps
+            else:
+                self.statusBar().showMessage("مدت واقعی این فایل خوانده نشد؛ برای جلوگیری از تایم‌لاین اشتباه، اضافه نشد.")
+                return
         existing = self.timeline_project.clips_on_track(track)
         start = max((clip.end_frame for clip in existing), default=0)
         try:
             self.timeline_project.add_clip(
                 path=source["path"], name=source["name"], track=track,
-                start_frame=start, duration_frames=150,
+                start_frame=start, duration_frames=duration_frames,
                 media_type="audio" if track.startswith("A") else "video",
             )
         except ValueError as exc:
             QMessageBox.warning(self, "افزودن کلیپ", str(exc))
             return
         self._refresh_timeline()
+        seconds = duration_frames / self.timeline_project.fps
         self.statusBar().showMessage(
-            f"{source['name']} اضافه شد؛ طول اولیه کلیپ ۵ ثانیه موقت است و بعداً با مدت واقعی جایگزین می‌شود."
+            f"{source['name']} اضافه شد | مدت: {format_time(round(seconds * 1000))}"
         )
 
     def _selected_clip_id(self) -> str | None:
