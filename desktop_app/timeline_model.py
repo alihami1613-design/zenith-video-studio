@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-PROJECT_SCHEMA_VERSION = 23
+PROJECT_SCHEMA_VERSION = 24
 DEFAULT_FPS = 30
 DEFAULT_VIDEO_TRACKS = ("V1", "V2", "V3", "V4")
 DEFAULT_AUDIO_TRACKS = ("A1", "A2", "A3", "A4")
@@ -141,6 +141,7 @@ class Clip:
     mask_y: float = 0.0
     mask_width: float = 1.0
     mask_height: float = 1.0
+    mask_rotation: float = 0.0
     mask_shape: str = "rectangle"
     mask_feather_px: float = 0.0
     mask_points: list[list[float]] = field(default_factory=lambda: [[0.5, 0.1], [0.9, 0.9], [0.1, 0.9]])
@@ -246,6 +247,10 @@ class Clip:
             if not math.isfinite(value) or not 0.0 <= value <= 1.0:
                 raise ValueError(f"{name} must be between 0 and 1")
             setattr(self, name, value)
+        rotation = float(self.mask_rotation)
+        if not math.isfinite(rotation) or not -3600.0 <= rotation <= 3600.0:
+            raise ValueError("Mask rotation must be between -3600 and 3600 degrees")
+        self.mask_rotation = rotation
         if self.mask_x + self.mask_width > 1.0 + 1e-9 or self.mask_y + self.mask_height > 1.0 + 1e-9:
             raise ValueError("Mask rectangle must remain inside the frame")
         if self.mask_width <= 0.0 or self.mask_height <= 0.0:
@@ -272,11 +277,14 @@ class Clip:
         for raw_key in self.mask_keyframes or []:
             frame = int(raw_key.get("frame", 0))
             values = {key: float(raw_key.get(key, default)) for key, default in
-                      (("x", self.mask_x), ("y", self.mask_y), ("width", self.mask_width), ("height", self.mask_height))}
+                      (("x", self.mask_x), ("y", self.mask_y), ("width", self.mask_width),
+                       ("height", self.mask_height), ("rotation", self.mask_rotation))}
             if frame < 0 or frame >= self.duration_frames or frame <= previous_mask_frame:
                 raise ValueError("Mask keyframes must be ordered inside clip duration")
             if not all(math.isfinite(value) for value in values.values()):
                 raise ValueError("Mask keyframe values must be finite")
+            if not -3600.0 <= values["rotation"] <= 3600.0:
+                raise ValueError("Mask keyframe rotation must be between -3600 and 3600 degrees")
             if not (0.0 <= values["x"] < 1.0 and 0.0 <= values["y"] < 1.0
                     and 0.0 < values["width"] <= 1.0 and 0.0 < values["height"] <= 1.0
                     and values["x"] + values["width"] <= 1.0 + 1e-9
@@ -554,6 +562,7 @@ class TimelineProject:
             mask_y=split_mask_values["y"],
             mask_width=split_mask_values["width"],
             mask_height=split_mask_values["height"],
+            mask_rotation=split_mask_values["rotation"],
             mask_shape=original.mask_shape,
             mask_feather_px=original.mask_feather_px,
             mask_points=[list(point) for point in original.mask_points],
@@ -841,6 +850,7 @@ class TimelineProject:
                 mask_y=float(raw.get("mask_y", 0.0)),
                 mask_width=float(raw.get("mask_width", 1.0)),
                 mask_height=float(raw.get("mask_height", 1.0)),
+                mask_rotation=float(raw.get("mask_rotation", 0.0)),
                 mask_shape=str(raw.get("mask_shape", "rectangle") or "rectangle"),
                 mask_feather_px=float(raw.get("mask_feather_px", 0.0)),
                 mask_points=[list(point) for point in raw.get("mask_points", [[0.5, 0.1], [0.9, 0.9], [0.1, 0.9]])],
