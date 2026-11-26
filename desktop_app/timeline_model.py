@@ -145,9 +145,14 @@ class Clip:
             if not 0.1 <= values["scale"] <= 4.0 or not -3600.0 <= values["rotation"] <= 3600.0:
                 raise ValueError("Transform scale or rotation is outside supported limits")
             easing = str(raw_key.get("ease", "linear"))
-            if easing not in {"linear", "ease_in", "ease_out", "ease_in_out"}:
+            if easing not in {"linear", "ease_in", "ease_out", "ease_in_out", "bezier"}:
                 raise ValueError("Unsupported keyframe easing")
-            normalized_keys.append({"frame": frame, **values, "ease": easing})
+            bezier_y1 = float(raw_key.get("bezier_y1", 0.0))
+            bezier_y2 = float(raw_key.get("bezier_y2", 1.0))
+            if not math.isfinite(bezier_y1) or not math.isfinite(bezier_y2) or not 0.0 <= bezier_y1 <= 1.0 or not 0.0 <= bezier_y2 <= 1.0:
+                raise ValueError("Bezier handles must be between 0 and 1")
+            normalized_keys.append({"frame": frame, **values, "ease": easing,
+                                    "bezier_y1": bezier_y1, "bezier_y2": bezier_y2})
             previous_frame = frame
         self.transform_keyframes = normalized_keys
         if self.transition_in_type not in {"dissolve", "wipe_left", "push_left"}:
