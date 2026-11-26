@@ -30,6 +30,20 @@ class VideoRenderTests(unittest.TestCase):
         )
 
 
+    def test_animated_polygon_keyframes_build_per_vertex_expressions(self):
+        from video_render import _keyframe_expression, build_animated_mask_shape_expression
+        keys = [{"frame": 0, "ease": "linear", "value": 0.1},
+                {"frame": 30, "ease": "linear", "value": 0.9}]
+        x_expr = _keyframe_expression(keys, "value", 0.1, 30, "T")
+        expression = build_animated_mask_shape_expression(
+            "polygon", "0", "0", "1", "1",
+            [[0.1, 0.1], [0.8, 0.1], [0.5, 0.8]],
+            (0.0, 0.0, 1.0, 1.0),
+            [[x_expr, x_expr], ["0.8", "0.1"], ["0.5", "0.8"]],
+        )
+        self.assertIn("T", expression)
+        self.assertIn("0.900000", expression)
+
     def test_builds_keyframed_position_scale_and_rotation(self):
         with tempfile.TemporaryDirectory() as folder:
             project = self.project(folder)
