@@ -223,7 +223,7 @@ def build_video_render_command(ffmpeg: str, project: object,
                 f",crop=w='max(2\\,trunc(iw*{mask_w:.6f}))':"
                 f"h='max(2\\,trunc(ih*{mask_h:.6f}))':"
                 f"x='trunc(iw*{mask_x:.6f})':y='trunc(ih*{mask_y:.6f})',"
-                f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=black@0"
+                f"pad={width}:{height}:x='trunc({width}*{mask_x:.6f})':y='trunc({height}*{mask_y:.6f})':color=black@0"
             )
         fade_in = int(getattr(clip, "video_fade_in_frames", 0))
         fade_out = int(getattr(clip, "video_fade_out_frames", 0))
