@@ -343,7 +343,7 @@ def build_video_render_command(ffmpeg: str, project: object,
                 )
                 chain += (
                     f",geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':"
-                    f"a='if({mask_expr}\,alpha(X,Y)\,0)'"
+                    f"a='if({mask_invert}\\,if({mask_expr}\\,0\\,alpha(X,Y))\\,if({mask_expr}\\,alpha(X,Y)\\,0))'"
                 )
             feather = float(getattr(clip, "mask_feather_px", 0.0))
             if feather > 0.0:
