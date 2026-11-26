@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-PROJECT_SCHEMA_VERSION = 15
+PROJECT_SCHEMA_VERSION = 16
 DEFAULT_FPS = 30
 DEFAULT_VIDEO_TRACKS = ("V1", "V2", "V3", "V4")
 DEFAULT_AUDIO_TRACKS = ("A1", "A2", "A3", "A4")
@@ -63,6 +63,7 @@ class Clip:
     anchor_x: float = 0.5
     anchor_y: float = 0.5
     playback_rate: float = 1.0
+    speed_ramp: list[dict[str, float]] = field(default_factory=list)
     motion_blur: bool = False
     reverse_playback: bool = False
     color_grade: dict[str, float] = field(default_factory=lambda: {
@@ -91,6 +92,18 @@ class Clip:
         if not math.isfinite(rate) or not 0.25 <= rate <= 4.0:
             raise ValueError('Playback rate must be between 0.25x and 4.0x')
         self.playback_rate = rate
+        normalized_ramp = []
+        previous_ramp_frame = -1
+        for raw_point in self.speed_ramp or []:
+            frame = int(raw_point.get("frame", 0))
+            ramp_rate = float(raw_point.get("rate", 1.0))
+            if frame < 0 or frame >= self.duration_frames or frame <= previous_ramp_frame:
+                raise ValueError("Speed-ramp keyframes must be ordered inside clip duration")
+            if not math.isfinite(ramp_rate) or not 0.25 <= ramp_rate <= 4.0:
+                raise ValueError("Speed-ramp rate must be between 0.25x and 4.0x")
+            normalized_ramp.append({"frame": frame, "rate": ramp_rate})
+            previous_ramp_frame = frame
+        self.speed_ramp = normalized_ramp
         for axis in ('anchor_x', 'anchor_y'):
             value = float(getattr(self, axis))
             if not math.isfinite(value) or not 0.0 <= value <= 1.0:
@@ -311,6 +324,9 @@ class TimelineProject:
             anchor_y=original.anchor_y,
             playback_rate=original.playback_rate,
             motion_blur=original.motion_blur,
+            speed_ramp=[dict(point, frame=int(point['frame']) - (at_frame - original.start_frame))
+                        for point in original.speed_ramp
+                        if int(point['frame']) >= (at_frame - original.start_frame)],
             reverse_playback=original.reverse_playback,
             volume=original.volume,
             fade_out_frames=original.fade_out_frames,
@@ -330,6 +346,7 @@ class TimelineProject:
         original.video_fade_in_frames = min(original.video_fade_in_frames, original.duration_frames)
         original.transition_in_frames = min(original.transition_in_frames, original.duration_frames)
         original.transform_keyframes = [dict(k) for k in original.transform_keyframes if k["frame"] < original.duration_frames]
+        original.speed_ramp = [dict(point) for point in original.speed_ramp if point["frame"] < original.duration_frames]
         original.fade_in_frames = min(original.fade_in_frames, original.duration_frames)
         self.clips.append(right)
         return original, right
@@ -375,6 +392,15 @@ class TimelineProject:
         if clip.media_type != "video" or not clip.track.startswith("V"):
             raise ValueError("Reverse requires a video-track clip")
         clip.reverse_playback = bool(enabled)
+        clip.validate()
+        return clip
+
+    def set_clip_speed_ramp(self, clip_id: str, keyframes: list[dict[str, float]]) -> Clip:
+        """Set clip-local speed-ramp points; rendering support is handled by the render pipeline."""
+        clip = self.get_clip(clip_id)
+        if clip.media_type != "video" or not clip.track.startswith("V"):
+            raise ValueError("Speed Ramp requires a video-track clip")
+        clip.speed_ramp = [dict(point) for point in keyframes]
         clip.validate()
         return clip
 
@@ -569,6 +595,7 @@ class TimelineProject:
                 anchor_x=float(raw.get("anchor_x", 0.5)),
                 anchor_y=float(raw.get("anchor_y", 0.5)),
                 playback_rate=float(raw.get("playback_rate", 1.0)),
+                speed_ramp=[dict(point) for point in raw.get("speed_ramp", [])],
                 motion_blur=bool(raw.get("motion_blur", False)),
                 reverse_playback=bool(raw.get("reverse_playback", False)),
                 color_grade=dict(raw.get("color_grade") or {}),
