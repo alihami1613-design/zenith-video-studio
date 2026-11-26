@@ -206,5 +206,14 @@ class AudioRenderCommandTests(unittest.TestCase):
         self.assertIn("atrim=start=1.000000:duration=5.000000", joined)
         self.assertIn("atempo=0.500000", joined)
 
+
+    def test_reverse_embedded_audio_is_reversed(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / "reverse-camera.mp4"
+            source.touch()
+            clip = self.make_clip(source, clip_id="reverse-camera", track="V1",
+                                  media_type="video", has_audio=True, reverse_playback=True)
+            command = build_audio_mix_command("ffmpeg", [clip], 30, "mix.wav")
+        self.assertIn("areverse", " ".join(command))
 if __name__ == "__main__":
     unittest.main()
