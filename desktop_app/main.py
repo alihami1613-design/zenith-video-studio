@@ -523,7 +523,7 @@ class ZenithEditor(QMainWindow):
         self.mask_rotation_spin.setRange(-3600.0, 3600.0)
         self.mask_rotation_spin.setSingleStep(1.0)
         self.mask_rotation_spin.setDecimals(1)
-        self.mask_rotation_spin.valueChanged.connect(self._clip_effects_changed)
+        self.mask_rotation_spin.valueChanged.connect(self._mask_rotation_control_changed)
         inspector_layout.addWidget(self.mask_rotation_spin)
         inspector_layout.addWidget(QLabel("Mask Feather (pixels)"))
         self.mask_feather_spin = QDoubleSpinBox()
@@ -1179,6 +1179,7 @@ class ZenithEditor(QMainWindow):
             self.statusBar().showMessage(str(exc))
             return
         self.timeline_widget.refresh()
+        self._sync_transform_controls()
         self.statusBar().showMessage(
             "Chroma Key / Mask ذخیره شد؛ در رندر نهایی اعمال می‌شود، نه پیش‌نمایش زنده."
         )
@@ -1326,6 +1327,44 @@ class ZenithEditor(QMainWindow):
             self.statusBar().showMessage("محدوده ماسک تغییر کرد؛ کل حرکت با یک Undo برمی‌گردد.")
         except (KeyError, TypeError, ValueError) as exc:
             self.statusBar().showMessage(f"تغییر محدوده ماسک نامعتبر است: {exc}")
+
+    def _mask_rotation_control_changed(self, rotation: float) -> None:
+        clip_id = self.timeline_widget.canvas.selected_clip_id
+        if not clip_id:
+            return
+        try:
+            clip = self.timeline_project.get_clip(clip_id)
+            frame = max(0, min(clip.duration_frames - 1,
+                               self.timeline_project.playhead_frame - clip.start_frame))
+            self._push_undo()
+            if clip.mask_keyframes:
+                values = mask_values_at(clip.mask_keyframes, frame, {
+                    "x": clip.mask_x, "y": clip.mask_y,
+                    "width": clip.mask_width, "height": clip.mask_height,
+                    "rotation": clip.mask_rotation,
+                })
+                key = next((item for item in clip.mask_keyframes
+                            if int(item["frame"]) == frame), None)
+                if key is None:
+                    key = {"frame": frame, **values, "ease": "linear"}
+                    if clip.mask_shape == "polygon":
+                        key["points"] = mask_points_at(clip.mask_keyframes, frame, clip.mask_points)
+                key["rotation"] = float(rotation)
+                keys = [dict(item) for item in clip.mask_keyframes
+                        if int(item["frame"]) != frame]
+                keys.append(key)
+                clip.mask_keyframes = sorted(keys, key=lambda item: int(item["frame"]))
+            else:
+                clip.mask_rotation = float(rotation)
+            clip.validate()
+            self.timeline_widget.refresh()
+            self._sync_transform_controls()
+            self.statusBar().showMessage("چرخش ماسک ثبت شد؛ در رندر نهایی اعمال می‌شود.")
+        except (KeyError, TypeError, ValueError) as exc:
+            if self._undo_stack:
+                self._undo_stack.pop()
+            self._update_history_buttons()
+            self.statusBar().showMessage(f"چرخش ماسک ثبت نشد: {exc}")
 
     def _mask_rotation_changed(self, rotation: float) -> None:
         clip_id = self.timeline_widget.canvas.selected_clip_id
