@@ -44,6 +44,23 @@ class VideoRenderTests(unittest.TestCase):
         self.assertIn("-filter_complex_threads 1", joined)
         self.assertIn("-pix_fmt yuv420p", joined)
 
+    def test_renders_visual_fades_as_alpha_filters(self):
+        with tempfile.TemporaryDirectory() as folder:
+            project = self.project(folder)
+            project.clips[0].video_fade_in_frames = 15
+            project.clips[0].video_fade_out_frames = 30
+            command = build_video_render_command("ffmpeg", project, "out.mp4")
+        joined = " ".join(command)
+        self.assertIn("fade=t=in:st=0:d=0.500000:alpha=1", joined)
+        self.assertIn("fade=t=out:st=1.000000:d=1.000000:alpha=1", joined)
+
+    def test_rejects_visual_fade_longer_than_clip(self):
+        with tempfile.TemporaryDirectory() as folder:
+            project = self.project(folder)
+            project.clips[0].video_fade_in_frames = 61
+            with self.assertRaisesRegex(ValueError, "Fade تصویری"):
+                validate_render_project(project)
+
     def test_composites_upper_track_over_lower_track(self):
         with tempfile.TemporaryDirectory() as folder:
             project = self.project(folder)
