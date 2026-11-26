@@ -53,6 +53,13 @@ def build_speed_segments(
             "rate": 1.0, "source_start_frames": 0.0,
             "source_duration_frames": float(duration_frames),
         }]
+    if all(abs(float(point["rate"]) - float(points[0]["rate"])) < 1e-9 for point in points):
+        rate = float(points[0]["rate"])
+        return [{
+            "timeline_start_frame": 0, "timeline_frames": duration_frames,
+            "rate": rate, "source_start_frames": 0.0,
+            "source_duration_frames": duration_frames * rate,
+        }]
 
     boundaries = sorted({0, duration_frames, *(point["frame"] for point in points)})
     segments: list[dict[str, float | int]] = []
