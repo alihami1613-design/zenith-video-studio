@@ -6,6 +6,7 @@ from urllib.parse import quote
 
 import imageio_ffmpeg
 import requests
+from PIL import Image, ImageDraw, ImageFilter
 import streamlit as st
 
 st.set_page_config(page_title="ZENITH Documentary Editor", page_icon="🎬", layout="wide")
@@ -26,9 +27,9 @@ mode = st.radio(
     horizontal=True,
 )
 st.info(
-    "حالت خودکار، ۱۲ تصویر متفاوت و مرتبط را از Wikimedia Commons دریافت می‌کند "
-    "و با حرکت نرم دوربین به ۱۲ سکانس ۵ ثانیه‌ای تبدیل می‌کند. این روش ویدئوی واقعیِ تولیدشده با مدل AI نیست؛ "
-    "برای فوتیج ویدئویی واقعی، حالت دوم را انتخاب کن."
+    "حالت خودکار از گرافیک‌های سینمایی یکپارچه و اختصاصی استفاده می‌کند؛ "
+    "بدون عکس‌های تصادفی اینترنتی، برش ناخواسته یا زوم آزاردهنده. "
+    "برای فوتیج واقعی، حالت دوم را انتخاب کن."
 )
 
 videos = []
@@ -82,109 +83,108 @@ SCENES = [
     ("human silhouette digital technology sunrise", "پایان — آینده مشترک"),
 ]
 
-def fetch_commons_image(query, used_titles, folder, index):
-    api = "https://commons.wikimedia.org/w/api.php"
-    headers = {"User-Agent": "ZENITHDocumentaryStudio/1.1 (educational video editor; contact: studio@example.com)"}
-    # Try the original cinematic phrase first, then progressively broader searches.
-    alternatives = [
-        query.replace(" cinematic", "").replace(" close up", ""),
-        query.replace("portrait", "").replace("cinematic", "").strip(),
-        "human face portrait" if "human" in query or "face" in query else query.split()[0],
-        "portrait photography" if "human" in query or "face" in query else query.replace(" artificial intelligence", ""),
-        query.split()[0],
-    ]
-    tried = set()
-    last_error = None
-    for search_term in alternatives:
-        search_term = " ".join(search_term.split())
-        if not search_term or search_term.lower() in tried:
-            continue
-        tried.add(search_term.lower())
-        params = {
-            "action": "query",
-            "generator": "search",
-            "gsrsearch": search_term,
-            "gsrnamespace": 6,
-            "gsrlimit": 35,
-            "prop": "imageinfo",
-            "iiprop": "url",
-            "iiurlwidth": 1920,
-            "format": "json",
-        }
-        try:
-            response = requests.get(api, params=params, headers=headers, timeout=35)
-            response.raise_for_status()
-            pages = response.json().get("query", {}).get("pages", {})
-            candidates = sorted(pages.values(), key=lambda p: p.get("index", 999))
-            for page in candidates:
-                title = page.get("title", "")
-                info = (page.get("imageinfo") or [{}])[0]
-                url = info.get("thumburl") or info.get("url")
-                if not url or title in used_titles:
-                    continue
-                if not url.lower().split("?")[0].endswith((".jpg", ".jpeg", ".png", ".webp")):
-                    continue
-                image_response = requests.get(url, headers=headers, timeout=45)
-                image_response.raise_for_status()
-                if len(image_response.content) < 8000:
-                    continue
-                path = folder / f"source_{index:02d}.jpg"
-                path.write_bytes(image_response.content)
-                used_titles.add(title)
-                source_url = page.get("canonicalurl") or (
-                    "https://commons.wikimedia.org/wiki/" + quote(title.replace(" ", "_"))
-                )
-                return path, title, source_url
-        except requests.RequestException as exc:
-            last_error = exc
-            continue
-    # Curated Commons file fallbacks for subjects whose search wording is unreliable.
-    curated_titles = []
-    qlow = query.lower()
-    if "neural" in qlow or "network" in qlow:
-        curated_titles = [
-            "File:Artificial Neural Network.jpg",
-            "File:Neural Network.svg",
-            "File:Deep neural networks diagram.png",
-        ]
-    elif "robot" in qlow:
-        curated_titles = ["File:Honda ASIMO.jpg", "File:Robot.jpg"]
-    for file_title in curated_titles:
-        try:
-            params = {
-                "action": "query", "titles": file_title, "prop": "imageinfo",
-                "iiprop": "url", "iiurlwidth": 1920, "format": "json",
-            }
-            response = requests.get(api, params=params, headers=headers, timeout=35)
-            response.raise_for_status()
-            pages = response.json().get("query", {}).get("pages", {})
-            for page in pages.values():
-                title = page.get("title", "")
-                info = (page.get("imageinfo") or [{}])[0]
-                url = info.get("thumburl") or info.get("url")
-                if not url or title in used_titles:
-                    continue
-                if not url.lower().split("?")[0].endswith((".jpg", ".jpeg", ".png", ".webp")):
-                    continue
-                image_response = requests.get(url, headers=headers, timeout=45)
-                image_response.raise_for_status()
-                if len(image_response.content) < 8000:
-                    continue
-                path = folder / f"source_{index:02d}.jpg"
-                path.write_bytes(image_response.content)
-                used_titles.add(title)
-                source_url = page.get("canonicalurl") or (
-                    "https://commons.wikimedia.org/wiki/" + quote(title.replace(" ", "_"))
-                )
-                return path, title, source_url
-        except requests.RequestException as exc:
-            last_error = exc
-            continue
-    if last_error and not tried:
-        raise last_error
-    raise RuntimeError(
-        "پس از جست‌وجو و فایل‌های جایگزین، تصویر مناسبی در Wikimedia Commons پیدا نشد: " + query
-    )
+def make_scene_art(index, label, folder):
+    """Create a consistent 1080p cinematic motion-graphics plate; no external stock photos."""
+    W, H = 1920, 1080
+    img = Image.new("RGB", (W, H))
+    px = img.load()
+    # Deep navy gradient with a restrained teal light source.
+    for y in range(H):
+        t = y / H
+        for x in range(W):
+            glow = max(0.0, 1 - (((x - 1370) / 1150) ** 2 + ((y - 430) / 850) ** 2) ** 0.5)
+            px[x, y] = (
+                int(5 + 5 * glow),
+                int(10 + 34 * glow + 4 * t),
+                int(22 + 43 * glow + 8 * t),
+            )
+    d = ImageDraw.Draw(img, "RGBA")
+    # Fine technical grid and framing.
+    for x in range(80, W, 80):
+        d.line((x, 0, x, H), fill=(105, 180, 205, 17), width=1)
+    for y in range(80, H, 80):
+        d.line((0, y, W, y), fill=(105, 180, 205, 17), width=1)
+    d.rounded_rectangle((64, 58, W-64, H-58), radius=26, outline=(150, 205, 220, 65), width=2)
+    # Abstract focal artwork varies by chapter, while retaining the same visual language.
+    cx, cy = 1210, 500
+    teal, cyan, gold = (60, 220, 210, 220), (95, 175, 255, 210), (230, 190, 115, 220)
+    if index in (0, 1, 7, 10):
+        # Human / machine profile motif.
+        d.ellipse((cx-220, cy-250, cx+220, cy+190), outline=cyan if index in (1,10) else teal, width=5)
+        d.arc((cx-150, cy-180, cx+150, cy+180), 205, 520, fill=gold, width=7)
+        d.ellipse((cx-70, cy-55, cx-48, cy-33), fill=gold)
+        d.arc((cx-80, cy-10, cx+110, cy+135), 15, 155, fill=teal, width=5)
+        for k in range(9):
+            yy = cy-200+k*48
+            d.line((cx+250, yy, cx+360, yy), fill=(90,180,220,100), width=2)
+    elif index in (3, 4):
+        # Neural network: clean nodes and deliberate connections.
+        layers = [[(cx-330, cy-180+i*90) for i in range(5)],
+                  [(cx-100, cy-230+i*76) for i in range(7)],
+                  [(cx+150, cy-180+i*90) for i in range(5)],
+                  [(cx+360, cy-100+i*100) for i in range(3)]]
+        for left, right in zip(layers, layers[1:]):
+            for p in left:
+                for q in right:
+                    d.line((p, q), fill=(70,175,220,75), width=3)
+        for li, layer in enumerate(layers):
+            for j, (x,y) in enumerate(layer):
+                r = 15 if li in (0,3) else 19
+                d.ellipse((x-r,y-r,x+r,y+r), fill=gold if (j+li)%4==0 else cyan, outline=(220,245,255,220), width=2)
+    elif index in (5,):
+        # Medical scan / diagnostic rings.
+        for r in (95,155,215,275):
+            d.ellipse((cx-r,cy-r,cx+r,cy+r), outline=(70,190,220,150), width=3)
+        d.line((cx-300,cy,cx+300,cy), fill=teal, width=4)
+        d.line((cx,cy-300,cx,cy+300), fill=teal, width=4)
+        d.polygon([(cx,cy-110),(cx+28,cy-25),(cx+115,cy),(cx+28,cy+25),(cx,cy+110),(cx-28,cy+25),(cx-115,cy),(cx-28,cy-25)], outline=gold)
+    elif index in (6,):
+        # Industrial robotic arm.
+        pts=[(cx-240,cy+210),(cx-110,cy+60),(cx+30,cy+110),(cx+190,cy-120),(cx+300,cy-190)]
+        d.line(pts, fill=cyan, width=38, joint="curve")
+        for x,y in pts:
+            d.ellipse((x-34,y-34,x+34,y+34), fill=(12,35,58,255), outline=gold, width=8)
+        d.line((cx+300,cy-190,cx+390,cy-270), fill=gold, width=16)
+    elif index in (8,):
+        # Future of work: modular connected panels.
+        for row in range(3):
+            for col in range(4):
+                x=cx-330+col*175; y=cy-190+row*155
+                d.rounded_rectangle((x,y,x+125,y+105), radius=15, outline=cyan if (row+col)%2 else gold, width=4)
+                d.line((x+25,y+72,x+95,y+72), fill=(140,210,230,160), width=4)
+    elif index in (9,):
+        # Smart city skyline.
+        for j in range(9):
+            x=cx-390+j*95; h=180+(j*73)%260
+            d.rectangle((x,cy+220-h,x+65,cy+220), outline=cyan, width=4, fill=(15,38,62,170))
+            for wy in range(cy+245-h,cy+190,48):
+                d.line((x+16,wy,x+49,wy), fill=gold, width=4)
+        d.arc((cx-420,cy-340,cx+420,cy+500), 195, 345, fill=teal, width=4)
+    else:
+        # Connected human-AI future motif.
+        d.ellipse((cx-260,cy-250,cx+260,cy+270), outline=teal, width=5)
+        for j in range(24):
+            import math
+            ang = j * math.pi / 12
+            x = cx + int(220*math.cos(ang)); y=cy+int(220*math.sin(ang))
+            d.ellipse((x-9,y-9,x+9,y+9), fill=gold)
+            d.line((cx,cy,x,y), fill=(70,180,220,70), width=2)
+    # Restrained title treatment and chapter marker.
+    d.text((125, 170), "ZENITH BEYOND", fill=(205,220,228,210), stroke_width=0)
+    d.text((125, 270), f"{index+1:02d} / 12", fill=(225,190,120,235))
+    d.text((125, 355), label, fill=(240,245,248,245), stroke_width=0)
+    d.line((125, 420, 510, 420), fill=(80,205,205,210), width=4)
+    d.text((125, 470), "HUMAN  ×  ARTIFICIAL INTELLIGENCE", fill=(150,185,205,210))
+    # Soft vignette, not a zoom or crop.
+    vignette = Image.new("L", (W,H), 0)
+    vd = ImageDraw.Draw(vignette)
+    vd.ellipse((-300,-250,W+300,H+250), fill=215)
+    vignette = vignette.filter(ImageFilter.GaussianBlur(150))
+    img.putalpha(vignette)
+    out = folder / f"scene_art_{index:02d}.png"
+    img.convert("RGB").save(out, quality=95)
+    return out
+
 
 if create:
     if mode == "استفاده از کلیپ‌های ویدئویی خودم" and not videos:
@@ -204,29 +204,19 @@ if create:
             scene_files = []
 
             if mode == "ساخت خودکار ۱۲ سکانس تصویری":
-                used_titles = set()
                 for i, (query, label) in enumerate(SCENES):
-                    status.write(f"دریافت سکانس {i + 1} از ۱۲: {label}")
-                    image_path, title, source_url = fetch_commons_image(query, used_titles, work, i)
+                    status.write(f"طراحی سکانس {i + 1} از ۱۲: {label}")
+                    image_path = make_scene_art(i, label, work)
                     clip_path = work / f"scene_{i:02d}.mp4"
-                    vf = (
-                        "scale=2200:1238:force_original_aspect_ratio=increase,"
-                        "crop=2200:1238,"
-                        "zoompan=z='min(zoom+0.0007,1.08)':"
-                        "x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
-                        "d=1:s=1920x1080:fps=30,"
-                        "fade=t=in:st=0:d=0.25,fade=t=out:st=4.7:d=0.25,"
-                        "setsar=1,format=yuv420p"
-                    )
+                    vf = "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,format=yuv420p"
                     subprocess.run(
                         [ffmpeg, "-y", "-loop", "1", "-framerate", "30", "-i", str(image_path),
                          "-vf", vf, "-t", "5", "-an", "-c:v", "libx264",
-                         "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p",
+                         "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
                          str(clip_path)],
                         check=True, capture_output=True, text=True, timeout=180,
                     )
                     scene_files.append(clip_path)
-                    sources.append({"scene": label, "commons_title": title, "source": source_url})
                     progress.progress(int((i + 1) / 12 * 75))
             else:
                 for i, uploaded in enumerate(videos):
@@ -306,11 +296,9 @@ if create:
                 mime="video/mp4",
                 use_container_width=True,
             )
-            if sources:
-                with st.expander("منابع تصاویر و اعتباردهی"):
-                    for item in sources:
-                        st.markdown(f"- **{item['scene']}** — [{item['commons_title']}]({item['source']})")
-                    st.caption("تصاویر از Wikimedia Commons دریافت شده‌اند؛ شرایط مجوز هر فایل در صفحه منبع آن درج شده است.")
+            if mode == "ساخت خودکار ۱۲ سکانس تصویری":
+                st.caption("این نسخه از گرافیک‌های اختصاصی تولیدشده در استودیو استفاده می‌کند، نه عکس‌های استوک.")
+
     except requests.RequestException as e:
         st.error("دریافت تصویر از Wikimedia Commons ناموفق بود. اتصال اینترنت سرویس را بررسی کن.")
         st.code(str(e))
@@ -324,4 +312,4 @@ if create:
         st.error(f"خطای غیرمنتظره: {e}")
 
 st.markdown("---")
-st.caption("ZENITH BEYOND — Beyond the Visible | Auto storyboard v2")
+st.caption("ZENITH BEYOND — Beyond the Visible | Cinematic Motion Graphics v3")
