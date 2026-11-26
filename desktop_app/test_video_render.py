@@ -397,5 +397,34 @@ class VideoRenderTests(unittest.TestCase):
             reverse = " ".join(build_video_render_command("ffmpeg", project, "reverse.mp4"))
         self.assertNotIn("reverse,setpts", normal)
         self.assertIn("reverse,setpts", reverse)
+
+    def test_rotated_mask_expression_uses_inverse_rotation_for_every_shape(self):
+        for shape in ("rectangle", "ellipse", "polygon"):
+            expression = build_animated_mask_shape_expression(
+                shape, "0.1", "0.2", "0.6", "0.5",
+                [[0.2, 0.2], [0.8, 0.2], [0.5, 0.8]],
+                (0.1, 0.2, 0.6, 0.5), rotation_expr="35",
+            )
+            self.assertIn("cos((35*PI/180))", expression)
+            self.assertIn("sin((35*PI/180))", expression)
+
+    def test_mask_rotation_is_applied_in_static_and_animated_render_paths(self):
+        with tempfile.TemporaryDirectory() as folder:
+            project = self.project(folder)
+            clip = project.clips[0]
+            clip.mask_enabled = True
+            clip.mask_shape = "rectangle"
+            clip.mask_rotation = 22.5
+            static_command = " ".join(build_video_render_command("ffmpeg", project, "static.mp4"))
+            clip.mask_keyframes = [
+                {"frame": 0, "rotation": 0.0, "x": 0.1, "y": 0.1, "width": 0.6, "height": 0.5},
+                {"frame": 30, "rotation": 45.0, "x": 0.1, "y": 0.1, "width": 0.6, "height": 0.5},
+            ]
+            animated_command = " ".join(build_video_render_command("ffmpeg", project, "animated.mp4"))
+        self.assertIn("cos(", static_command)
+        self.assertNotIn("crop=w=", static_command)
+        self.assertIn("cos(", animated_command)
+        self.assertIn("T", animated_command)
+
 if __name__ == "__main__":
     unittest.main()
