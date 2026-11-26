@@ -39,7 +39,7 @@ class TimelineModelTests(unittest.TestCase):
         restored = TimelineProject.from_dict(project.to_dict())
         saved = restored.get_clip(clip.clip_id)
         self.assertEqual(len(saved.transform_keyframes), 2)
-        self.assertEqual(restored.to_dict()["schema_version"], 21)
+        self.assertEqual(restored.to_dict()["schema_version"], 22)
         left, right = restored.split_clip(clip.clip_id, 60)
         self.assertEqual(left.transform_keyframes[0]["frame"], 0)
         self.assertEqual(right.transform_keyframes[0]["frame"], 30)
@@ -135,6 +135,33 @@ class TimelineModelTests(unittest.TestCase):
         right.mask_shape = "polygon"
         right.mask_points = [[0.2, 0.2], [0.8, 0.8]]
         with self.assertRaisesRegex(ValueError, "3 to 8 points"):
+            right.validate()
+
+    def test_mask_keyframes_round_trip_interpolation_split_and_validation(self):
+        project = TimelineProject()
+        clip = project.add_clip("animated-mask.mp4", "animated-mask.mp4", duration_frames=120)
+        clip.mask_enabled = True
+        clip.mask_keyframes = [
+            {"frame": 0, "x": 0.0, "y": 0.0, "width": 1.0, "height": 1.0, "ease": "linear"},
+            {"frame": 90, "x": 0.2, "y": 0.1, "width": 0.6, "height": 0.7, "ease": "ease_in_out"},
+        ]
+        clip.validate()
+        restored = TimelineProject.from_dict(project.to_dict())
+        saved = restored.get_clip(clip.clip_id)
+        self.assertEqual(len(saved.mask_keyframes), 2)
+        self.assertAlmostEqual(mask_values_at(
+            saved.mask_keyframes, 45,
+            {"x": saved.mask_x, "y": saved.mask_y, "width": saved.mask_width, "height": saved.mask_height},
+        )["x"], 0.1)
+        left, right = restored.split_clip(clip.clip_id, 45)
+        self.assertEqual([key["frame"] for key in left.mask_keyframes], [0])
+        self.assertEqual([key["frame"] for key in right.mask_keyframes], [0, 45])
+        self.assertAlmostEqual(right.mask_keyframes[0]["x"], 0.1)
+        right.mask_keyframes[0]["frame"] = 45
+        with self.assertRaisesRegex(ValueError, "ordered inside clip duration"):
+            right.validate()
+        right.mask_keyframes = [{"frame": 0, "x": 0.8, "y": 0.0, "width": 0.5, "height": 0.5}]
+        with self.assertRaisesRegex(ValueError, "remain inside the frame"):
             right.validate()
 
     def test_mask_shape_defaults_for_schema_v20_projects(self):
@@ -284,7 +311,7 @@ class TimelineModelTests(unittest.TestCase):
         ]})
         self.assertEqual(project.clips[0].video_fade_in_frames, 0)
         self.assertEqual(project.clips[0].video_fade_out_frames, 0)
-        self.assertEqual(project.to_dict()["schema_version"], 21)
+        self.assertEqual(project.to_dict()["schema_version"], 22)
 
     def test_cross_dissolve_persists_and_split_does_not_duplicate_it(self):
         project = TimelineProject()
@@ -368,7 +395,7 @@ class TimelineModelTests(unittest.TestCase):
         self.assertAlmostEqual(saved.volume, 0.8)
         self.assertEqual(saved.fade_in_frames, 30)
         self.assertEqual(saved.fade_out_frames, 45)
-        self.assertEqual(project.to_dict()["schema_version"], 21)
+        self.assertEqual(project.to_dict()["schema_version"], 22)
 
     def test_audio_track_mixer_round_trip(self):
         project = TimelineProject()
