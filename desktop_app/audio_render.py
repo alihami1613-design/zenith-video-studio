@@ -20,6 +20,7 @@ def build_audio_mix_command(
     output_path: str | Path,
     timeline_duration_frames: int | None = None,
     audio_track_settings: dict[str, dict] | None = None,
+    audio_ducking: dict | None = None,
 ) -> list[str]:
     """Build an audio-only WAV mix from timeline audio clips.
 
@@ -95,6 +96,7 @@ def build_audio_mix_command(
             _seconds(clip.end_frame, fps) for clip in audio_clips
         )
     track_labels: list[str] = []
+    track_label_map: dict[str, str] = {}
     for track_index, track in enumerate(active_tracks):
         labels = clip_labels.get(track, [])
         if not labels:
@@ -112,6 +114,33 @@ def build_audio_mix_command(
                 f"dropout_transition=0:normalize=0,volume={track_volume:.4f}[{track_label}]"
             )
         track_labels.append(f"[{track_label}]")
+        track_label_map[track] = track_label
+
+    duck = audio_ducking or {}
+    if duck.get("enabled", False):
+        voice_track = str(duck.get("voice_track", "A1"))
+        music_track = str(duck.get("music_track", "A2"))
+        reduction_db = float(duck.get("reduction_db", 12.0))
+        attack_ms = int(duck.get("attack_ms", 20))
+        release_ms = int(duck.get("release_ms", 500))
+        if voice_track == music_track or voice_track not in active_tracks or music_track not in active_tracks:
+            raise ValueError("برای Ducking باید ترک گویندگی و موسیقی جداگانه فعال و بدون Mute/Solo محدودکننده باشند.")
+        if not math.isfinite(reduction_db) or not 0.0 <= reduction_db <= 24.0:
+            raise ValueError("شدت Ducking باید بین صفر تا ۲۴ دسی‌بل باشد.")
+        if not 1 <= attack_ms <= 500 or not 20 <= release_ms <= 3000:
+            raise ValueError("زمان Attack یا Release برای Ducking معتبر نیست.")
+        ratio = max(1.0, 10 ** (reduction_db / 20.0))
+        ducked_label = "musicducked"
+        filters.append(
+            f"[{track_label_map[music_track]}][{track_label_map[voice_track]}]"
+            f"sidechaincompress=threshold=0.025:ratio={ratio:.4f}:"
+            f"attack={attack_ms}:release={release_ms}[{ducked_label}]"
+        )
+        track_labels = [
+            f"[{ducked_label}]" if track == f"[{track_label_map[music_track]}]" else track
+            for track in track_labels
+        ]
+
     mix_inputs = "".join(track_labels)
     filters.append(
         f"{mix_inputs}amix=inputs={len(track_labels)}:duration=longest:"
@@ -137,6 +166,7 @@ def render_audio_mix(
     timeline_duration_frames: int | None = None,
     timeout_seconds: int = 7200,
     audio_track_settings: dict[str, dict] | None = None,
+    audio_ducking: dict | None = None,
 ) -> Path:
     """Render a stereo 48 kHz WAV mix with one FFmpeg process."""
     target = Path(output_path).expanduser().resolve()
@@ -146,6 +176,7 @@ def render_audio_mix(
     command = build_audio_mix_command(
         find_ffmpeg(), clips, fps, partial, timeline_duration_frames,
         audio_track_settings=audio_track_settings,
+        audio_ducking=audio_ducking,
     )
     try:
         subprocess.run(command, capture_output=True, text=True,
