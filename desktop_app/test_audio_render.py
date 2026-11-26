@@ -164,6 +164,20 @@ class AudioRenderCommandTests(unittest.TestCase):
                     },
                 )
 
+    def test_includes_embedded_video_audio_on_selected_audio_bus(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / "camera.mp4"
+            source.touch()
+            clip = self.make_clip(
+                source, clip_id="camera", track="V1", media_type="video",
+                has_audio=True, audio_track="A3",
+            )
+            command = build_audio_mix_command("ffmpeg", [clip], 30, "mix.wav")
+        joined = " ".join(command)
+        self.assertIn("camera.mp4", joined)
+        self.assertIn("[0:a:0]", joined)
+        self.assertIn("track0", joined)
+
     def test_sorts_clips_by_timeline_position(self):
         with tempfile.TemporaryDirectory() as folder:
             first = Path(folder) / "first.wav"
