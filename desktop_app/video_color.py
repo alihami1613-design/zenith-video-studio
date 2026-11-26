@@ -15,6 +15,9 @@ DEFAULT_GRADE = {
     "shadows": 0.0,
     "whites": 0.0,
     "blacks": 0.0,
+    "wheel_shadows_r": 0.0, "wheel_shadows_g": 0.0, "wheel_shadows_b": 0.0,
+    "wheel_midtones_r": 0.0, "wheel_midtones_g": 0.0, "wheel_midtones_b": 0.0,
+    "wheel_highlights_r": 0.0, "wheel_highlights_g": 0.0, "wheel_highlights_b": 0.0,
 }
 
 
@@ -32,6 +35,9 @@ def build_color_filter(grade: Mapping[str, float] | None) -> str:
         "shadows": (-1.0, 1.0),
         "whites": (-1.0, 1.0),
         "blacks": (-1.0, 1.0),
+        "wheel_shadows_r": (-1.0, 1.0), "wheel_shadows_g": (-1.0, 1.0), "wheel_shadows_b": (-1.0, 1.0),
+        "wheel_midtones_r": (-1.0, 1.0), "wheel_midtones_g": (-1.0, 1.0), "wheel_midtones_b": (-1.0, 1.0),
+        "wheel_highlights_r": (-1.0, 1.0), "wheel_highlights_g": (-1.0, 1.0), "wheel_highlights_b": (-1.0, 1.0),
     }
     for key, (low, high) in bounds.items():
         value = float(values[key])
@@ -48,16 +54,30 @@ def build_color_filter(grade: Mapping[str, float] | None) -> str:
         )
     temperature = values["temperature"]
     tint = values["tint"]
-    if temperature != 0 or tint != 0:
+    wheel_keys = (
+        "wheel_shadows_r", "wheel_shadows_g", "wheel_shadows_b",
+        "wheel_midtones_r", "wheel_midtones_g", "wheel_midtones_b",
+        "wheel_highlights_r", "wheel_highlights_g", "wheel_highlights_b",
+    )
+    if temperature != 0 or tint != 0 or any(values[key] != 0 for key in wheel_keys):
+        # Global temperature/tint are layered on top of the three tonal wheels.
         red = temperature * 0.15
         blue = -temperature * 0.15
         green_magenta = -tint * 0.15
-        filters.append(
-            "colorbalance="
-            f"rs={red:.3f}:gs={green_magenta:.3f}:bs={blue:.3f}:"
-            f"rm={red:.3f}:gm={green_magenta:.3f}:bm={blue:.3f}:"
-            f"rh={red:.3f}:gh={green_magenta:.3f}:bh={blue:.3f}"
-        )
+        channels = {
+            "rs": values["wheel_shadows_r"] + red,
+            "gs": values["wheel_shadows_g"] + green_magenta,
+            "bs": values["wheel_shadows_b"] + blue,
+            "rm": values["wheel_midtones_r"] + red,
+            "gm": values["wheel_midtones_g"] + green_magenta,
+            "bm": values["wheel_midtones_b"] + blue,
+            "rh": values["wheel_highlights_r"] + red,
+            "gh": values["wheel_highlights_g"] + green_magenta,
+            "bh": values["wheel_highlights_b"] + blue,
+        }
+        filters.append("colorbalance=" + ":".join(
+            f"{key}={value * 0.15:.3f}" for key, value in channels.items()
+        ))
     # Five-point master curve adds inexpensive luma-oriented tonal controls.
     # Keep output points strictly increasing for extreme combined slider values.
     tonal = {key: values[key] for key in ("highlights", "shadows", "whites", "blacks")}
