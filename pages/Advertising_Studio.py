@@ -19,6 +19,32 @@ html, body, [class*="css"] { direction: rtl; text-align: right; }
 st.title("🎬 ADVERTISING STUDIO")
 st.caption("استودیوی ساخت تیزر تبلیغاتی | Luxury • Cinematic • High Energy")
 st.info("این بخش مستقل است؛ فایل‌ها و پروژه‌های LUNAVERA و ZENITH را تغییر نمی‌دهد.")
+st.markdown("### 🤖 AI AD DIRECTOR — کارگردان هوشمند تبلیغات")
+st.caption("AI برای ایده، ساختار تیزر، سبک تدوین، متن تبلیغ و پیشنهاد صحنه‌ها. این بخش از API سازگار با OpenAI استفاده می‌کند؛ کلید فقط در نشست فعلی وارد می‌شود و در فایل پروژه ذخیره نمی‌شود.")
+with st.expander("🧠 طراحی تدوین با هوش مصنوعی", expanded=True):
+    ai_brief = st.text_area("محصول / هدف / مخاطب / حس موردنظر را توضیح بده", placeholder="مثلاً تبلیغ مبل تخت‌خواب‌شو، مخاطب خانواده‌ها، سبک لوکس و مدرن، هدف فروش ...", height=110, key="ai_ad_brief")
+    ai_key = st.text_input("API Key (ارائه‌دهنده سازگار با OpenAI)", type="password", key="ai_ad_api_key")
+    ai_endpoint = st.text_input("API Base URL", value="https://api.openai.com/v1", key="ai_ad_endpoint")
+    ai_model = st.text_input("Model", value="gpt-4o-mini", key="ai_ad_model")
+    if st.button("✨ طراحی برنامه تدوین با AI", key="ai_ad_plan_btn", use_container_width=True):
+        if not ai_brief.strip() or not ai_key.strip():
+            st.warning("شرح تبلیغ و API Key را وارد کن.")
+        else:
+            try:
+                ai_url = ai_endpoint.strip().rstrip("/") + "/chat/completions"
+                ai_prompt = """You are an expert commercial video editor and creative director. Create a practical edit plan for an advertising video based on the user's brief. Respond in Persian, compact but useful, with these sections: concept, shot-by-shot timeline (time ranges, shot type, camera movement, transition), color grade, motion graphics and exact on-screen copy, sound design/music mixing, editing notes. Make a clean professional plan. Do not claim to analyze footage that was not provided. Brief: """ + ai_brief.strip()
+                ai_response = requests.post(ai_url, headers={"Authorization": "Bearer " + ai_key.strip(), "Content-Type": "application/json"}, json={"model": ai_model.strip(), "messages":[{"role":"system","content":"You are a professional advertising director and editor. Provide executable, realistic advice. Answer in Persian."},{"role":"user","content":ai_prompt}],"temperature":0.7}, timeout=90)
+                ai_response.raise_for_status()
+                ai_text = ai_response.json()["choices"][0]["message"]["content"]
+                st.session_state["ai_ad_plan_result"] = ai_text
+                st.success("برنامه تدوین AI آماده شد.")
+            except Exception as ai_err:
+                st.error("دریافت پاسخ AI ناموفق بود.")
+                st.code(str(ai_err)[:1500])
+    if st.session_state.get("ai_ad_plan_result"):
+        st.markdown("#### برنامه تدوین پیشنهادی")
+        st.markdown(st.session_state["ai_ad_plan_result"])
+
 
 st.markdown("### ۱. ویدئوهای تبلیغاتی")
 videos = st.file_uploader(
