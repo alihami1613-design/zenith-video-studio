@@ -6,6 +6,8 @@ on:
       - desktop-editor-foundation
     paths:
       - "desktop_app/timeline_model.py"
+      - "desktop_app/media_probe.py"
+      - "desktop_app/test_media_probe.py"
       - "desktop_app/test_timeline_model.py"
       - ".github/workflows/desktop-model-tests.yml"
   pull_request:
