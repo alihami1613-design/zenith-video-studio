@@ -522,6 +522,22 @@ class ZenithEditor(QMainWindow):
         self.mask_points_edit.setToolTip("۳ تا ۸ نقطه با مختصات نسبی تصویر؛ نمونه: 0.5,0.1; 0.9,0.9; 0.1,0.9")
         self.mask_points_edit.editingFinished.connect(self._clip_effects_changed)
         inspector_layout.addWidget(self.mask_points_edit)
+        inspector_layout.addWidget(QLabel("Mask Animation — frame داخل کلیپ"))
+        self.mask_keyframe_frame_spin = QSpinBox()
+        self.mask_keyframe_frame_spin.setRange(0, 1000000)
+        self.mask_keyframe_frame_spin.setToolTip("شماره فریم نسبت به ابتدای کلیپ انتخاب‌شده")
+        inspector_layout.addWidget(self.mask_keyframe_frame_spin)
+        self.add_mask_keyframe_button = QPushButton("ثبت وضعیت ماسک در این فریم")
+        self.add_mask_keyframe_button.setEnabled(False)
+        self.add_mask_keyframe_button.clicked.connect(self._add_mask_keyframe)
+        inspector_layout.addWidget(self.add_mask_keyframe_button)
+        self.delete_mask_keyframe_button = QPushButton("حذف Keyframe ماسک در این فریم")
+        self.delete_mask_keyframe_button.setEnabled(False)
+        self.delete_mask_keyframe_button.clicked.connect(self._delete_mask_keyframe)
+        inspector_layout.addWidget(self.delete_mask_keyframe_button)
+        self.mask_keyframes_label = QLabel("Mask Keyframes: —")
+        self.mask_keyframes_label.setWordWrap(True)
+        inspector_layout.addWidget(self.mask_keyframes_label)
 
 
         transform_heading = QLabel("حرکت و Transform با Keyframe")
@@ -1142,6 +1158,55 @@ class ZenithEditor(QMainWindow):
             "Chroma Key / Mask ذخیره شد؛ در رندر نهایی اعمال می‌شود، نه پیش‌نمایش زنده."
         )
 
+    def _add_mask_keyframe(self) -> None:
+        clip_id = self.timeline_widget.canvas.selected_clip_id
+        if not clip_id:
+            return
+        try:
+            clip = self.timeline_project.get_clip(clip_id)
+            frame = self.mask_keyframe_frame_spin.value()
+            if frame >= clip.duration_frames:
+                raise ValueError("فریم Keyframe باید داخل محدوده کلیپ باشد")
+            self._push_undo()
+            key = {
+                "frame": frame,
+                "x": self.mask_controls["mask_x"].value(),
+                "y": self.mask_controls["mask_y"].value(),
+                "width": self.mask_controls["mask_width"].value(),
+                "height": self.mask_controls["mask_height"].value(),
+                "ease": "linear",
+            }
+            keys = [dict(item) for item in clip.mask_keyframes if int(item["frame"]) != frame]
+            keys.append(key)
+            clip.mask_keyframes = sorted(keys, key=lambda item: int(item["frame"]))
+            clip.validate()
+        except (KeyError, ValueError) as exc:
+            if self._undo_stack:
+                self._undo_stack.pop()
+            self._update_history_buttons()
+            self.statusBar().showMessage(f"Mask Keyframe ثبت نشد: {exc}")
+            return
+        self.timeline_widget.refresh()
+        self._sync_transform_controls()
+        self.statusBar().showMessage(f"Mask Keyframe در فریم {frame} ثبت شد؛ حرکت در رندر نهایی اعمال می‌شود.")
+
+    def _delete_mask_keyframe(self) -> None:
+        clip_id = self.timeline_widget.canvas.selected_clip_id
+        if not clip_id:
+            return
+        clip = self.timeline_project.get_clip(clip_id)
+        frame = self.mask_keyframe_frame_spin.value()
+        if not any(int(item["frame"]) == frame for item in clip.mask_keyframes):
+            self.statusBar().showMessage("در این فریم Mask Keyframe وجود ندارد.")
+            return
+        self._push_undo()
+        clip.mask_keyframes = [dict(item) for item in clip.mask_keyframes if int(item["frame"]) != frame]
+        clip.validate()
+        self.timeline_widget.refresh()
+        self._sync_transform_controls()
+        self.statusBar().showMessage(f"Mask Keyframe فریم {frame} حذف شد.")
+
+
     def _sync_transform_controls(self) -> None:
         clip_id = self.timeline_widget.canvas.selected_clip_id
         clip = None
@@ -1152,6 +1217,9 @@ class ZenithEditor(QMainWindow):
                 pass
         enabled = bool(clip and clip.media_type == "video" and clip.track.startswith("V"))
         self.add_transform_keyframe_button.setEnabled(enabled)
+        self.add_mask_keyframe_button.setEnabled(enabled)
+        self.delete_mask_keyframe_button.setEnabled(enabled)
+        self.mask_keyframe_frame_spin.setEnabled(enabled)
         self.blend_mode_combo.setEnabled(enabled)
         effect_controls = [
             self.chroma_key_checkbox, self.chroma_key_color_edit,
@@ -1194,6 +1262,18 @@ class ZenithEditor(QMainWindow):
                 f"{float(point[0]):.3f},{float(point[1]):.3f}" for point in clip.mask_points
             ))
             del blocker
+            local_frame = max(0, min(clip.duration_frames - 1,
+                self.timeline_project.playhead_frame - clip.start_frame))
+            blocker = QSignalBlocker(self.mask_keyframe_frame_spin)
+            self.mask_keyframe_frame_spin.setValue(local_frame)
+            del blocker
+            key_frames = [int(key["frame"]) for key in clip.mask_keyframes]
+            self.mask_keyframes_label.setText(
+                "Mask Keyframes: " + (", ".join(str(frame) for frame in key_frames) if key_frames else "—")
+            )
+            self.delete_mask_keyframe_button.setEnabled(enabled and local_frame in key_frames)
+        else:
+            self.mask_keyframes_label.setText("Mask Keyframes: —")
         if enabled:
             blend_index = self.blend_mode_combo.findData(str(getattr(clip, "blend_mode", "normal")))
             if blend_index >= 0:
