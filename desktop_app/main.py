@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
     QListWidgetItem, QSplitter, QFrame, QStatusBar, QSlider, QCheckBox, QComboBox, QProgressBar, QDoubleSpinBox
 )
 
-from timeline_model import TimelineProject
+from timeline_model import TimelineProject, transform_eased_progress
 from timeline_widget import TimelineWidget
 from media_probe import probe_media, duration_to_frames
 from proxy_manager import create_proxy
@@ -1079,7 +1079,7 @@ class ZenithEditor(QMainWindow):
                     key=lambda item: int(item["frame"]), default=None)
         if before and after:
             span = int(after["frame"]) - int(before["frame"])
-            ratio = (local_frame - int(before["frame"])) / max(1, span)
+            ratio = transform_eased_progress(before, (local_frame - int(before["frame"])) / max(1, span))
             values = {key: float(before.get(key, defaults[key])) +
                       (float(after.get(key, defaults[key])) - float(before.get(key, defaults[key]))) * ratio
                       for key in defaults}
