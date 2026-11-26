@@ -358,6 +358,14 @@ class ZenithEditor(QMainWindow):
         self.video_fade_out_slider.sliderPressed.connect(self._push_undo)
         self.video_fade_out_slider.valueChanged.connect(self._video_fade_controls_changed)
         inspector_layout.addWidget(self.video_fade_out_slider)
+        self.cross_dissolve_label = QLabel("Cross Dissolve In: —")
+        inspector_layout.addWidget(self.cross_dissolve_label)
+        self.cross_dissolve_slider = QSlider(Qt.Horizontal)
+        self.cross_dissolve_slider.setRange(0, 150)
+        self.cross_dissolve_slider.setToolTip("ترکیب تدریجی کلیپ انتخاب‌شده با کلیپ قبلی در همان ترک؛ فقط در برش چسبیده")
+        self.cross_dissolve_slider.sliderPressed.connect(self._push_undo)
+        self.cross_dissolve_slider.valueChanged.connect(self._cross_dissolve_changed)
+        inspector_layout.addWidget(self.cross_dissolve_slider)
 
         color_heading = QLabel("اصلاح رنگ کلیپ")
         color_heading.setObjectName("panel_title")
@@ -575,6 +583,7 @@ class ZenithEditor(QMainWindow):
         self.media_info.setText(f"کلیپ انتخاب‌شده: {clip.name}\nمسیر: {clip.track}")
         self._sync_audio_controls()
         self._sync_video_fade_controls()
+        self._sync_cross_dissolve_controls()
         self._sync_color_controls()
         if Path(clip.path).exists():
             position_ms = int(clip.source_in * 1000 / self.timeline_project.fps)
@@ -673,6 +682,46 @@ class ZenithEditor(QMainWindow):
         self.video_fade_out_label.setText(f"Video Fade Out: {clip.video_fade_out_frames / fps:.1f} ثانیه")
         self.timeline_widget.refresh()
         self.statusBar().showMessage("Fade تصویری ذخیره شد و در خروجی MP4 اعمال می‌شود.")
+
+
+    def _sync_cross_dissolve_controls(self) -> None:
+        clip_id = self.timeline_widget.canvas.selected_clip_id
+        clip = None
+        if clip_id:
+            try:
+                clip = self.timeline_project.get_clip(clip_id)
+            except KeyError:
+                pass
+        enabled = bool(clip and clip.media_type == "video" and clip.track.startswith("V"))
+        self.cross_dissolve_slider.setEnabled(enabled)
+        if not enabled:
+            self.cross_dissolve_label.setText("Cross Dissolve In: —")
+            return
+        blockers = QSignalBlocker(self.cross_dissolve_slider)
+        max_frames = min(clip.duration_frames, self.timeline_project.fps * 5)
+        self.cross_dissolve_slider.setRange(0, max_frames)
+        self.cross_dissolve_slider.setValue(min(clip.transition_in_frames, max_frames))
+        del blockers
+        fps = max(1, self.timeline_project.fps)
+        self.cross_dissolve_label.setText(f"Cross Dissolve In: {clip.transition_in_frames / fps:.1f} ثانیه")
+
+    def _cross_dissolve_changed(self, *_: Any) -> None:
+        clip_id = self.timeline_widget.canvas.selected_clip_id
+        if not clip_id:
+            return
+        try:
+            clip = self.timeline_project.get_clip(clip_id)
+            self.timeline_project.set_clip_transition(
+                clip_id, dissolve_in_frames=self.cross_dissolve_slider.value()
+            )
+        except (KeyError, ValueError) as exc:
+            self.statusBar().showMessage(f"تنظیم Cross Dissolve اعمال نشد: {exc}")
+            self._sync_cross_dissolve_controls()
+            return
+        fps = max(1, self.timeline_project.fps)
+        self.cross_dissolve_label.setText(f"Cross Dissolve In: {clip.transition_in_frames / fps:.1f} ثانیه")
+        self.timeline_widget.refresh()
+        self.statusBar().showMessage("Cross Dissolve ذخیره شد؛ پیش‌نمایش نهایی در رندر MP4 اعمال می‌شود.")
 
     def _sync_color_controls(self) -> None:
         clip_id = self.timeline_widget.canvas.selected_clip_id
