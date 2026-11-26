@@ -26,9 +26,10 @@ def estimate_track_peaks(
             getattr(clip, "media_type", "") == "audio"
             or (getattr(clip, "media_type", "") == "video" and getattr(clip, "has_audio", False))
         )
-        if not has_audio or clip.track not in result:
+        route = getattr(clip, "audio_track", clip.track)
+        if not has_audio or route not in result:
             continue
-        track_setting = settings.get(clip.track, {})
+        track_setting = settings.get(route, {})
         if track_setting.get("muted", False) or (solo and clip.track not in solo):
             continue
         values = waveforms.get(clip.path, [])
@@ -44,7 +45,7 @@ def estimate_track_peaks(
         if not math.isfinite(track_gain) or not 0 <= track_gain <= 2:
             raise ValueError("Invalid track gain")
         # Sum clip peaks to avoid hiding possible overlap; cap at 150% for display.
-        result[clip.track] = min(1.5, result[clip.track] + peak * clip_gain * track_gain)
+        result[route] = min(1.5, result[route] + peak * clip_gain * track_gain)
     return result
 
 
