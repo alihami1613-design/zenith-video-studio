@@ -88,6 +88,16 @@ class TimelineModelTests(unittest.TestCase):
         self.assertEqual(left.transition_in_frames, 24)
         self.assertEqual(right.transition_in_frames, 0)
 
+    def test_cross_dissolve_is_clamped_when_clip_is_trimmed_shorter(self):
+        project = TimelineProject()
+        project.add_clip("a.mp4", "a", start_frame=0, duration_frames=90)
+        second = project.add_clip("b.mp4", "b", start_frame=90, duration_frames=90)
+        second.source_in = 30
+        project.set_clip_transition(second.clip_id, dissolve_in_frames=20)
+        project.trim_clip(second.clip_id, new_end_frame=100)
+        self.assertEqual(second.duration_frames, 10)
+        self.assertEqual(second.transition_in_frames, 10)
+
     def test_cross_dissolve_requires_source_handles(self):
         project = TimelineProject()
         project.add_clip("a.mp4", "a", start_frame=0, duration_frames=90)
