@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
-from video_render import build_mask_shape_expression, build_video_render_command, validate_render_project
+from video_render import build_animated_mask_shape_expression, build_mask_shape_expression, build_video_render_command, validate_render_project
 
 
 class VideoRenderTests(unittest.TestCase):
@@ -152,6 +152,36 @@ class VideoRenderTests(unittest.TestCase):
         self.assertIn("geq=r='r(X,Y)'", joined)
         self.assertIn("mod(", joined)
         self.assertNotIn("gblur=", joined)
+
+    def test_animated_mask_expression_uses_per_frame_bounds_for_all_shapes(self):
+        bounds = ("if(lt(T\,1.000000)\,0.000000\,0.200000)",
+                  "0.100000", "0.600000", "0.700000")
+        for shape in ("rectangle", "ellipse", "polygon"):
+            expression = build_animated_mask_shape_expression(
+                shape, *bounds,
+                [[0.5, 0.1], [0.9, 0.9], [0.1, 0.9]],
+                (0.0, 0.0, 1.0, 1.0),
+            )
+            self.assertIn("T", expression)
+            self.assertIn("W", expression)
+            self.assertIn("H", expression)
+
+    def test_mask_keyframes_generate_animated_geq_filter(self):
+        with tempfile.TemporaryDirectory() as folder:
+            project = self.project(folder)
+            clip = project.clips[0]
+            clip.mask_enabled = True
+            clip.mask_shape = "ellipse"
+            clip.mask_keyframes = [
+                {"frame": 0, "x": 0.0, "y": 0.0, "width": 1.0, "height": 1.0},
+                {"frame": 25, "x": 0.2, "y": 0.1, "width": 0.6, "height": 0.7},
+            ]
+            command = build_video_render_command("ffmpeg", project, "out.mp4")
+        joined = " ".join(command)
+        self.assertIn("geq=r='r(X,Y)'", joined)
+        self.assertIn("T", joined)
+        self.assertIn("if(lt(T\\,0.833333)", joined)
+        self.assertNotIn("crop=w=", joined)
 
     def test_builds_alpha_aware_multiply_blend_pipeline(self):
         with tempfile.TemporaryDirectory() as folder:
