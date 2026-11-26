@@ -111,6 +111,51 @@ class TimelineModelTests(unittest.TestCase):
         })
         self.assertEqual(restored.clips[0].blend_mode, "normal")
 
+    def test_chroma_key_and_mask_round_trip_split_validation(self):
+        project = TimelineProject()
+        clip = project.add_clip("key.mp4", "key.mp4", duration_frames=90)
+        clip.chroma_key_enabled = True
+        clip.chroma_key_color = "#00ff00"
+        clip.chroma_key_similarity = 0.32
+        clip.chroma_key_blend = 0.12
+        clip.mask_enabled = True
+        clip.mask_x = 0.1
+        clip.mask_y = 0.15
+        clip.mask_width = 0.7
+        clip.mask_height = 0.6
+        clip.validate()
+        restored = TimelineProject.from_dict(project.to_dict())
+        saved = restored.get_clip(clip.clip_id)
+        self.assertTrue(saved.chroma_key_enabled)
+        self.assertEqual(saved.chroma_key_color, "#00FF00")
+        self.assertAlmostEqual(saved.chroma_key_similarity, 0.32)
+        self.assertTrue(saved.mask_enabled)
+        self.assertAlmostEqual(saved.mask_x, 0.1)
+        left, right = restored.split_clip(clip.clip_id, 45)
+        self.assertTrue(left.chroma_key_enabled)
+        self.assertTrue(right.chroma_key_enabled)
+        self.assertTrue(right.mask_enabled)
+        right.mask_x = 0.8
+        with self.assertRaisesRegex(ValueError, "Mask rectangle"):
+            right.validate()
+        right.mask_x = 0.1
+        right.chroma_key_color = "green"
+        with self.assertRaisesRegex(ValueError, "Chroma key color"):
+            right.validate()
+
+    def test_legacy_project_defaults_chroma_and_mask_off(self):
+        restored = TimelineProject.from_dict({
+            "schema_version": 19,
+            "clips": [{
+                "path": "legacy.mp4", "name": "legacy.mp4",
+                "track": "V1", "duration_frames": 30,
+            }],
+        })
+        clip = restored.clips[0]
+        self.assertFalse(clip.chroma_key_enabled)
+        self.assertFalse(clip.mask_enabled)
+        self.assertEqual(clip.chroma_key_color, "#00FF00")
+
     def test_blend_mode_round_trip_split_and_validation(self):
         project = TimelineProject()
         clip = project.add_clip("blend.mp4", "blend.mp4", duration_frames=90)
@@ -200,7 +245,7 @@ class TimelineModelTests(unittest.TestCase):
         ]})
         self.assertEqual(project.clips[0].video_fade_in_frames, 0)
         self.assertEqual(project.clips[0].video_fade_out_frames, 0)
-        self.assertEqual(project.to_dict()["schema_version"], 19)
+        self.assertEqual(project.to_dict()["schema_version"], 20)
 
     def test_cross_dissolve_persists_and_split_does_not_duplicate_it(self):
         project = TimelineProject()
