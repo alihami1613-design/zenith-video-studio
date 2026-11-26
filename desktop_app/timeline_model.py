@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-PROJECT_SCHEMA_VERSION = 19
+PROJECT_SCHEMA_VERSION = 20
 DEFAULT_FPS = 30
 DEFAULT_VIDEO_TRACKS = ("V1", "V2", "V3", "V4")
 DEFAULT_AUDIO_TRACKS = ("A1", "A2", "A3", "A4")
@@ -95,6 +95,15 @@ class Clip:
     transition_in_frames: int = 0
     transition_in_type: str = "dissolve"
     blend_mode: str = "normal"
+    chroma_key_enabled: bool = False
+    chroma_key_color: str = "#00FF00"
+    chroma_key_similarity: float = 0.25
+    chroma_key_blend: float = 0.08
+    mask_enabled: bool = False
+    mask_x: float = 0.0
+    mask_y: float = 0.0
+    mask_width: float = 1.0
+    mask_height: float = 1.0
     transform_keyframes: list[dict[str, float]] = field(default_factory=list)
     anchor_x: float = 0.5
     anchor_y: float = 0.5
@@ -180,6 +189,26 @@ class Clip:
             raise ValueError("Unsupported video transition type")
         if self.blend_mode not in {"normal", "multiply", "screen", "addition", "overlay"}:
             raise ValueError("Unsupported video blend mode")
+        key_color = str(self.chroma_key_color).strip().upper()
+        if len(key_color) != 7 or not key_color.startswith("#") or any(
+            char not in "0123456789ABCDEF" for char in key_color[1:]
+        ):
+            raise ValueError("Chroma key color must be a #RRGGBB hex value")
+        self.chroma_key_color = key_color
+        for name in ("chroma_key_similarity", "chroma_key_blend"):
+            value = float(getattr(self, name))
+            if not math.isfinite(value) or not 0.0 <= value <= 1.0:
+                raise ValueError(f"{name} must be between 0 and 1")
+            setattr(self, name, value)
+        for name in ("mask_x", "mask_y", "mask_width", "mask_height"):
+            value = float(getattr(self, name))
+            if not math.isfinite(value) or not 0.0 <= value <= 1.0:
+                raise ValueError(f"{name} must be between 0 and 1")
+            setattr(self, name, value)
+        if self.mask_x + self.mask_width > 1.0 + 1e-9 or self.mask_y + self.mask_height > 1.0 + 1e-9:
+            raise ValueError("Mask rectangle must remain inside the frame")
+        if self.mask_width <= 0.0 or self.mask_height <= 0.0:
+            raise ValueError("Mask width and height must be greater than zero")
         if any(value > self.duration_frames for value in (self.fade_in_frames, self.fade_out_frames, self.video_fade_in_frames, self.video_fade_out_frames, self.transition_in_frames)):
             raise ValueError("Fade duration cannot exceed clip duration")
         grade = dict(self.color_grade or {})
@@ -410,6 +439,15 @@ class TimelineProject:
             video_fade_out_frames=original.video_fade_out_frames,
             transition_in_frames=0,
             blend_mode=original.blend_mode,
+            chroma_key_enabled=original.chroma_key_enabled,
+            chroma_key_color=original.chroma_key_color,
+            chroma_key_similarity=original.chroma_key_similarity,
+            chroma_key_blend=original.chroma_key_blend,
+            mask_enabled=original.mask_enabled,
+            mask_x=original.mask_x,
+            mask_y=original.mask_y,
+            mask_width=original.mask_width,
+            mask_height=original.mask_height,
             transform_keyframes=[
                 dict(key, frame=int(key["frame"]) - (at_frame - original.start_frame))
                 for key in original.transform_keyframes
@@ -683,6 +721,15 @@ class TimelineProject:
                 transition_in_frames=max(0, int(raw.get("transition_in_frames", 0) or 0)),
                 transition_in_type=str(raw.get("transition_in_type", "dissolve") or "dissolve"),
                 blend_mode=str(raw.get("blend_mode", "normal") or "normal"),
+                chroma_key_enabled=bool(raw.get("chroma_key_enabled", False)),
+                chroma_key_color=str(raw.get("chroma_key_color", "#00FF00") or "#00FF00"),
+                chroma_key_similarity=float(raw.get("chroma_key_similarity", 0.25)),
+                chroma_key_blend=float(raw.get("chroma_key_blend", 0.08)),
+                mask_enabled=bool(raw.get("mask_enabled", False)),
+                mask_x=float(raw.get("mask_x", 0.0)),
+                mask_y=float(raw.get("mask_y", 0.0)),
+                mask_width=float(raw.get("mask_width", 1.0)),
+                mask_height=float(raw.get("mask_height", 1.0)),
                 transform_keyframes=[dict(k) for k in raw.get("transform_keyframes", [])],
                 anchor_x=float(raw.get("anchor_x", 0.5)),
                 anchor_y=float(raw.get("anchor_y", 0.5)),
