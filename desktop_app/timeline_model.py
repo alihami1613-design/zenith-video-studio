@@ -141,9 +141,9 @@ class TimelineProject:
         end = old_end if new_end_frame is None else new_end_frame
         if start < 0 or end <= start:
             raise ValueError("Trim must leave a positive clip duration")
-        clip.source_in += start - clip.start_frame
-        clip.start_frame = start
         removed_from_left = start - clip.start_frame
+        clip.source_in += removed_from_left
+        clip.start_frame = start
         clip.duration_frames = end - start
         clip.fade_in_frames = max(0, clip.fade_in_frames - removed_from_left)
         clip.fade_in_frames = min(clip.fade_in_frames, clip.duration_frames)
