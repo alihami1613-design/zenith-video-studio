@@ -39,7 +39,7 @@ class TimelineModelTests(unittest.TestCase):
         restored = TimelineProject.from_dict(project.to_dict())
         saved = restored.get_clip(clip.clip_id)
         self.assertEqual(len(saved.transform_keyframes), 2)
-        self.assertEqual(restored.to_dict()["schema_version"], 14)
+        self.assertEqual(restored.to_dict()["schema_version"], 15)
         left, right = restored.split_clip(clip.clip_id, 60)
         self.assertEqual(left.transform_keyframes[0]["frame"], 0)
         self.assertEqual(right.transform_keyframes[0]["frame"], 30)
@@ -128,7 +128,7 @@ class TimelineModelTests(unittest.TestCase):
         ]})
         self.assertEqual(project.clips[0].video_fade_in_frames, 0)
         self.assertEqual(project.clips[0].video_fade_out_frames, 0)
-        self.assertEqual(project.to_dict()["schema_version"], 14)
+        self.assertEqual(project.to_dict()["schema_version"], 15)
 
     def test_cross_dissolve_persists_and_split_does_not_duplicate_it(self):
         project = TimelineProject()
@@ -212,7 +212,7 @@ class TimelineModelTests(unittest.TestCase):
         self.assertAlmostEqual(saved.volume, 0.8)
         self.assertEqual(saved.fade_in_frames, 30)
         self.assertEqual(saved.fade_out_frames, 45)
-        self.assertEqual(project.to_dict()["schema_version"], 14)
+        self.assertEqual(project.to_dict()["schema_version"], 15)
 
     def test_audio_track_mixer_round_trip(self):
         project = TimelineProject()
@@ -346,5 +346,32 @@ class TimelineModelTests(unittest.TestCase):
         clip.anchor_x = 0.5
         with self.assertRaises(ValueError):
             project.set_clip_transform_keyframes(clip.clip_id, [{"frame": 0, "ease": "bounce"}])
+
+    def test_reverse_persists_and_preserves_source_range_on_split(self):
+        project = TimelineProject()
+        clip = project.add_clip("reverse.mp4", "reverse.mp4", duration_frames=100)
+        clip.source_in = 20
+        project.set_clip_reverse(clip.clip_id, True)
+        left, right = project.split_clip(clip.clip_id, 40)
+        self.assertEqual(left.source_in, 80)
+        self.assertEqual(right.source_in, 20)
+        self.assertTrue(left.reverse_playback)
+        self.assertTrue(right.reverse_playback)
+        restored = TimelineProject.from_dict(project.to_dict())
+        self.assertTrue(restored.get_clip(clip.clip_id).reverse_playback)
+
+    def test_reverse_trim_keeps_correct_source_side(self):
+        project = TimelineProject()
+        clip = project.add_clip("reverse.mp4", "reverse.mp4", duration_frames=100)
+        clip.source_in = 20
+        project.set_clip_reverse(clip.clip_id, True)
+        project.trim_clip(clip.clip_id, new_start_frame=10, new_end_frame=80)
+        self.assertEqual(clip.source_in, 40)
+
+    def test_reverse_rejects_audio_only_clip(self):
+        project = TimelineProject()
+        clip = project.add_clip("voice.wav", "voice.wav", duration_frames=50, track="A1")
+        with self.assertRaises(ValueError):
+            project.set_clip_reverse(clip.clip_id, True)
 if __name__ == "__main__":
     unittest.main()
