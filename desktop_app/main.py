@@ -364,6 +364,7 @@ class ZenithEditor(QMainWindow):
         self.mask_overlay.pointsChanged.connect(self._polygon_mask_points_changed)
         self.mask_overlay.geometryChanged.connect(self._mask_geometry_changed)
         self.mask_overlay.rotationChanged.connect(self._mask_rotation_changed)
+        self.mask_overlay.featherChanged.connect(self._mask_feather_changed)
         preview_layout.addWidget(self.video_widget, 1)
 
         playback = QHBoxLayout()
@@ -1281,7 +1282,8 @@ class ZenithEditor(QMainWindow):
             display_points, self.timeline_project.width,
             self.timeline_project.height, bool(clip.mask_enabled),
             shape=clip.mask_shape, rect=[x, y, width, height],
-            geometry_editable=editable, rotation=float(values["rotation"])
+            geometry_editable=editable, rotation=float(values["rotation"]),
+            feather=float(clip.mask_feather_px)
         )
         self.mask_overlay.setGeometry(self.video_widget.rect())
         self.mask_overlay.raise_()
@@ -1365,6 +1367,23 @@ class ZenithEditor(QMainWindow):
                 self._undo_stack.pop()
             self._update_history_buttons()
             self.statusBar().showMessage(f"چرخش ماسک ثبت نشد: {exc}")
+
+    def _mask_feather_changed(self, feather: float) -> None:
+        clip_id = self.timeline_widget.canvas.selected_clip_id
+        if not clip_id:
+            return
+        try:
+            clip = self.timeline_project.get_clip(clip_id)
+            if not clip.mask_enabled or clip.mask_shape == "polygon":
+                return
+            clip.mask_feather_px = max(0.0, min(40.0, float(feather)))
+            clip.validate()
+            blocker = QSignalBlocker(self.mask_feather_spin)
+            self.mask_feather_spin.setValue(clip.mask_feather_px)
+            del blocker
+            self.timeline_widget.refresh()
+        except (KeyError, TypeError, ValueError) as exc:
+            self.statusBar().showMessage(f"تنظیم Feather ماسک نامعتبر است: {exc}")
 
     def _mask_rotation_changed(self, rotation: float) -> None:
         clip_id = self.timeline_widget.canvas.selected_clip_id
