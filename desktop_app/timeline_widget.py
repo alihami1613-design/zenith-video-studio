@@ -1,30 +1,23 @@
-"""Lightweight, frame-based multitrack timeline widget for ZENITH Desktop.
-
-The widget only paints the visible project data; it does not decode media.
-Editing operations are emitted as signals so the project model remains the
-single source of truth.
-"""
+"""Lightweight multitrack timeline with trim handles, snapping and frame-based edits."""
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal, QPoint, QSize
 from PySide6.QtGui import QColor, QFont, QPainter, QPen, QBrush
-from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QScrollArea, QSlider, QFrame,
-)
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QScrollArea, QSlider, QFrame
 
 TRACKS = ("V4", "V3", "V2", "V1", "A1", "A2", "A3", "A4")
-RULER_HEIGHT = 30
-TRACK_HEIGHT = 42
-LABEL_WIDTH = 54
-MIN_PIXELS_PER_SECOND = 12
-MAX_PIXELS_PER_SECOND = 120
+RULER_HEIGHT, TRACK_HEIGHT, LABEL_WIDTH = 30, 42, 54
+MIN_PIXELS_PER_SECOND, MAX_PIXELS_PER_SECOND = 12, 120
+TRIM_HANDLE_PX = 8
+SNAP_DISTANCE_PX = 9
 
 
 class TimelineCanvas(QWidget):
     clipSelected = Signal(str)
     playheadChanged = Signal(int)
     clipMoved = Signal(str, int, str)
+    clipTrimmed = Signal(str, int, int)
+    editStarted = Signal()
 
     def __init__(self, project, parent=None):
         super().__init__(parent)
@@ -35,14 +28,16 @@ class TimelineCanvas(QWidget):
         self._drag_origin = QPoint()
         self._drag_start_frame = 0
         self._drag_track = "V1"
+        self._drag_mode = "move"
+        self._original_end = 0
+        self._original_source_in = 0
         self.setMouseTracking(True)
         self.setMinimumHeight(RULER_HEIGHT + len(TRACKS) * TRACK_HEIGHT + 2)
         self.setMinimumWidth(900)
 
     def sizeHint(self):
-        seconds = max(30, (self.project.duration_frames / max(1, self.project.fps)) + 10)
-        return QSize(min(20000, max(900, LABEL_WIDTH + int(seconds * self.pixels_per_second))),
-                     RULER_HEIGHT + len(TRACKS) * TRACK_HEIGHT)
+        seconds = max(30, self.project.duration_frames / max(1, self.project.fps) + 10)
+        return QSize(min(20000, max(900, LABEL_WIDTH + int(seconds * self.pixels_per_second))), RULER_HEIGHT + len(TRACKS) * TRACK_HEIGHT)
 
     def set_project(self, project):
         self.project = project
@@ -55,9 +50,8 @@ class TimelineCanvas(QWidget):
         self.update()
 
     def update_geometry_for_project(self):
-        seconds = max(30, (self.project.duration_frames / max(1, self.project.fps)) + 10)
-        width = LABEL_WIDTH + int(seconds * self.pixels_per_second)
-        self.setMinimumWidth(min(20000, max(900, width)))
+        seconds = max(30, self.project.duration_frames / max(1, self.project.fps) + 10)
+        self.setMinimumWidth(min(20000, max(900, LABEL_WIDTH + int(seconds * self.pixels_per_second))))
         self.resize(self.sizeHint())
         self.updateGeometry()
 
@@ -65,8 +59,7 @@ class TimelineCanvas(QWidget):
         return LABEL_WIDTH + int((frame / max(1, self.project.fps)) * self.pixels_per_second)
 
     def _x_frame(self, x):
-        seconds = max(0, x - LABEL_WIDTH) / max(1, self.pixels_per_second)
-        return max(0, int(round(seconds * self.project.fps)))
+        return max(0, int(round(max(0, x - LABEL_WIDTH) / max(1, self.pixels_per_second) * self.project.fps)))
 
     def _track_at(self, y):
         index = (y - RULER_HEIGHT) // TRACK_HEIGHT
@@ -82,13 +75,30 @@ class TimelineCanvas(QWidget):
                 return clip
         return None
 
+    def _snap(self, frame, clip_id, mode):
+        """Snap moved/trimmed edges to nearby clip boundaries and playhead."""
+        candidates = [self.project.playhead_frame]
+        for other in self.project.clips:
+            if other.clip_id != clip_id:
+                candidates.extend((other.start_frame, other.end_frame))
+        threshold = max(1, round(SNAP_DISTANCE_PX / max(1, self.pixels_per_second) * self.project.fps))
+        nearest = min(candidates, key=lambda point: abs(point - frame), default=frame)
+        return nearest if abs(nearest - frame) <= threshold else frame
+
+    def _drag_mode_for(self, clip, x):
+        left, right = self._frame_x(clip.start_frame), self._frame_x(clip.end_frame)
+        if abs(x - left) <= TRIM_HANDLE_PX:
+            return "left"
+        if abs(x - right) <= TRIM_HANDLE_PX:
+            return "right"
+        return "move"
+
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.fillRect(self.rect(), QColor("#101113"))
         painter.setRenderHint(QPainter.Antialiasing, False)
         width = self.width()
         height = RULER_HEIGHT + len(TRACKS) * TRACK_HEIGHT
-
         painter.fillRect(0, 0, width, RULER_HEIGHT, QColor("#202125"))
         painter.setPen(QPen(QColor("#777777"), 1))
         painter.setFont(QFont("Segoe UI", 8))
@@ -98,44 +108,31 @@ class TimelineCanvas(QWidget):
             x = LABEL_WIDTH + sec * self.pixels_per_second
             painter.drawLine(x, 0, x, height)
             painter.drawText(x + 3, 19, f"{sec // 60:02d}:{sec % 60:02d}")
-
         for index, track in enumerate(TRACKS):
             y = RULER_HEIGHT + index * TRACK_HEIGHT
-            bg = QColor("#191A1D") if index % 2 == 0 else QColor("#16171A")
-            painter.fillRect(0, y, width, TRACK_HEIGHT, bg)
+            painter.fillRect(0, y, width, TRACK_HEIGHT, QColor("#191A1D") if index % 2 == 0 else QColor("#16171A"))
             painter.fillRect(0, y, LABEL_WIDTH, TRACK_HEIGHT, QColor("#242529"))
             painter.setPen(QColor("#D6AE55") if track.startswith("V") else QColor("#8EB6C8"))
             painter.drawText(12, y + 25, track)
             painter.setPen(QPen(QColor("#303136"), 1))
             painter.drawLine(0, y + TRACK_HEIGHT - 1, width, y + TRACK_HEIGHT - 1)
-
             for clip in self.project.clips_on_track(track):
-                x1 = self._frame_x(clip.start_frame)
-                x2 = max(x1 + 5, self._frame_x(clip.end_frame))
-                rect_y = y + 5
-                rect_h = TRACK_HEIGHT - 10
-                if clip.clip_id == self.selected_clip_id:
-                    fill = QColor("#A77F35") if track.startswith("V") else QColor("#477E91")
-                    border = QColor("#F3D58F")
-                else:
-                    fill = QColor("#66502C") if track.startswith("V") else QColor("#315766")
-                    border = fill.lighter(135)
+                x1, x2 = self._frame_x(clip.start_frame), max(self._frame_x(clip.start_frame) + 5, self._frame_x(clip.end_frame))
+                rect_y, rect_h = y + 5, TRACK_HEIGHT - 10
+                selected = clip.clip_id == self.selected_clip_id
+                fill = QColor("#A77F35") if selected and track.startswith("V") else QColor("#477E91") if selected else QColor("#66502C") if track.startswith("V") else QColor("#315766")
                 painter.setBrush(QBrush(fill))
-                painter.setPen(QPen(border, 1))
+                painter.setPen(QPen(QColor("#F3D58F") if selected else fill.lighter(135), 1))
                 painter.drawRoundedRect(x1, rect_y, x2 - x1, rect_h, 4, 4)
+                if selected:
+                    painter.fillRect(x1, rect_y, 4, rect_h, QColor("#FFF0C2"))
+                    painter.fillRect(x2 - 4, rect_y, 4, rect_h, QColor("#FFF0C2"))
                 painter.setPen(QColor("#FFFFFF"))
                 painter.setFont(QFont("Segoe UI", 8))
-                painter.drawText(x1 + 6, rect_y + 17, max(0, x2 - x1 - 10), 15,
-                                 Qt.AlignLeft | Qt.AlignVCenter, clip.name)
-
+                painter.drawText(x1 + 6, rect_y + 17, max(0, x2 - x1 - 10), 15, Qt.AlignLeft | Qt.AlignVCenter, clip.name)
         playhead_x = self._frame_x(self.project.playhead_frame)
         painter.setPen(QPen(QColor("#E45D5D"), 2))
         painter.drawLine(playhead_x, 0, playhead_x, height)
-        painter.setBrush(QColor("#E45D5D"))
-        painter.setPen(Qt.NoPen)
-        painter.drawLine(playhead_x - 5, 0, playhead_x + 5, 0)
-        painter.drawLine(playhead_x - 5, 0, playhead_x, 8)
-        painter.drawLine(playhead_x + 5, 0, playhead_x, 8)
         painter.end()
 
     def mousePressEvent(self, event):
@@ -149,38 +146,58 @@ class TimelineCanvas(QWidget):
             self._drag_origin = point
             self._drag_start_frame = clip.start_frame
             self._drag_track = clip.track
+            self._original_end = clip.end_frame
+            self._original_source_in = clip.source_in
+            self._drag_mode = self._drag_mode_for(clip, point.x())
+            self.editStarted.emit()
             self.clipSelected.emit(clip.clip_id)
         else:
             self.selected_clip_id = None
-            # Clicking the ruler or an empty track seeks the playhead.
             self.playheadChanged.emit(self._x_frame(point.x()))
         self.update()
 
     def mouseMoveEvent(self, event):
-        if self._drag_clip_id and (event.buttons() & Qt.LeftButton):
-            delta_x = event.position().toPoint().x() - self._drag_origin.x()
-            delta_frames = int(round((delta_x / max(1, self.pixels_per_second)) * self.project.fps))
-            preview_start = max(0, self._drag_start_frame + delta_frames)
-            self.project.get_clip(self._drag_clip_id).start_frame = preview_start
+        if not self._drag_clip_id or not (event.buttons() & Qt.LeftButton):
+            return
+        delta_x = event.position().toPoint().x() - self._drag_origin.x()
+        delta_frames = int(round(delta_x / max(1, self.pixels_per_second) * self.project.fps))
+        clip = self.project.get_clip(self._drag_clip_id)
+        if self._drag_mode == "move":
+            new_start = self._snap(max(0, self._drag_start_frame + delta_frames), clip.clip_id, "move")
+            clip.start_frame = max(0, new_start)
             target_track = self._track_at(event.position().toPoint().y()) or self._drag_track
-            if target_track == self._drag_track or (
-                target_track.startswith("V") == self._drag_track.startswith("V")
-            ):
-                self.project.get_clip(self._drag_clip_id).track = target_track
-            self.update()
+            if target_track.startswith("V") == self._drag_track.startswith("V"):
+                clip.track = target_track
+        elif self._drag_mode == "left":
+            proposed = self._snap(self._drag_start_frame + delta_frames, clip.clip_id, "left")
+            new_start = max(0, min(proposed, self._original_end - 1))
+            clip.source_in = self._original_source_in + (new_start - self._drag_start_frame)
+            clip.start_frame = new_start
+            clip.duration_frames = self._original_end - new_start
+        else:
+            proposed = self._snap(self._original_end + delta_frames, clip.clip_id, "right")
+            new_end = max(clip.start_frame + 1, proposed)
+            clip.duration_frames = new_end - clip.start_frame
+        self.update()
 
     def mouseReleaseEvent(self, event):
-        if self._drag_clip_id:
-            clip = self.project.get_clip(self._drag_clip_id)
+        if not self._drag_clip_id:
+            return
+        clip = self.project.get_clip(self._drag_clip_id)
+        if self._drag_mode == "move":
             self.clipMoved.emit(clip.clip_id, clip.start_frame, clip.track)
-            self._drag_clip_id = None
-            self.update_geometry_for_project()
+        else:
+            self.clipTrimmed.emit(clip.clip_id, clip.start_frame, clip.end_frame)
+        self._drag_clip_id = None
+        self.update_geometry_for_project()
 
 
 class TimelineWidget(QWidget):
     clipSelected = Signal(str)
     playheadChanged = Signal(int)
     clipMoved = Signal(str, int, str)
+    clipTrimmed = Signal(str, int, int)
+    editStarted = Signal()
 
     def __init__(self, project, parent=None):
         super().__init__(parent)
@@ -188,38 +205,32 @@ class TimelineWidget(QWidget):
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(6)
-
         toolbar = QHBoxLayout()
-        self.info_label = QLabel("تایم‌لاین چندلایه | جابه‌جایی کلیپ با کشیدن ماوس")
+        self.info_label = QLabel("کشیدن بدنه: جابه‌جایی | کشیدن لبه‌ها: کوتاه‌کردن | چسباندن خودکار به نقاط نزدیک")
         self.info_label.setStyleSheet("color:#A7A7A7;")
         toolbar.addWidget(self.info_label)
         toolbar.addStretch(1)
-        zoom_out = QPushButton("−")
-        zoom_in = QPushButton("+")
-        zoom_out.setFixedWidth(32)
-        zoom_in.setFixedWidth(32)
+        zoom_out, zoom_in = QPushButton("−"), QPushButton("+")
+        zoom_out.setFixedWidth(32); zoom_in.setFixedWidth(32)
         self.zoom_slider = QSlider(Qt.Horizontal)
         self.zoom_slider.setRange(MIN_PIXELS_PER_SECOND, MAX_PIXELS_PER_SECOND)
-        self.zoom_slider.setValue(30)
-        self.zoom_slider.setFixedWidth(120)
+        self.zoom_slider.setValue(30); self.zoom_slider.setFixedWidth(120)
         zoom_out.clicked.connect(lambda: self.zoom_slider.setValue(self.zoom_slider.value() - 5))
         zoom_in.clicked.connect(lambda: self.zoom_slider.setValue(self.zoom_slider.value() + 5))
-        toolbar.addWidget(zoom_out)
-        toolbar.addWidget(self.zoom_slider)
-        toolbar.addWidget(zoom_in)
+        toolbar.addWidget(zoom_out); toolbar.addWidget(self.zoom_slider); toolbar.addWidget(zoom_in)
         root.addLayout(toolbar)
-
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(False)
         self.scroll.setFrameShape(QFrame.NoFrame)
         self.canvas = TimelineCanvas(project)
         self.scroll.setWidget(self.canvas)
         root.addWidget(self.scroll, 1)
-
         self.zoom_slider.valueChanged.connect(self.canvas.set_zoom)
         self.canvas.clipSelected.connect(self.clipSelected)
         self.canvas.playheadChanged.connect(self.playheadChanged)
         self.canvas.clipMoved.connect(self.clipMoved)
+        self.canvas.clipTrimmed.connect(self.clipTrimmed)
+        self.canvas.editStarted.connect(self.editStarted)
 
     def set_project(self, project):
         self.project = project
