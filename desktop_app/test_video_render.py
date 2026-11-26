@@ -82,6 +82,7 @@ class VideoRenderTests(unittest.TestCase):
             image = Path(folder) / "still.png"
             image.touch()
             project.clips[0].path = str(image)
+            project.clips[0].source_in = 0
             command = build_video_render_command("ffmpeg", project, "out.mp4")
         joined = " ".join(command)
         self.assertIn("-loop 1 -framerate 30 -t 2.000000", joined)
