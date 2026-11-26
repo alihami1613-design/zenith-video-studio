@@ -634,6 +634,7 @@ class ZenithEditor(QMainWindow):
         self.timeline_widget.set_project(self.timeline_project)
         self.timeline_widget.set_waveforms(self.waveforms)
         self._sync_audio_controls()
+        self._sync_audio_track_controls()
 
     def _start_waveform(self, path: str) -> None:
         if path in self.waveforms or any(task.path == path for task in self._waveform_tasks):
