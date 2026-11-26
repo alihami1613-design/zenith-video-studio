@@ -120,24 +120,24 @@ with st.expander("🎬 طراحی خودکار سناریو و برنامه تد
         elif len(offline_assets) > 12:
             st.warning("مجموع عکس‌ها و کلیپ‌ها باید حداکثر ۱۲ فایل باشد.")
         else:
-            def offline_asset_score(asset):
+            def offline_asset_rank(asset):
                 name = Path(asset.name).stem.lower()
-                groups = {
-                    "intro": ["intro", "start", "opening", "شروع", "معرفی", "نمای کلی"],
-                    "detail": ["detail", "close", "macro", "جزئیات", "نزدیک", "بافت"],
-                    "hero": ["hero", "product", "main", "محصول", "اصلی", "قهرمان"],
-                    "lifestyle": ["lifestyle", "people", "use", "استفاده", "خانواده", "محیط"],
-                    "ending": ["end", "outro", "logo", "پایان", "لوگو", "برند"],
-                }
-                score = 0
-                for points, words in enumerate(groups.values()):
-                    if any(word in name for word in words):
-                        score += (points + 1) * 10
-                return score
+                # Explicit story order: hero, detail, supporting composition, final brand frame.
+                if any(word in name for word in ["intro", "opening", "start", "شروع", "معرفی"]):
+                    return 0
+                if any(word in name for word in ["hero", "product", "main", "محصول", "اصلی", "قهرمان"]):
+                    return 0
+                if any(word in name for word in ["detail", "close", "macro", "atomizer", "جزئیات", "نزدیک", "بافت"]):
+                    return 1
+                if any(word in name for word in ["triptych", "lifestyle", "people", "use", "استفاده", "خانواده", "محیط"]):
+                    return 2
+                if any(word in name for word in ["final", "ending", "end", "outro", "logo", "پایان", "لوگو", "برند"]):
+                    return 3
+                return 2
 
             ordered_assets = sorted(
                 enumerate(offline_assets),
-                key=lambda pair: (offline_asset_score(pair[1][0]), pair[0]),
+                key=lambda pair: (offline_asset_rank(pair[1][0]), pair[0]),
             )
             segment = duration / len(ordered_assets)
             brief_lower = ai_brief.lower()
