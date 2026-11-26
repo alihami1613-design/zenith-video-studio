@@ -212,19 +212,19 @@ class TimelineProject:
     def set_audio_track(self, track: str, *, volume: float | None = None,
                         muted: bool | None = None, solo: bool | None = None) -> dict[str, Any]:
         if track not in self.audio_tracks:
-            raise ValueError(f\"Unknown audio track: {track}\")
+            raise ValueError(f"Unknown audio track: {track}")
         settings = self.audio_track_settings.setdefault(
-            track, {\"volume\": 1.0, \"muted\": False, \"solo\": False}
+            track, {"volume": 1.0, "muted": False, "solo": False}
         )
         if volume is not None:
             value = float(volume)
             if not math.isfinite(value) or not 0.0 <= value <= 2.0:
-                raise ValueError(\"Track volume must be between 0.0 and 2.0\")
-            settings[\"volume\"] = value
+                raise ValueError("Track volume must be between 0.0 and 2.0")
+            settings["volume"] = value
         if muted is not None:
-            settings[\"muted\"] = bool(muted)
+            settings["muted"] = bool(muted)
         if solo is not None:
-            settings[\"solo\"] = bool(solo)
+            settings["solo"] = bool(solo)
         return dict(settings)
 
     def to_dict(self) -> dict[str, Any]:
