@@ -11,7 +11,7 @@ from audio_render import render_audio_mix
 from proxy_manager import find_ffmpeg
 from video_color import build_color_filter
 
-RENDER_VERSION = "timeline-h264-v3-visual-fades"
+RENDER_VERSION = "timeline-h264-v4-cross-dissolve"
 STILL_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".webp", ".tif", ".tiff"}
 
 
@@ -43,6 +43,7 @@ def validate_render_project(project: object) -> list[object]:
     if not clips:
         raise ValueError("برای خروجی MP4 حداقل یک کلیپ تصویری روی V1 تا V4 لازم است.")
     previous_end: dict[str, int] = {}
+    previous_clip: dict[str, object] = {}
     for clip in clips:
         if clip.track not in {"V1", "V2", "V3", "V4"}:
             raise ValueError(f"ترک تصویری پشتیبانی‌نشده: {clip.track}")
@@ -56,14 +57,29 @@ def validate_render_project(project: object) -> list[object]:
         visual_fades = (int(getattr(clip, "video_fade_in_frames", 0)), int(getattr(clip, "video_fade_out_frames", 0)))
         if min(visual_fades) < 0 or max(visual_fades) > clip.duration_frames:
             raise ValueError(f"مدت Fade تصویری نامعتبر است: {clip.name}")
+        transition = int(getattr(clip, "transition_in_frames", 0))
+        if transition:
+            previous = previous_clip.get(clip.track)
+            if previous is None or previous.end_frame != clip.start_frame:
+                raise ValueError(f"Cross Dissolve کلیپ {clip.name} به کلیپ قبلی چسبیده در همان ترک نیاز دارد.")
+            if transition > previous.duration_frames or transition > clip.duration_frames:
+                raise ValueError("مدت Cross Dissolve از طول کلیپ ورودی یا خروجی بیشتر است.")
+            if int(getattr(clip, "video_fade_in_frames", 0)):
+                raise ValueError("برای یک کلیپ، Cross Dissolve و Video Fade In را هم‌زمان تنظیم نکنید.")
         if clip.start_frame < previous_end.get(clip.track, 0):
             raise ValueError(
-                f"هم‌پوشانی دو کلیپ روی {clip.track} هنوز پشتیبانی نمی‌شود؛ "
-                "برای ترکیب تصویر، کلیپ بالایی را روی ترک بالاتر قرار دهید."
+                f"هم‌پوشانی واقعی دو کلیپ روی {clip.track} مجاز نیست؛ "
+                "Cross Dissolve از تنظیم جداگانه استفاده می‌کند."
             )
         if _is_still(clip) and clip.source_in:
             raise ValueError("برای عکس ثابت، زمان ورود منبع باید صفر باشد.")
         previous_end[clip.track] = clip.end_frame
+        previous_clip[clip.track] = clip
+    for track in {"V1", "V2", "V3", "V4"}:
+        track_clips = [clip for clip in clips if clip.track == track]
+        for left, right in zip(track_clips, track_clips[1:]):
+            if int(getattr(left, "transition_in_frames", 0)) + int(getattr(right, "transition_in_frames", 0)) > left.duration_frames:
+                raise ValueError("دو Cross Dissolve مجاور بیش از زمان قابل استفاده کلیپ میانی هم‌پوشانی دارند.")
     if int(project.duration_frames) < 1:
         raise ValueError("تایم‌لاین خالی است.")
     if any(c.end_frame > int(project.duration_frames) for c in clips):
@@ -99,7 +115,8 @@ def build_video_render_command(ffmpeg: str, project: object,
     previous = "base0"
     for index, clip in enumerate(clips):
         clip_duration = _seconds(clip.duration_frames, fps)
-        start = _seconds(clip.start_frame, fps)
+        transition = int(getattr(clip, "transition_in_frames", 0))
+        start = _seconds(clip.start_frame - transition, fps)
         chain = (
             f"[{index}:v:0]trim=duration={clip_duration:.6f},"
             "setpts=PTS-STARTPTS,"
@@ -109,7 +126,9 @@ def build_video_render_command(ffmpeg: str, project: object,
         )
         fade_in = int(getattr(clip, "video_fade_in_frames", 0))
         fade_out = int(getattr(clip, "video_fade_out_frames", 0))
-        if fade_in:
+        if transition:
+            chain += f",fade=t=in:st=0:d={_seconds(transition, fps):.6f}:alpha=1"
+        elif fade_in:
             chain += f",fade=t=in:st=0:d={_seconds(fade_in, fps):.6f}:alpha=1"
         if fade_out:
             fade_start = clip_duration - _seconds(fade_out, fps)
