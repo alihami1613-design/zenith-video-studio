@@ -199,3 +199,14 @@
 - [ ] Cross Dissolve صوتی هم‌زمان و کنترل منحنی easing
 - [ ] Wipe/Push/Zoom و dip-to-color
 - [ ] تست رندر واقعی روی Windows با رسانه‌های واقعی کاربر
+
+
+## وضعیت ترنزیشن تصویری — مرحله پنجم
+- [x] انتخاب نوع گذار در Inspector: Cross Dissolve / Wipe Left / Push Left
+- [x] Wipe آلفایی از چپ به راست در FFmpeg
+- [x] Push لایه ورودی از چپ به داخل کادر
+- [x] ذخیره نوع گذار در پروژه schema v10 و مقدار پیش‌فرض برای پروژه‌های قدیمی
+- [ ] Push کامل دوطرفه و جهت‌های قابل انتخاب
+- [ ] Zoom، dip-to-color و easing قابل تنظیم
+- [ ] Crossfade صوتی هم‌زمان
+- [ ] رندر آزمایشی روی Windows با رسانه‌های واقعی
