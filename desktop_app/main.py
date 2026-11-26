@@ -430,6 +430,10 @@ class ZenithEditor(QMainWindow):
         self.motion_blur_checkbox.setEnabled(False)
         self.motion_blur_checkbox.toggled.connect(self._toggle_clip_motion_blur)
         inspector_layout.addWidget(self.motion_blur_checkbox)
+        self.reverse_checkbox = QCheckBox("Reverse — پخش معکوس")
+        self.reverse_checkbox.setEnabled(False)
+        self.reverse_checkbox.toggled.connect(self._toggle_clip_reverse)
+        inspector_layout.addWidget(self.reverse_checkbox)
 
         color_heading = QLabel("اصلاح رنگ کلیپ")
         color_heading.setObjectName("panel_title")
@@ -821,7 +825,11 @@ class ZenithEditor(QMainWindow):
         self.playback_speed_combo.setEnabled(enabled)
         self.apply_speed_button.setEnabled(enabled)
         self.motion_blur_checkbox.setEnabled(enabled)
+        self.reverse_checkbox.setEnabled(enabled)
         if enabled:
+            blocker = QSignalBlocker(self.reverse_checkbox)
+            self.reverse_checkbox.setChecked(bool(getattr(clip, "reverse_playback", False)))
+            del blocker
             blocker = QSignalBlocker(self.motion_blur_checkbox)
             self.motion_blur_checkbox.setChecked(bool(getattr(clip, "motion_blur", False)))
             del blocker
@@ -875,6 +883,20 @@ class ZenithEditor(QMainWindow):
             f"{len(clip.transform_keyframes)} Keyframe | فریم فعلی کلیپ: {local_frame}"
         )
 
+    def _toggle_clip_reverse(self, enabled: bool) -> None:
+        clip_id = self.timeline_widget.canvas.selected_clip_id
+        if not clip_id:
+            return
+        try:
+            self._push_undo()
+            self.timeline_project.set_clip_reverse(clip_id, enabled)
+        except (KeyError, ValueError) as exc:
+            if self._undo_stack:
+                self._undo_stack.pop()
+            self._update_history_buttons()
+            self.statusBar().showMessage(f"Reverse change failed: {exc}")
+            return
+        self.statusBar().showMessage("Reverse will be applied in final render." if enabled else "Reverse disabled.")
     def _toggle_clip_motion_blur(self, enabled: bool) -> None:
         clip_id = self.timeline_widget.canvas.selected_clip_id
         if not clip_id:
