@@ -79,6 +79,7 @@ class TimelineModelTests(unittest.TestCase):
         project = TimelineProject()
         first = project.add_clip("a.mp4", "a", start_frame=0, duration_frames=90)
         second = project.add_clip("b.mp4", "b", start_frame=90, duration_frames=90)
+        second.source_in = 24
         project.set_clip_transition(second.clip_id, dissolve_in_frames=24)
         restored = TimelineProject.from_dict(project.to_dict())
         incoming = restored.get_clip(second.clip_id)
@@ -86,6 +87,13 @@ class TimelineModelTests(unittest.TestCase):
         left, right = restored.split_clip(second.clip_id, 135)
         self.assertEqual(left.transition_in_frames, 24)
         self.assertEqual(right.transition_in_frames, 0)
+
+    def test_cross_dissolve_requires_source_handles(self):
+        project = TimelineProject()
+        project.add_clip("a.mp4", "a", start_frame=0, duration_frames=90)
+        second = project.add_clip("b.mp4", "b", start_frame=90, duration_frames=90)
+        with self.assertRaisesRegex(ValueError, "فریم‌های اضافه"):
+            project.set_clip_transition(second.clip_id, dissolve_in_frames=15)
 
     def test_cross_dissolve_duration_cannot_exceed_clip(self):
         project = TimelineProject()
