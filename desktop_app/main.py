@@ -7,16 +7,16 @@ from pathlib import Path
 from typing import Any
 
 from PySide6.QtCore import Qt, QUrl, QSignalBlocker, QObject, Signal, QRunnable, QThreadPool
-from PySide6.QtGui import QAction, QFont
+from PySide6.QtGui import QAction, QFont, QPainter, QPen, QBrush, QColor, QPolygonF
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtMultimediaWidgets import QVideoWidget
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QFileDialog, QMessageBox,
     QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QListWidget,
-    QListWidgetItem, QSplitter, QFrame, QStatusBar, QSlider, QCheckBox, QComboBox, QProgressBar, QDoubleSpinBox, QLineEdit, QSpinBox
+    QListWidgetItem, QSplitter, QFrame, QStatusBar, QSlider, QCheckBox, QComboBox, QProgressBar, QDoubleSpinBox, QLineEdit, QSpinBox, QStackedLayout
 )
 
-from timeline_model import TimelineProject, mask_values_at, transform_eased_progress
+from timeline_model import TimelineProject, mask_values_at, mask_points_at, transform_eased_progress
 from timeline_widget import TimelineWidget
 from media_probe import probe_media, duration_to_frames
 from proxy_manager import create_proxy
@@ -246,6 +246,116 @@ class VideoRenderTask(QRunnable):
             self.signals.finished.emit("", str(exc))
 
 
+class MaskOverlay(QWidget):
+    """Lightweight transparent polygon handle layer over the video preview."""
+    dragStarted = Signal()
+    vertexMoved = Signal(int, float, float)
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setMouseTracking(True)
+        self.setCursor(Qt.CursorShape.CrossCursor)
+        self._clip_id: str | None = None
+        self._frame = 0
+        self._points: list[list[float]] = []
+        self._base_rect = (0.0, 0.0, 1.0, 1.0)
+        self._current_rect = (0.0, 0.0, 1.0, 1.0)
+        self._drag_index: int | None = None
+        self.hide()
+
+    def set_mask(self, clip_id: str | None, frame: int = 0,
+                 points: list[list[float]] | None = None,
+                 base_rect: tuple[float, float, float, float] = (0, 0, 1, 1),
+                 current_rect: tuple[float, float, float, float] = (0, 0, 1, 1),
+                 enabled: bool = False) -> None:
+        self._clip_id = clip_id
+        self._frame = int(frame)
+        self._points = [list(point) for point in (points or [])]
+        self._base_rect = tuple(float(v) for v in base_rect)
+        self._current_rect = tuple(float(v) for v in current_rect)
+        self.setVisible(bool(enabled and clip_id and len(self._points) >= 3))
+        self.update()
+
+    def _image_rect(self):
+        from PySide6.QtCore import QRectF
+        width, height = max(1, self.width()), max(1, self.height())
+        target_ratio = 16.0 / 9.0
+        if width / height > target_ratio:
+            h = float(height)
+            w = h * target_ratio
+            return QRectF((width - w) / 2.0, 0.0, w, h)
+        w = float(width)
+        h = w / target_ratio
+        return QRectF(0.0, (height - h) / 2.0, w, h)
+
+    def _screen_points(self):
+        rect = self._image_rect()
+        bx, by, bw, bh = self._base_rect
+        x, y, width, height = self._current_rect
+        bw, bh = max(1e-9, bw), max(1e-9, bh)
+        return [QPointF(rect.left() + (x + ((px - bx) / bw) * width) * rect.width(),
+                        rect.top() + (y + ((py - by) / bh) * height) * rect.height())
+                for px, py in self._points]
+
+    def paintEvent(self, event) -> None:
+        if not self.isVisible() or len(self._points) < 3:
+            return
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        vertices = self._screen_points()
+        painter.setPen(QPen(QColor("#F2C66D"), 2.0))
+        painter.setBrush(QBrush(QColor(214, 174, 85, 28)))
+        painter.drawPolygon(QPolygonF(vertices))
+        for index, point in enumerate(vertices):
+            painter.setPen(QPen(QColor("#171717"), 1.5))
+            painter.setBrush(QBrush(QColor("#FFF0C2") if index == self._drag_index else QColor("#D6AE55")))
+            painter.drawEllipse(point, 6.5, 6.5)
+        painter.end()
+
+    def mousePressEvent(self, event) -> None:
+        if event.button() != Qt.MouseButton.LeftButton:
+            return
+        position = event.position()
+        vertices = self._screen_points()
+        nearest = min(range(len(vertices)),
+                      key=lambda index: (vertices[index].x() - position.x()) ** 2 +
+                                        (vertices[index].y() - position.y()) ** 2,
+                      default=-1)
+        if nearest >= 0 and (vertices[nearest] - position).manhattanLength() <= 18:
+            self._drag_index = nearest
+            self.dragStarted.emit()
+            self.update()
+            event.accept()
+            return
+        event.ignore()
+
+    def mouseMoveEvent(self, event) -> None:
+        if self._drag_index is None:
+            return
+        rect = self._image_rect()
+        position = event.position()
+        image_x = min(1.0, max(0.0, (position.x() - rect.left()) / max(1.0, rect.width())))
+        image_y = min(1.0, max(0.0, (position.y() - rect.top()) / max(1.0, rect.height())))
+        bx, by, bw, bh = self._base_rect
+        x, y, width, height = self._current_rect
+        if width <= 1e-9 or height <= 1e-9:
+            return
+        point_x = bx + ((image_x - x) / width) * bw
+        point_y = by + ((image_y - y) / height) * bh
+        point_x, point_y = min(1.0, max(0.0, point_x)), min(1.0, max(0.0, point_y))
+        self._points[self._drag_index] = [point_x, point_y]
+        self.vertexMoved.emit(self._drag_index, point_x, point_y)
+        self.update()
+        event.accept()
+
+    def mouseReleaseEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._drag_index = None
+            self.update()
+            event.accept()
+
+
 class ZenithEditor(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
@@ -356,7 +466,17 @@ class ZenithEditor(QMainWindow):
         self.video_widget.setMinimumHeight(300)
         self.video_widget.setStyleSheet("background:#050506;")
         self.player.setVideoOutput(self.video_widget)
-        preview_layout.addWidget(self.video_widget, 1)
+        preview_surface = QWidget()
+        preview_surface.setMinimumHeight(300)
+        preview_stack = QStackedLayout(preview_surface)
+        preview_stack.setStackingMode(QStackedLayout.StackingMode.StackAll)
+        preview_stack.setContentsMargins(0, 0, 0, 0)
+        preview_stack.addWidget(self.video_widget)
+        self.mask_overlay = MaskOverlay(preview_surface)
+        preview_stack.addWidget(self.mask_overlay)
+        self.mask_overlay.dragStarted.connect(self._mask_overlay_drag_started)
+        self.mask_overlay.vertexMoved.connect(self._mask_overlay_vertex_moved)
+        preview_layout.addWidget(preview_surface, 1)
 
         playback = QHBoxLayout()
         self.play_button = QPushButton("▶ پخش")
@@ -1222,6 +1342,85 @@ class ZenithEditor(QMainWindow):
         self.statusBar().showMessage(f"Mask Keyframe فریم {frame} حذف شد.")
 
 
+    def _sync_mask_overlay(self, clip=None, local_frame: int | None = None) -> None:
+        if clip is None:
+            clip_id = self.timeline_widget.canvas.selected_clip_id
+            try:
+                clip = self.timeline_project.get_clip(clip_id) if clip_id else None
+            except KeyError:
+                clip = None
+        if not clip or clip.media_type != "video" or not clip.track.startswith("V"):
+            self.mask_overlay.set_mask(None, enabled=False)
+            return
+        frame = (max(0, min(clip.duration_frames - 1,
+                            self.timeline_project.playhead_frame - clip.start_frame))
+                 if local_frame is None else int(local_frame))
+        current_rect_values = mask_values_at(
+            clip.mask_keyframes, frame,
+            {"x": clip.mask_x, "y": clip.mask_y,
+             "width": clip.mask_width, "height": clip.mask_height},
+        )
+        points = mask_points_at(clip.mask_keyframes, frame, clip.mask_points)
+        self.mask_overlay.set_mask(
+            clip.clip_id, frame, points,
+            (clip.mask_x, clip.mask_y, clip.mask_width, clip.mask_height),
+            (current_rect_values["x"], current_rect_values["y"],
+             current_rect_values["width"], current_rect_values["height"]),
+            bool(clip.mask_enabled and clip.mask_shape == "polygon"),
+        )
+
+    def _mask_overlay_drag_started(self) -> None:
+        self._push_undo()
+
+    def _mask_overlay_vertex_moved(self, point_index: int, point_x: float, point_y: float) -> None:
+        clip_id = self.timeline_widget.canvas.selected_clip_id
+        if not clip_id:
+            return
+        try:
+            clip = self.timeline_project.get_clip(clip_id)
+            if clip.mask_shape != "polygon" or not clip.mask_enabled:
+                return
+            frame = max(0, min(clip.duration_frames - 1,
+                              self.timeline_project.playhead_frame - clip.start_frame))
+            keys = [dict(item) for item in clip.mask_keyframes]
+            key = next((item for item in keys if int(item["frame"]) == frame), None)
+            if key is None and keys:
+                values = mask_values_at(keys, frame, {
+                    "x": clip.mask_x, "y": clip.mask_y,
+                    "width": clip.mask_width, "height": clip.mask_height,
+                })
+                points = mask_points_at(keys, frame, clip.mask_points)
+                key = {"frame": frame, **values, "points": points, "ease": "linear"}
+                keys.append(key)
+                keys.sort(key=lambda item: int(item["frame"]))
+            if key is not None:
+                points = [list(point) for point in key.get("points", clip.mask_points)]
+                if not 0 <= point_index < len(points):
+                    return
+                points[point_index] = [float(point_x), float(point_y)]
+                key["points"] = points
+                clip.mask_keyframes = keys
+            else:
+                points = [list(point) for point in clip.mask_points]
+                if not 0 <= point_index < len(points):
+                    return
+                points[point_index] = [float(point_x), float(point_y)]
+                clip.mask_points = points
+            clip.validate()
+            blocker = QSignalBlocker(self.mask_points_edit)
+            self.mask_points_edit.setText("; ".join(
+                f"{point[0]:.3f},{point[1]:.3f}" for point in
+                (key["points"] if key is not None else clip.mask_points)
+            ))
+            del blocker
+            self._sync_mask_overlay(clip, frame)
+            self.timeline_widget.refresh()
+            self.statusBar().showMessage(
+                f"رأس {point_index + 1} ماسک جابه‌جا شد؛ تغییرات با یک Undo قابل بازگشت است."
+            )
+        except (KeyError, ValueError, IndexError) as exc:
+            self.statusBar().showMessage(f"ویرایش رأس ماسک انجام نشد: {exc}")
+
     def _sync_transform_controls(self) -> None:
         clip_id = self.timeline_widget.canvas.selected_clip_id
         clip = None
@@ -1306,6 +1505,7 @@ class ZenithEditor(QMainWindow):
                 blocker = QSignalBlocker(self.blend_mode_combo)
                 self.blend_mode_combo.setCurrentIndex(blend_index)
                 del blocker
+        self._sync_mask_overlay(clip, local_frame if enabled else 0)
         selected_frame = self.timeline_widget.canvas.selected_transform_keyframe_frame
         self.delete_transform_keyframe_button.setEnabled(bool(enabled and selected_frame is not None and any(int(item['frame']) == selected_frame for item in clip.transform_keyframes)))
         self.playback_speed_combo.setEnabled(enabled)
