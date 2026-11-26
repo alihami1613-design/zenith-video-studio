@@ -75,6 +75,24 @@ class TimelineModelTests(unittest.TestCase):
         self.assertEqual(project.clips[0].video_fade_out_frames, 0)
         self.assertEqual(project.to_dict()["schema_version"], 8)
 
+    def test_cross_dissolve_persists_and_split_does_not_duplicate_it(self):
+        project = TimelineProject()
+        first = project.add_clip("a.mp4", "a", start_frame=0, duration_frames=90)
+        second = project.add_clip("b.mp4", "b", start_frame=90, duration_frames=90)
+        project.set_clip_transition(second.clip_id, dissolve_in_frames=24)
+        restored = TimelineProject.from_dict(project.to_dict())
+        incoming = restored.get_clip(second.clip_id)
+        self.assertEqual(incoming.transition_in_frames, 24)
+        left, right = restored.split_clip(second.clip_id, 135)
+        self.assertEqual(left.transition_in_frames, 24)
+        self.assertEqual(right.transition_in_frames, 0)
+
+    def test_cross_dissolve_duration_cannot_exceed_clip(self):
+        project = TimelineProject()
+        clip = project.add_clip("b.mp4", "b", duration_frames=30)
+        with self.assertRaises(ValueError):
+            project.set_clip_transition(clip.clip_id, dissolve_in_frames=31)
+
     def test_add_and_round_trip(self):
         project = TimelineProject(fps=30)
         clip = project.add_clip("media/a.mp4", "a.mp4", duration_frames=240)
