@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 import math
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
@@ -302,6 +303,9 @@ class TimelineProject:
                 raise ValueError("Cross Dissolve requires an adjacent previous clip on the same track")
             if frames > previous.duration_frames:
                 raise ValueError("Cross Dissolve duration exceeds the previous clip")
+            still_extensions = {".png", ".jpg", ".jpeg", ".bmp", ".webp", ".tif", ".tiff"}
+            if Path(clip.path).suffix.lower() not in still_extensions and clip.source_in < frames:
+                raise ValueError("Cross Dissolve needs source handle frames before the incoming clip in-point")
             before_previous = next((item for item in reversed(self.clips_on_track(clip.track))
                                      if item.start_frame < previous.start_frame), None)
             if before_previous and previous.transition_in_frames + frames > previous.duration_frames:
