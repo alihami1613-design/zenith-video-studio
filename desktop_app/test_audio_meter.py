@@ -38,6 +38,18 @@ class AudioMeterTests(unittest.TestCase):
         )
         self.assertEqual(peaks["A1"], 1.5)
 
+    def test_embedded_video_audio_uses_assigned_mixer_bus(self):
+        clip = self.clip(
+            path="camera.mp4", track="V1", media_type="video",
+            has_audio=True, audio_track="A3",
+        )
+        peaks = estimate_track_peaks(
+            [clip], {"camera.mp4": [0.65]}, 30,
+            {"A1": {}, "A2": {}, "A3": {"volume": 0.5}},
+        )
+        self.assertEqual(peaks["A1"], 0.0)
+        self.assertAlmostEqual(peaks["A3"], 0.325)
+
     def test_dbfs_label(self):
         self.assertEqual(peak_to_dbfs(0), "-∞ dBFS")
         self.assertEqual(peak_to_dbfs(1), "0.0 dBFS")
