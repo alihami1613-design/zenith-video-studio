@@ -1,4 +1,4 @@
-name: Desktop timeline model tests
+name: Desktop model and color preview tests
 
 on:
   push:
