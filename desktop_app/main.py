@@ -13,7 +13,7 @@ from PySide6.QtMultimediaWidgets import QVideoWidget
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QFileDialog, QMessageBox,
     QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QListWidget,
-    QListWidgetItem, QSplitter, QFrame, QStatusBar, QSlider, QCheckBox
+    QListWidgetItem, QSplitter, QFrame, QStatusBar, QSlider, QCheckBox, QComboBox
 )
 
 from timeline_model import TimelineProject
@@ -118,6 +118,7 @@ class AudioRenderTask(QRunnable):
                 project.clips, project.fps, self.output_path,
                 timeline_duration_frames=project.duration_frames,
                 audio_track_settings=project.audio_track_settings,
+                audio_ducking=project.audio_ducking,
             )
             self.signals.finished.emit(str(result), "")
         except Exception as exc:
@@ -314,6 +315,39 @@ class ZenithEditor(QMainWindow):
             self.track_mixer_controls[track] = {
                 "gain": gain, "mute": mute, "solo": solo
             }
+        duck_heading = QLabel("Ducking هوشمند گویندگی")
+        duck_heading.setObjectName("panel_title")
+        inspector_layout.addWidget(duck_heading)
+        self.ducking_enabled = QCheckBox("کاهش خودکار موسیقی هنگام صحبت")
+        self.ducking_enabled.pressed.connect(self._push_undo)
+        self.ducking_enabled.toggled.connect(self._audio_ducking_changed)
+        inspector_layout.addWidget(self.ducking_enabled)
+        duck_voice_row = QHBoxLayout()
+        duck_voice_row.addWidget(QLabel("گویندگی"))
+        self.duck_voice_track = QComboBox()
+        self.duck_voice_track.addItems(self.timeline_project.audio_tracks)
+        self.duck_voice_track.activated.connect(self._push_undo)
+        self.duck_voice_track.currentTextChanged.connect(self._audio_ducking_changed)
+        duck_voice_row.addWidget(self.duck_voice_track, 1)
+        inspector_layout.addLayout(duck_voice_row)
+        duck_music_row = QHBoxLayout()
+        duck_music_row.addWidget(QLabel("موسیقی"))
+        self.duck_music_track = QComboBox()
+        self.duck_music_track.addItems(self.timeline_project.audio_tracks)
+        self.duck_music_track.setCurrentText("A2")
+        self.duck_music_track.activated.connect(self._push_undo)
+        self.duck_music_track.currentTextChanged.connect(self._audio_ducking_changed)
+        duck_music_row.addWidget(self.duck_music_track, 1)
+        inspector_layout.addLayout(duck_music_row)
+        self.duck_reduction_label = QLabel("کاهش موسیقی: 12 dB")
+        inspector_layout.addWidget(self.duck_reduction_label)
+        self.duck_reduction_slider = QSlider(Qt.Horizontal)
+        self.duck_reduction_slider.setRange(0, 24)
+        self.duck_reduction_slider.setValue(12)
+        self.duck_reduction_slider.sliderPressed.connect(self._push_undo)
+        self.duck_reduction_slider.valueChanged.connect(self._audio_ducking_changed)
+        self.duck_reduction_slider.setToolTip("شدت کاهش خودکار حجم موسیقی هنگام فعال بودن گویندگی")
+        inspector_layout.addWidget(self.duck_reduction_slider)
         inspector_layout.addStretch(1)
 
         top_split.addWidget(media_panel)
@@ -635,6 +669,7 @@ class ZenithEditor(QMainWindow):
         self.timeline_widget.set_waveforms(self.waveforms)
         self._sync_audio_controls()
         self._sync_audio_track_controls()
+        self._sync_audio_ducking_controls()
 
     def _start_waveform(self, path: str) -> None:
         if path in self.waveforms or any(task.path == path for task in self._waveform_tasks):
@@ -814,6 +849,39 @@ class ZenithEditor(QMainWindow):
             controls["mute"].setChecked(bool(settings.get("muted", False)))
             controls["solo"].setChecked(bool(settings.get("solo", False)))
             del blockers
+
+    def _sync_audio_ducking_controls(self) -> None:
+        settings = self.timeline_project.audio_ducking
+        blockers = [
+            QSignalBlocker(self.ducking_enabled),
+            QSignalBlocker(self.duck_voice_track),
+            QSignalBlocker(self.duck_music_track),
+            QSignalBlocker(self.duck_reduction_slider),
+        ]
+        self.ducking_enabled.setChecked(bool(settings.get("enabled", False)))
+        self.duck_voice_track.setCurrentText(settings.get("voice_track", "A1"))
+        self.duck_music_track.setCurrentText(settings.get("music_track", "A2"))
+        reduction = round(float(settings.get("reduction_db", 12.0)))
+        self.duck_reduction_slider.setValue(reduction)
+        self.duck_reduction_label.setText(f"کاهش موسیقی: {reduction} dB")
+        del blockers
+
+    def _audio_ducking_changed(self, *_args: Any) -> None:
+        try:
+            self.timeline_project.set_audio_ducking(
+                enabled=self.ducking_enabled.isChecked(),
+                voice_track=self.duck_voice_track.currentText(),
+                music_track=self.duck_music_track.currentText(),
+                reduction_db=float(self.duck_reduction_slider.value()),
+            )
+        except (KeyError, ValueError) as exc:
+            self.statusBar().showMessage(f"تنظیم Ducking اعمال نشد: {exc}")
+            self._sync_audio_ducking_controls()
+            return
+        self.duck_reduction_label.setText(
+            f"کاهش موسیقی: {self.duck_reduction_slider.value()} dB"
+        )
+        self.statusBar().showMessage("تنظیمات Ducking ذخیره شد؛ در خروجی میکس اعمال می‌شود")
 
     def _audio_track_changed(self, track: str, **changes: Any) -> None:
         try:
