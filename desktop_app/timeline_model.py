@@ -33,6 +33,7 @@ class Clip:
     clip_id: str = field(default_factory=_new_id)
     media_type: str = "video"
     has_audio: bool = False
+    audio_track: str = "A1"
     volume: float = 1.0
     fade_in_frames: int = 0
     fade_out_frames: int = 0
@@ -48,6 +49,8 @@ class Clip:
             raise ValueError("Clip duration must be at least one frame")
         if not self.track:
             raise ValueError("Clip track cannot be empty")
+        if self.audio_track not in DEFAULT_AUDIO_TRACKS:
+            raise ValueError("Clip audio route must be A1-A4")
         if not math.isfinite(float(self.volume)) or not 0.0 <= float(self.volume) <= 2.0:
             raise ValueError("Clip volume must be between 0.0 and 2.0")
         if self.fade_in_frames < 0 or self.fade_out_frames < 0:
@@ -135,6 +138,7 @@ class TimelineProject:
         duration_frames: int = 150,
         media_type: str = "video",
         has_audio: bool = False,
+        audio_track: str | None = None,
     ) -> Clip:
         if track not in self.video_tracks + self.audio_tracks:
             raise ValueError(f"Unknown track: {track}")
@@ -146,6 +150,7 @@ class TimelineProject:
             duration_frames=duration_frames,
             media_type=media_type,
             has_audio=bool(has_audio),
+            audio_track=audio_track or ("A1" if track.startswith("V") else track),
         )
         clip.validate()
         self.clips.append(clip)
@@ -327,6 +332,7 @@ class TimelineProject:
                 clip_id=str(raw.get("clip_id") or _new_id()),
                 media_type=str(raw.get("media_type", "audio" if track.startswith("A") else "video")),
                 has_audio=bool(raw.get("has_audio", raw.get("media_type", "audio" if track.startswith("A") else "video") == "audio")),
+                audio_track=str(raw.get("audio_track") or (track if track.startswith("A") else "A1")),
                 volume=float(raw.get("volume", 1.0)),
                 fade_in_frames=max(0, int(raw.get("fade_in_frames", 0) or 0)),
                 fade_out_frames=max(0, int(raw.get("fade_out_frames", 0) or 0)),
