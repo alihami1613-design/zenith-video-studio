@@ -880,6 +880,8 @@ class ZenithEditor(QMainWindow):
         self.timeline_widget.speedRampChanged.connect(self._speed_ramp_changed)
         self.timeline_widget.transformKeyframeMoved.connect(self._transform_keyframe_moved)
         self.timeline_widget.transformKeyframeSelected.connect(self._transform_keyframe_selected)
+        self.timeline_widget.maskKeyframeMoved.connect(self._mask_keyframe_moved)
+        self.timeline_widget.maskKeyframeSelected.connect(self._mask_keyframe_selected)
         timeline_layout.addWidget(self.timeline_widget, 1)
         outer.addWidget(timeline_panel, 2)
 
@@ -1662,6 +1664,28 @@ class ZenithEditor(QMainWindow):
             self.timeline_widget.canvas.selected_transform_keyframe_frame = int(new_frame)
         except (KeyError, ValueError, StopIteration) as exc:
             self.statusBar().showMessage(f"جابه‌جایی Keyframe انجام نشد: {exc}")
+        self._sync_transform_controls()
+        self.timeline_widget.refresh()
+
+    def _mask_keyframe_selected(self, clip_id: str, frame: int) -> None:
+        clip = self.timeline_project.get_clip(clip_id)
+        self.timeline_project.playhead_frame = clip.start_frame + int(frame)
+        self._sync_transform_controls()
+        self.statusBar().showMessage(f"Mask Keyframe فریم {frame} انتخاب شد؛ برای جابه‌جایی آن را بکشید.")
+
+    def _mask_keyframe_moved(self, clip_id: str, old_frame: int, new_frame: int) -> None:
+        try:
+            clip = self.timeline_project.get_clip(clip_id)
+            updated = [dict(item) for item in clip.mask_keyframes]
+            key = next(item for item in updated if int(item["frame"]) == int(old_frame))
+            key["frame"] = int(new_frame)
+            updated.sort(key=lambda item: int(item["frame"]))
+            clip.mask_keyframes = updated
+            clip.validate()
+            self.timeline_widget.canvas.selected_mask_keyframe_frame = int(new_frame)
+            self.timeline_project.playhead_frame = clip.start_frame + int(new_frame)
+        except (KeyError, ValueError, StopIteration) as exc:
+            self.statusBar().showMessage(f"جابه‌جایی Mask Keyframe انجام نشد: {exc}")
         self._sync_transform_controls()
         self.timeline_widget.refresh()
 
