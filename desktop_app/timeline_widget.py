@@ -381,7 +381,7 @@ class TimelineWidget(QWidget):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(6)
         toolbar = QHBoxLayout()
-        self.info_label = QLabel("کشیدن بدنه: جابه‌جایی | کشیدن لبه‌ها: کوتاه‌کردن | چسباندن خودکار به نقاط نزدیک")
+        self.info_label = QLabel("کشیدن بدنه: جابه‌جایی | لبه‌ها: کوتاه‌کردن | نقاط Speed Ramp: تغییر زمان و سرعت | چسباندن خودکار")
         self.info_label.setStyleSheet("color:#A7A7A7;")
         toolbar.addWidget(self.info_label)
         toolbar.addStretch(1)
