@@ -22,7 +22,11 @@ def estimate_track_peaks(
     solo = {name for name, value in settings.items() if value.get("solo", False)}
     result = {track: 0.0 for track in tracks}
     for clip in clips:
-        if getattr(clip, "media_type", "") != "audio" or clip.track not in result:
+        has_audio = (
+            getattr(clip, "media_type", "") == "audio"
+            or (getattr(clip, "media_type", "") == "video" and getattr(clip, "has_audio", False))
+        )
+        if not has_audio or clip.track not in result:
             continue
         track_setting = settings.get(clip.track, {})
         if track_setting.get("muted", False) or (solo and clip.track not in solo):
