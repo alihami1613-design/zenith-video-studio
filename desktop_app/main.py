@@ -24,6 +24,7 @@ from waveform_manager import create_waveform, load_waveform
 from audio_render import render_audio_mix
 from audio_meter import estimate_track_peaks, peak_to_dbfs
 from color_preview import create_color_preview
+from color_scopes import RGBHistogramWidget, extract_rgb_histogram
 from speed_ramp_preview import create_speed_ramp_preview
 from video_render import render_timeline_mp4
 
@@ -106,6 +107,28 @@ class ColorPreviewTask(QRunnable):
             self.signals.finished.emit(self.clip_id, str(result), "")
         except Exception as exc:
             self.signals.finished.emit(self.clip_id, "", str(exc))
+
+
+class RGBHistogramSignals(QObject):
+    finished = Signal(str, object, str)
+
+
+class RGBHistogramTask(QRunnable):
+    """Sample one tiny RGB frame off the GUI thread for the Color scope."""
+
+    def __init__(self, clip_id: str, path: str, timestamp: float) -> None:
+        super().__init__()
+        self.clip_id = clip_id
+        self.path = path
+        self.timestamp = timestamp
+        self.signals = RGBHistogramSignals()
+
+    def run(self) -> None:
+        try:
+            result = extract_rgb_histogram(self.path, self.timestamp)
+            self.signals.finished.emit(self.clip_id, result, "")
+        except Exception as exc:
+            self.signals.finished.emit(self.clip_id, None, str(exc))
 
 
 class SpeedRampPreviewSignals(QObject):
@@ -234,6 +257,10 @@ class ZenithEditor(QMainWindow):
         self._color_preview_pool = QThreadPool(self)
         self._color_preview_pool.setMaxThreadCount(1)
         self._color_preview_tasks: list[ColorPreviewTask] = []
+        self._scope_pool = QThreadPool(self)
+        self._scope_pool.setMaxThreadCount(1)
+        self._scope_tasks: list[RGBHistogramTask] = []
+        self._scope_clip_id: str | None = None
         self._graded_preview_clip_id: str | None = None
         self._speed_ramp_preview_pool = QThreadPool(self)
         self._speed_ramp_preview_pool.setMaxThreadCount(1)
@@ -548,6 +575,17 @@ class ZenithEditor(QMainWindow):
         self.color_preview_button.setEnabled(False)
         self.color_preview_button.clicked.connect(self.create_color_preview_for_selected_clip)
         inspector_layout.addWidget(self.color_preview_button)
+
+        scopes_heading = QLabel("Scopes — تحلیل رنگ")
+        scopes_heading.setObjectName("panel_title")
+        inspector_layout.addWidget(scopes_heading)
+        self.rgb_histogram_widget = RGBHistogramWidget()
+        inspector_layout.addWidget(self.rgb_histogram_widget)
+        self.rgb_histogram_button = QPushButton("تحلیل هیستوگرام RGB")
+        self.rgb_histogram_button.setToolTip("فقط یک فریم کوچک ۲۵۶×۱۴۴ را در پس‌زمینه نمونه‌برداری می‌کند")
+        self.rgb_histogram_button.setEnabled(False)
+        self.rgb_histogram_button.clicked.connect(self.analyze_rgb_histogram)
+        inspector_layout.addWidget(self.rgb_histogram_button)
 
         mixer_heading = QLabel("میکسر ترک‌ها")
         mixer_heading.setObjectName("panel_title")
@@ -1230,6 +1268,7 @@ class ZenithEditor(QMainWindow):
                 pass
         enabled = bool(clip and clip.media_type == "video")
         self.color_preview_button.setEnabled(enabled)
+        self.rgb_histogram_button.setEnabled(enabled)
         for slider, label, scale in self.color_controls.values():
             slider.setEnabled(enabled)
             if not enabled:
@@ -1242,6 +1281,43 @@ class ZenithEditor(QMainWindow):
             slider.setValue(round(value / scale))
             label.setText(f"{key.title()}: {value:.2f}")
         del blockers
+
+    def analyze_rgb_histogram(self) -> None:
+        clip_id = self.timeline_widget.canvas.selected_clip_id
+        if not clip_id:
+            self.statusBar().showMessage("ابتدا یک کلیپ ویدیویی انتخاب کن")
+            return
+        try:
+            clip = self.timeline_project.get_clip(clip_id)
+        except KeyError:
+            return
+        if clip.media_type != "video" or not clip.track.startswith("V"):
+            self.statusBar().showMessage("هیستوگرام فقط برای کلیپ ویدیویی قابل محاسبه است")
+            return
+        if not Path(clip.path).is_file():
+            self.statusBar().showMessage("فایل اصلی کلیپ پیدا نشد")
+            return
+        if any(task.clip_id == clip_id for task in self._scope_tasks):
+            self.statusBar().showMessage("تحلیل این کلیپ در حال انجام است")
+            return
+        timestamp = clip.source_in / max(1, self.timeline_project.fps)
+        task = RGBHistogramTask(clip_id, clip.path, timestamp)
+        task.signals.finished.connect(self._rgb_histogram_finished)
+        self._scope_tasks.append(task)
+        self.rgb_histogram_button.setEnabled(False)
+        self.statusBar().showMessage("در حال نمونه‌برداری یک فریم ۲۵۶×۱۴۴ برای هیستوگرام RGB...")
+        self._scope_pool.start(task)
+
+    def _rgb_histogram_finished(self, clip_id: str, histogram: object, error: str) -> None:
+        self._scope_tasks = [task for task in self._scope_tasks if task.clip_id != clip_id]
+        if self.timeline_widget.canvas.selected_clip_id == clip_id:
+            self.rgb_histogram_button.setEnabled(True)
+            if histogram is not None:
+                self.rgb_histogram_widget.set_histogram(histogram)
+                self._scope_clip_id = clip_id
+                self.statusBar().showMessage("هیستوگرام RGB فریم آغازین کلیپ محاسبه شد؛ نمودار صرفاً ابزار تحلیل است و تصویر را تغییر نمی‌دهد.")
+            else:
+                self.statusBar().showMessage(f"محاسبه هیستوگرام ناموفق بود: {error}")
 
     def _color_controls_changed(self, *_: Any) -> None:
         clip_id = self.timeline_widget.canvas.selected_clip_id
