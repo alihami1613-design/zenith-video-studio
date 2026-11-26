@@ -39,7 +39,7 @@ class TimelineModelTests(unittest.TestCase):
         restored = TimelineProject.from_dict(project.to_dict())
         saved = restored.get_clip(clip.clip_id)
         self.assertEqual(len(saved.transform_keyframes), 2)
-        self.assertEqual(restored.to_dict()["schema_version"], 24)
+        self.assertEqual(restored.to_dict()["schema_version"], 25)
         left, right = restored.split_clip(clip.clip_id, 60)
         self.assertEqual(left.transform_keyframes[0]["frame"], 0)
         self.assertEqual(right.transform_keyframes[0]["frame"], 30)
