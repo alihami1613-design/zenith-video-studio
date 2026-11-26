@@ -8,6 +8,7 @@ from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QWidget
 
 
+class RGBHistogramWidget(QWidget):
     """Compact RGB histogram; receives already-computed data from a worker."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
