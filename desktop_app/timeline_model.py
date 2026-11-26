@@ -413,7 +413,10 @@ class TimelineProject:
         """Set validated, non-destructive per-clip color grading controls."""
         clip = self.get_clip(clip_id)
         allowed = {"exposure", "contrast", "saturation", "temperature", "tint",
-                   "highlights", "shadows", "whites", "blacks"}
+                   "highlights", "shadows", "whites", "blacks",
+                   "wheel_shadows_r", "wheel_shadows_g", "wheel_shadows_b",
+                   "wheel_midtones_r", "wheel_midtones_g", "wheel_midtones_b",
+                   "wheel_highlights_r", "wheel_highlights_g", "wheel_highlights_b"}
         if set(values) - allowed:
             raise ValueError("Unknown color grading control")
         grade = dict(clip.color_grade)
