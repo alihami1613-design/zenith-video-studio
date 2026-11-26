@@ -71,6 +71,18 @@ class VideoRenderTests(unittest.TestCase):
         self.assertIn("a='alpha(X,Y)*(if(lt(T", joined)
         self.assertIn("0.250000", joined)
 
+    def test_uses_lightweight_alpha_filter_for_constant_opacity(self):
+        with tempfile.TemporaryDirectory() as folder:
+            project = self.project(folder)
+            project.clips[0].transform_keyframes = [
+                {"frame": 0, "opacity": 0.5},
+                {"frame": 30, "opacity": 0.5},
+            ]
+            command = build_video_render_command("ffmpeg", project, "out.mp4")
+        joined = " ".join(command)
+        self.assertIn("colorchannelmixer=aa=0.500000", joined)
+        self.assertNotIn("geq=r='r(X,Y)'", joined)
+
     def test_builds_1080p_h264_with_grade_and_black_gap(self):
         with tempfile.TemporaryDirectory() as folder:
             project = self.project(folder)
