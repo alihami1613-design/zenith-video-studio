@@ -44,9 +44,9 @@ def calculate_rgb_histogram(rgb24: bytes) -> tuple[tuple[int, ...], tuple[int, .
     return tuple(tuple(channel) for channel in channels)  # type: ignore[return-value]
 
 
-def extract_rgb_histogram(source: str | Path, timestamp: float = 0.0,
-                          grade: dict[str, float] | None = None,
-                          timeout_seconds: int = 30) -> tuple[tuple[int, ...], tuple[int, ...], tuple[int, ...]]:
+def extract_rgb_frame(source: str | Path, timestamp: float = 0.0,
+                      grade: dict[str, float] | None = None,
+                      timeout_seconds: int = 30) -> bytes:
     path = Path(source).expanduser().resolve()
     if not path.is_file():
         raise FileNotFoundError(str(path))
@@ -54,9 +54,18 @@ def extract_rgb_histogram(source: str | Path, timestamp: float = 0.0,
     try:
         result = subprocess.run(command, capture_output=True, timeout=timeout_seconds, check=True)
     except subprocess.TimeoutExpired as exc:
-        raise RuntimeError("RGB histogram sampling timed out") from exc
+        raise RuntimeError("RGB scope sampling timed out") from exc
     except subprocess.CalledProcessError as exc:
         detail = (exc.stderr or b"").decode("utf-8", errors="replace").strip()
-        raise RuntimeError(f"RGB histogram sampling failed: {detail[-800:]}") from exc
-    return calculate_rgb_histogram(result.stdout)
+        raise RuntimeError(f"RGB scope sampling failed: {detail[-800:]}") from exc
+    expected = SCOPE_WIDTH * SCOPE_HEIGHT * 3
+    if len(result.stdout) != expected:
+        raise RuntimeError(f"FFmpeg returned {len(result.stdout)} bytes; expected {expected}")
+    return result.stdout
+
+
+def extract_rgb_histogram(source: str | Path, timestamp: float = 0.0,
+                          grade: dict[str, float] | None = None,
+                          timeout_seconds: int = 30) -> tuple[tuple[int, ...], tuple[int, ...], tuple[int, ...]]:
+    return calculate_rgb_histogram(extract_rgb_frame(source, timestamp, grade, timeout_seconds))
 
