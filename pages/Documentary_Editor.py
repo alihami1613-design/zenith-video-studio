@@ -23,19 +23,26 @@ div[data-testid="stFileUploader"] {border-radius: 12px;}
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown("### 01 — سکانس‌های واقعی مستند")
-mode = "استفاده از کلیپ‌های ویدئویی خودم"
-st.warning(
-    "تولیدکننده تصاویر کارتونی غیرفعال شده است. این نسخه فقط از فوتیج واقعی ویدئویی استفاده می‌کند؛ "
-    "هیچ تصویر نقاشی‌شده یا انیمیشنی به‌جای صحنه مستند ساخته نمی‌شود."
+st.markdown("### 01 — تهیه فوتیج واقعی مستند")
+mode = st.radio(
+    "منبع تصاویر",
+    ["دریافت خودکار فوتیج واقعی از Pexels", "استفاده از کلیپ‌های ویدئویی خودم"],
+    horizontal=True,
 )
-videos = st.file_uploader(
-    "کلیپ‌های واقعی را به ترتیب انتخاب کن (۱ تا ۱۲ کلیپ)",
-    type=["mp4", "mov", "mkv", "avi", "webm"],
-    accept_multiple_files=True,
-    key="video_scenes_v2",
-)
-st.caption("مدت هر کلیپ به‌صورت خودکار تنظیم می‌شود تا خروجی نهایی دقیقاً ۶۰ ثانیه باشد.")
+videos = []
+pexels_key = ""
+if mode == "دریافت خودکار فوتیج واقعی از Pexels":
+    st.info("استودیو برای ۱۲ سکانس HUMAN & AI فوتیج‌های واقعی عمودی را جست‌وجو و دریافت می‌کند. هیچ تصویر کارتونی تولید نمی‌شود.")
+    pexels_key = st.text_input("کلید API رایگان Pexels", type="password", help="کلید را از صفحه رایگان Pexels API دریافت کن. کلید فقط برای درخواست‌های همین نشست استفاده می‌شود.")
+    st.caption("دریافت کلید رایگان: https://www.pexels.com/api/")
+else:
+    videos = st.file_uploader(
+        "کلیپ‌های واقعی را به ترتیب انتخاب کن (۱ تا ۱۲ کلیپ)",
+        type=["mp4", "mov", "mkv", "avi", "webm"],
+        accept_multiple_files=True,
+        key="video_scenes_v2",
+    )
+    st.caption("مدت هر کلیپ به‌صورت خودکار تنظیم می‌شود تا خروجی نهایی دقیقاً ۶۰ ثانیه باشد.")
 
 st.markdown("---")
 st.markdown("### 02 — صدا")
@@ -282,6 +289,9 @@ def make_scene_art(index, label, folder):
 
 
 if create:
+    if mode == "دریافت خودکار فوتیج واقعی از Pexels" and not pexels_key.strip():
+        st.error("برای دریافت خودکار فوتیج واقعی، ابتدا کلید رایگان Pexels API را وارد کن.")
+        st.stop()
     if mode == "استفاده از کلیپ‌های ویدئویی خودم" and not videos:
         st.error("ابتدا حداقل یک کلیپ ویدئویی انتخاب کن.")
         st.stop()
@@ -298,21 +308,62 @@ if create:
             work = Path(temp)
             scene_files = []
 
-            if mode == "ساخت خودکار ۱۲ سکانس تصویری":
+            if mode == "دریافت خودکار فوتیج واقعی از Pexels":
+                headers = {"Authorization": pexels_key.strip()}
                 for i, (query, label) in enumerate(SCENES):
-                    status.write(f"طراحی سکانس {i + 1} از ۱۲: {label}")
-                    image_path = make_scene_art(i, label, work)
+                    status.write(f"جست‌وجوی فوتیج واقعی {i + 1} از ۱۲: {label}")
+                    response = requests.get(
+                        "https://api.pexels.com/videos/search",
+                        headers=headers,
+                        params={"query": query, "orientation": "portrait", "per_page": 8},
+                        timeout=45,
+                    )
+                    if response.status_code == 401:
+                        raise RuntimeError("کلید Pexels معتبر نیست. کلید API را بررسی کن.")
+                    response.raise_for_status()
+                    results = response.json().get("videos", [])
+                    if not results:
+                        response = requests.get(
+                            "https://api.pexels.com/videos/search",
+                            headers=headers,
+                            params={"query": query, "per_page": 8},
+                            timeout=45,
+                        )
+                        response.raise_for_status()
+                        results = response.json().get("videos", [])
+                    if not results:
+                        raise RuntimeError(f"برای این سکانس فوتیج مناسبی پیدا نشد: {label}")
+                    def rank_video(v):
+                        files = v.get("video_files", [])
+                        usable = [f for f in files if f.get("file_type") == "video/mp4" and f.get("link")]
+                        if not usable:
+                            return -1
+                        return max((min(f.get("width", 0), 1080) * min(f.get("height", 0), 1920) for f in usable))
+                    chosen = max(results, key=rank_video)
+                    candidates = [f for f in chosen.get("video_files", []) if f.get("file_type") == "video/mp4" and f.get("link")]
+                    if not candidates:
+                        raise RuntimeError(f"فایل MP4 برای سکانس {i+1} پیدا نشد.")
+                    portrait = [f for f in candidates if f.get("height", 0) >= f.get("width", 0)]
+                    selected = max(portrait or candidates, key=lambda f: min(f.get("width", 0),1080) * min(f.get("height",0),1920))
+                    clip_response = requests.get(selected["link"], stream=True, timeout=(30,180))
+                    clip_response.raise_for_status()
+                    input_path = work / f"pexels_{i:02d}.mp4"
+                    with input_path.open("wb") as out:
+                        for chunk in clip_response.iter_content(chunk_size=1024*1024):
+                            if chunk:
+                                out.write(chunk)
                     clip_path = work / f"scene_{i:02d}.mp4"
-                    vf = "zoompan=z='min(1+0.00045*on,1.07)':x='iw/2-(iw/zoom/2)+sin(on/38)*12':y='ih/2-(ih/zoom/2)+cos(on/51)*10':d=1:s=1080x1920:fps=30,format=yuv420p"
                     subprocess.run(
-                        [ffmpeg, "-y", "-loop", "1", "-framerate", "30", "-i", str(image_path),
-                         "-vf", vf, "-t", "5.25", "-an", "-c:v", "libx264",
-                         "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
+                        [ffmpeg, "-y", "-stream_loop", "-1", "-i", str(input_path),
+                         "-t", "5.25", "-vf",
+                         "scale=1080:1920:force_original_aspect_ratio=increase,"
+                         "crop=1080:1920,setsar=1,fps=30,format=yuv420p",
+                         "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
                          str(clip_path)],
-                        check=True, capture_output=True, text=True, timeout=180,
+                        check=True, capture_output=True, text=True, timeout=300,
                     )
                     scene_files.append(clip_path)
-                    progress.progress(int((i + 1) / 12 * 75))
+                    progress.progress(int((i + 1) / 12 * 65))
             else:
                 segment_duration = (60.0 + (len(videos) - 1) * 0.25) / len(videos)
                 for i, uploaded in enumerate(videos):
@@ -401,7 +452,7 @@ if create:
                 mime="video/mp4",
                 use_container_width=True,
             )
-            st.caption("این خروجی از فوتیج‌های واقعی انتخاب‌شده ساخته شده است؛ هیچ تصویر کارتونی یا نقاشی‌شده‌ای جایگزین صحنه‌ها نشده است.")
+            st.caption("فوتیج‌های واقعی از Pexels یا کلیپ‌های واردشده استفاده شده‌اند؛ هیچ تصویر کارتونی تولید نشده است.")
 
     except subprocess.TimeoutExpired:
         st.error("رندر بیش از زمان مجاز طول کشید. تعداد یا حجم کلیپ‌ها را کمتر کن.")
@@ -413,4 +464,4 @@ if create:
         st.error(f"خطای غیرمنتظره: {e}")
 
 st.markdown("---")
-st.caption("ZENITH BEYOND — Human & AI | Cinematic Motion Graphics v5")
+st.caption("ZENITH BEYOND — Human & AI | Real Footage Documentary Editor")
