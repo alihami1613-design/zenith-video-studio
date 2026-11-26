@@ -66,6 +66,8 @@ def validate_render_project(project: object) -> list[object]:
                 raise ValueError("مدت Cross Dissolve از طول کلیپ ورودی یا خروجی بیشتر است.")
             if int(getattr(clip, "video_fade_in_frames", 0)):
                 raise ValueError("برای یک کلیپ، Cross Dissolve و Video Fade In را هم‌زمان تنظیم نکنید.")
+            if not _is_still(clip) and clip.source_in < transition:
+                raise ValueError("برای Cross Dissolve به فریم‌های اضافه پیش از نقطه ورود منبع نیاز است؛ نقطه ورود را جلوتر ببرید.")
         if clip.start_frame < previous_end.get(clip.track, 0):
             raise ValueError(
                 f"هم‌پوشانی واقعی دو کلیپ روی {clip.track} مجاز نیست؛ "
@@ -105,7 +107,7 @@ def build_video_render_command(ffmpeg: str, project: object,
             ])
         else:
             command.extend([
-                "-ss", f"{_seconds(clip.source_in, fps):.6f}",
+                "-ss", f"{_seconds(max(0, clip.source_in - transition), fps):.6f}",
                 "-i", str(Path(clip.path).expanduser().resolve()),
             ])
 
