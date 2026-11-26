@@ -73,17 +73,18 @@ class TimelineModelTests(unittest.TestCase):
         ]})
         self.assertEqual(project.clips[0].video_fade_in_frames, 0)
         self.assertEqual(project.clips[0].video_fade_out_frames, 0)
-        self.assertEqual(project.to_dict()["schema_version"], 9)
+        self.assertEqual(project.to_dict()["schema_version"], 10)
 
     def test_cross_dissolve_persists_and_split_does_not_duplicate_it(self):
         project = TimelineProject()
         first = project.add_clip("a.mp4", "a", start_frame=0, duration_frames=90)
         second = project.add_clip("b.mp4", "b", start_frame=90, duration_frames=90)
         second.source_in = 24
-        project.set_clip_transition(second.clip_id, dissolve_in_frames=24)
+        project.set_clip_transition(second.clip_id, dissolve_in_frames=24, transition_type="wipe_left")
         restored = TimelineProject.from_dict(project.to_dict())
         incoming = restored.get_clip(second.clip_id)
         self.assertEqual(incoming.transition_in_frames, 24)
+        self.assertEqual(incoming.transition_in_type, "wipe_left")
         left, right = restored.split_clip(second.clip_id, 135)
         self.assertEqual(left.transition_in_frames, 24)
         self.assertEqual(right.transition_in_frames, 0)
@@ -104,6 +105,16 @@ class TimelineModelTests(unittest.TestCase):
         second = project.add_clip("b.mp4", "b", start_frame=90, duration_frames=90)
         with self.assertRaisesRegex(ValueError, "source handle"):
             project.set_clip_transition(second.clip_id, dissolve_in_frames=15)
+
+    def test_supported_transition_types_are_validated(self):
+        project = TimelineProject()
+        project.add_clip("a.mp4", "a", start_frame=0, duration_frames=90)
+        second = project.add_clip("b.mp4", "b", start_frame=90, duration_frames=90)
+        second.source_in = 30
+        project.set_clip_transition(second.clip_id, dissolve_in_frames=15, transition_type="push_left")
+        self.assertEqual(second.transition_in_type, "push_left")
+        with self.assertRaisesRegex(ValueError, "Unsupported video transition"):
+            project.set_clip_transition(second.clip_id, dissolve_in_frames=15, transition_type="spin")
 
     def test_cross_dissolve_duration_cannot_exceed_clip(self):
         project = TimelineProject()
