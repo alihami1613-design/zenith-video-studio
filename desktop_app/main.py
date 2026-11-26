@@ -472,7 +472,7 @@ class ZenithEditor(QMainWindow):
         self.remove_button = QPushButton("حذف کلیپ")
         self.remove_button.clicked.connect(self.remove_selected_from_timeline)
         self.video_render_button = QPushButton("خروجی نهایی MP4 (1080p)")
-        self.video_render_button.setToolTip("رندر H.264 با اصلاح رنگ کلیپ و میکس صدای تایم‌لاین؛ V1 بدون هم‌پوشانی")
+        self.video_render_button.setToolTip("رندر H.264 چندلایه V1 تا V4، عکس ثابت، اصلاح رنگ و میکس صدا")
         self.video_render_button.clicked.connect(self.export_video_mp4)
         self.audio_mix_button = QPushButton("خروجی میکس صدا (WAV)")
         self.audio_mix_button.setToolTip("ترکیب ترک‌های صوتی با Gain و Fade واقعی؛ فایل اصلی تغییر نمی‌کند")
@@ -1151,7 +1151,7 @@ class ZenithEditor(QMainWindow):
             return
         if not any(clip.track.startswith("V") and clip.media_type == "video"
                    for clip in self.timeline_project.clips):
-            QMessageBox.information(self, "خروجی MP4", "ابتدا یک کلیپ ویدیویی روی ترک V1 قرار دهید.")
+            QMessageBox.information(self, "خروجی MP4", "ابتدا یک کلیپ تصویری روی یکی از ترک‌های V1 تا V4 قرار دهید.")
             return
         filename, _ = QFileDialog.getSaveFileName(
             self, "ذخیره ویدیوی نهایی", "ZENITH_Final_1080p.mp4",
