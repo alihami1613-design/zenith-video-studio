@@ -9,7 +9,7 @@ import subprocess
 from pathlib import Path
 
 
-WAVEFORM_PRESET_VERSION = "waveform-v1-100hz-peak5"
+WAVEFORM_PRESET_VERSION = "waveform-v2-500hz-peak25"
 
 
 def default_waveform_cache() -> Path:
@@ -75,14 +75,14 @@ def create_waveform(
     ffmpeg = find_ffmpeg()
     command = [
         ffmpeg, "-hide_banner", "-loglevel", "error", "-i", str(source_path),
-        "-vn", "-ac", "1", "-ar", "100", "-threads", "1",
+        "-vn", "-ac", "1", "-ar", "500", "-threads", "1",
         "-f", "f32le", "pipe:1",
     ]
     try:
         completed = subprocess.run(
             command, capture_output=True, timeout=timeout_seconds, check=True,
         )
-        envelope = peak_envelope(completed.stdout, samples_per_bucket=5)
+        envelope = peak_envelope(completed.stdout, samples_per_bucket=25)
         if not envelope:
             raise RuntimeError("از فایل صوتی نمونه‌ای برای نمایش شکل موج دریافت نشد.")
         packed = array.array("f", envelope)
