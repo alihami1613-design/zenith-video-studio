@@ -716,17 +716,18 @@ class ZenithEditor(QMainWindow):
                          source_handles, self.timeline_project.fps * 5)
         self.cross_dissolve_slider.setRange(0, max(max_frames, clip.transition_in_frames))
         self.cross_dissolve_slider.setValue(clip.transition_in_frames)
+        self.cross_dissolve_slider.setEnabled((adjacent and max_frames > 0) or clip.transition_in_frames > 0)
         self.transition_type_combo.setCurrentIndex(max(0, self.transition_type_combo.findData(clip.transition_in_type)))
         self.transition_type_combo.setEnabled((adjacent and max_frames > 0) or clip.transition_in_frames > 0)
         del blockers
         fps = max(1, self.timeline_project.fps)
         if not adjacent and clip.transition_in_frames == 0:
-            self.cross_dissolve_label.setText("Cross Dissolve: نیازمند کلیپ قبلی چسبیده")
+            self.cross_dissolve_label.setText("Transition: نیازمند کلیپ قبلی چسبیده")
         elif adjacent and max_frames == 0 and clip.transition_in_frames == 0:
-            self.cross_dissolve_label.setText("Cross Dissolve: نیازمند فریم قبل از In")
+            self.cross_dissolve_label.setText("Transition: نیازمند فریم قبل از In")
         else:
             transition_names = {"dissolve": "Cross Dissolve", "wipe_left": "Wipe از چپ", "push_left": "Push از چپ"}
-        self.cross_dissolve_label.setText("{}: {:.1f} ثانیه".format(transition_names.get(clip.transition_in_type, "Transition"), clip.transition_in_frames / fps))
+            self.cross_dissolve_label.setText("{}: {:.1f} ثانیه".format(transition_names.get(clip.transition_in_type, "Transition"), clip.transition_in_frames / fps))
 
     def _cross_dissolve_changed(self, *_: Any) -> None:
         clip_id = self.timeline_widget.canvas.selected_clip_id
@@ -744,7 +745,8 @@ class ZenithEditor(QMainWindow):
             self._sync_cross_dissolve_controls()
             return
         fps = max(1, self.timeline_project.fps)
-        self.cross_dissolve_label.setText(f"Cross Dissolve In: {clip.transition_in_frames / fps:.1f} ثانیه")
+        transition_names = {"dissolve": "Cross Dissolve", "wipe_left": "Wipe از چپ", "push_left": "Push از چپ"}
+        self.cross_dissolve_label.setText("{}: {:.1f} ثانیه".format(transition_names.get(clip.transition_in_type, "Transition"), clip.transition_in_frames / fps))
         self.timeline_widget.refresh()
         self.statusBar().showMessage("Cross Dissolve ذخیره شد؛ پیش‌نمایش نهایی در رندر MP4 اعمال می‌شود.")
 
