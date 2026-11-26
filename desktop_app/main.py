@@ -1304,7 +1304,10 @@ class ZenithEditor(QMainWindow):
             return
         clip = self.timeline_project.get_clip(clip_id)
         frame = self.timeline_project.playhead_frame - clip.start_frame
-        if clip.mask_enabled and any(int(key["frame"]) == frame for key in clip.mask_keyframes):
+        if clip.mask_enabled and (
+            any(int(key["frame"]) == frame for key in clip.mask_keyframes)
+            or clip.mask_shape in {"rectangle", "ellipse"}
+        ):
             self._push_undo()
 
     def _mask_geometry_changed(self, rect) -> None:
