@@ -13,7 +13,7 @@ from PySide6.QtMultimediaWidgets import QVideoWidget
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QFileDialog, QMessageBox,
     QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QListWidget,
-    QListWidgetItem, QSplitter, QFrame, QStatusBar, QSlider, QCheckBox, QComboBox, QProgressBar, QDoubleSpinBox
+    QListWidgetItem, QSplitter, QFrame, QStatusBar, QSlider, QCheckBox, QComboBox, QProgressBar, QDoubleSpinBox, QLineEdit
 )
 
 from timeline_model import TimelineProject, transform_eased_progress
@@ -460,6 +460,49 @@ class ZenithEditor(QMainWindow):
         self.blend_mode_combo.addItem("Overlay", "overlay")
         self.blend_mode_combo.currentIndexChanged.connect(self._blend_mode_changed)
         inspector_layout.addWidget(self.blend_mode_combo)
+
+        inspector_layout.addWidget(QLabel("Chroma Key — حذف پرده سبز"))
+        self.chroma_key_checkbox = QCheckBox("فعال‌سازی Chroma Key")
+        self.chroma_key_checkbox.toggled.connect(self._clip_effects_changed)
+        inspector_layout.addWidget(self.chroma_key_checkbox)
+        self.chroma_key_color_edit = QLineEdit("#00FF00")
+        self.chroma_key_color_edit.setMaximumWidth(130)
+        self.chroma_key_color_edit.editingFinished.connect(self._clip_effects_changed)
+        inspector_layout.addWidget(QLabel("رنگ کلید (#RRGGBB)"))
+        inspector_layout.addWidget(self.chroma_key_color_edit)
+        self.chroma_key_similarity_spin = QDoubleSpinBox()
+        self.chroma_key_similarity_spin.setRange(0.0, 1.0)
+        self.chroma_key_similarity_spin.setSingleStep(0.02)
+        self.chroma_key_similarity_spin.setValue(0.25)
+        self.chroma_key_similarity_spin.valueChanged.connect(self._clip_effects_changed)
+        inspector_layout.addWidget(QLabel("Chroma Similarity"))
+        inspector_layout.addWidget(self.chroma_key_similarity_spin)
+        self.chroma_key_blend_spin = QDoubleSpinBox()
+        self.chroma_key_blend_spin.setRange(0.0, 1.0)
+        self.chroma_key_blend_spin.setSingleStep(0.02)
+        self.chroma_key_blend_spin.setValue(0.08)
+        self.chroma_key_blend_spin.valueChanged.connect(self._clip_effects_changed)
+        inspector_layout.addWidget(QLabel("Chroma Edge Blend"))
+        inspector_layout.addWidget(self.chroma_key_blend_spin)
+
+        inspector_layout.addWidget(QLabel("Rectangular Mask — ماسک مستطیلی"))
+        self.mask_checkbox = QCheckBox("فعال‌سازی ماسک")
+        self.mask_checkbox.toggled.connect(self._clip_effects_changed)
+        inspector_layout.addWidget(self.mask_checkbox)
+        self.mask_controls: dict[str, QDoubleSpinBox] = {}
+        for key, label, default in (
+            ("mask_x", "Mask X", 0.0), ("mask_y", "Mask Y", 0.0),
+            ("mask_width", "Mask Width", 1.0), ("mask_height", "Mask Height", 1.0),
+        ):
+            inspector_layout.addWidget(QLabel(label + " (0–1)"))
+            spin = QDoubleSpinBox()
+            spin.setRange(0.01 if key in ("mask_width", "mask_height") else 0.0, 1.0)
+            spin.setSingleStep(0.05)
+            spin.setDecimals(2)
+            spin.setValue(default)
+            spin.valueChanged.connect(self._clip_effects_changed)
+            self.mask_controls[key] = spin
+            inspector_layout.addWidget(spin)
 
 
         transform_heading = QLabel("حرکت و Transform با Keyframe")
