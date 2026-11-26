@@ -222,5 +222,6 @@
 - [x] Anchor Point مستقل برای pivot مقیاس‌گذاری و منحنی‌های Linear/Ease In/Ease Out/Ease In-Out
 - [x] کنترل سرعت ۰٫۲۵× تا ۴×، تغییر طول کلیپ با حفظ محدوده منبع، و هماهنگی صدای تعبیه‌شده
 - [x] Motion Blur سبک سه‌فریمی با وزن‌دهی زمانی و حالت پیش‌فرض خاموش
-- [ ] Reverse و Speed Ramp/Time Remapping
+- [x] Reverse برای تصویر و صدای تعبیه‌شده با حفظ محدوده منبع در Split/Trim
+- [ ] Speed Ramp تدریجی و Time Remapping هماهنگ با صدا
 - [ ] رندر واقعی روی Windows و رسانه‌های کاربر
