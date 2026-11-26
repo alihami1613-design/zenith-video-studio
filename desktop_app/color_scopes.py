@@ -15,16 +15,20 @@ SCOPE_HEIGHT = 144
 def build_histogram_command(ffmpeg: str, source: str | Path, timestamp: float, grade: dict[str, float] | None = None) -> list[str]:
     if timestamp < 0:
         raise ValueError("Histogram timestamp cannot be negative")
-    video_filters = ["scale=256:144:force_original_aspect_ratio=decrease", "pad=256:144:(ow-iw)/2:(oh-ih)/2", "setsar=1"]
+    video_filters = [
+        "scale=256:144:force_original_aspect_ratio=decrease",
+        "pad=256:144:(ow-iw)/2:(oh-ih)/2",
+        "setsar=1",
+    ]
     color_filter = build_color_filter(grade)
     if color_filter:
         video_filters.append(color_filter)
     return [
-        str(ffmpeg), "-hide_banner", "-loglevel", "error", "-threads", "1",
+        str(ffmpeg), "-hide_banner", "-loglevel", "error", "-threads", "1", "-filter_threads", "1",
         "-ss", f"{timestamp:.6f}", "-i", str(Path(source)),
         "-frames:v", "1", "-an",
         "-vf", ",".join(video_filters),
-        "-pix_fmt", "rgb24", "-f", "rawvideo", "pipe:1",
+        "-threads", "1", "-pix_fmt", "rgb24", "-f", "rawvideo", "pipe:1",
     ]
 
 
