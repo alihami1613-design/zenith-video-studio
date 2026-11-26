@@ -339,6 +339,26 @@ class ZenithEditor(QMainWindow):
         self.fade_out_slider.valueChanged.connect(self._audio_controls_changed)
         inspector_layout.addWidget(self.fade_out_slider)
 
+        visual_heading = QLabel("Fade تصویری کلیپ")
+        visual_heading.setObjectName("panel_title")
+        inspector_layout.addWidget(visual_heading)
+        self.video_fade_in_label = QLabel("Video Fade In: —")
+        inspector_layout.addWidget(self.video_fade_in_label)
+        self.video_fade_in_slider = QSlider(Qt.Horizontal)
+        self.video_fade_in_slider.setRange(0, 300)
+        self.video_fade_in_slider.setToolTip("محوشدن تدریجی تصویر در ابتدای کلیپ؛ لایه زیرین نمایان می‌شود")
+        self.video_fade_in_slider.sliderPressed.connect(self._push_undo)
+        self.video_fade_in_slider.valueChanged.connect(self._video_fade_controls_changed)
+        inspector_layout.addWidget(self.video_fade_in_slider)
+        self.video_fade_out_label = QLabel("Video Fade Out: —")
+        inspector_layout.addWidget(self.video_fade_out_label)
+        self.video_fade_out_slider = QSlider(Qt.Horizontal)
+        self.video_fade_out_slider.setRange(0, 300)
+        self.video_fade_out_slider.setToolTip("محوشدن تدریجی تصویر در انتهای کلیپ؛ لایه زیرین نمایان می‌شود")
+        self.video_fade_out_slider.sliderPressed.connect(self._push_undo)
+        self.video_fade_out_slider.valueChanged.connect(self._video_fade_controls_changed)
+        inspector_layout.addWidget(self.video_fade_out_slider)
+
         color_heading = QLabel("اصلاح رنگ کلیپ")
         color_heading.setObjectName("panel_title")
         inspector_layout.addWidget(color_heading)
@@ -554,6 +574,7 @@ class ZenithEditor(QMainWindow):
             return
         self.media_info.setText(f"کلیپ انتخاب‌شده: {clip.name}\nمسیر: {clip.track}")
         self._sync_audio_controls()
+        self._sync_video_fade_controls()
         self._sync_color_controls()
         if Path(clip.path).exists():
             position_ms = int(clip.source_in * 1000 / self.timeline_project.fps)
@@ -604,6 +625,54 @@ class ZenithEditor(QMainWindow):
         fps = max(1, self.timeline_project.fps)
         self.fade_in_label.setText(f"Fade In: {clip.fade_in_frames / fps:.1f} ثانیه")
         self.fade_out_label.setText(f"Fade Out: {clip.fade_out_frames / fps:.1f} ثانیه")
+
+
+    def _sync_video_fade_controls(self) -> None:
+        clip_id = self.timeline_widget.canvas.selected_clip_id
+        clip = None
+        if clip_id:
+            try:
+                clip = self.timeline_project.get_clip(clip_id)
+            except KeyError:
+                pass
+        enabled = bool(clip and clip.media_type == "video" and clip.track.startswith("V"))
+        for control in (self.video_fade_in_slider, self.video_fade_out_slider):
+            control.setEnabled(enabled)
+        if not enabled:
+            self.video_fade_in_label.setText("Video Fade In: —")
+            self.video_fade_out_label.setText("Video Fade Out: —")
+            return
+        blockers = [QSignalBlocker(self.video_fade_in_slider), QSignalBlocker(self.video_fade_out_slider)]
+        max_fade = min(clip.duration_frames, self.timeline_project.fps * 10)
+        self.video_fade_in_slider.setRange(0, max_fade)
+        self.video_fade_out_slider.setRange(0, max_fade)
+        self.video_fade_in_slider.setValue(min(clip.video_fade_in_frames, max_fade))
+        self.video_fade_out_slider.setValue(min(clip.video_fade_out_frames, max_fade))
+        del blockers
+        fps = max(1, self.timeline_project.fps)
+        self.video_fade_in_label.setText(f"Video Fade In: {clip.video_fade_in_frames / fps:.1f} ثانیه")
+        self.video_fade_out_label.setText(f"Video Fade Out: {clip.video_fade_out_frames / fps:.1f} ثانیه")
+
+    def _video_fade_controls_changed(self, *_: Any) -> None:
+        clip_id = self.timeline_widget.canvas.selected_clip_id
+        if not clip_id:
+            return
+        try:
+            clip = self.timeline_project.get_clip(clip_id)
+            self.timeline_project.set_clip_video_fade(
+                clip_id,
+                fade_in_frames=self.video_fade_in_slider.value(),
+                fade_out_frames=self.video_fade_out_slider.value(),
+            )
+        except (KeyError, ValueError) as exc:
+            self.statusBar().showMessage(f"تنظیم Fade تصویری اعمال نشد: {exc}")
+            self._sync_video_fade_controls()
+            return
+        fps = max(1, self.timeline_project.fps)
+        self.video_fade_in_label.setText(f"Video Fade In: {clip.video_fade_in_frames / fps:.1f} ثانیه")
+        self.video_fade_out_label.setText(f"Video Fade Out: {clip.video_fade_out_frames / fps:.1f} ثانیه")
+        self.timeline_widget.refresh()
+        self.statusBar().showMessage("Fade تصویری ذخیره شد و در خروجی MP4 اعمال می‌شود.")
 
     def _sync_color_controls(self) -> None:
         clip_id = self.timeline_widget.canvas.selected_clip_id
