@@ -5,7 +5,7 @@ Run from the repository root:
 """
 import unittest
 
-from timeline_model import TimelineProject
+from timeline_model import TimelineProject, mask_values_at
 
 
 class TimelineModelTests(unittest.TestCase):
