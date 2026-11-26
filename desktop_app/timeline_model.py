@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-PROJECT_SCHEMA_VERSION = 10
+PROJECT_SCHEMA_VERSION = 11
 DEFAULT_FPS = 30
 DEFAULT_VIDEO_TRACKS = ("V1", "V2", "V3", "V4")
 DEFAULT_AUDIO_TRACKS = ("A1", "A2", "A3", "A4")
@@ -42,6 +42,7 @@ class Clip:
     video_fade_out_frames: int = 0
     transition_in_frames: int = 0
     transition_in_type: str = "dissolve"
+    transform_keyframes: list[dict[str, float]] = field(default_factory=list)
     color_grade: dict[str, float] = field(default_factory=lambda: {
         "exposure": 0.0, "contrast": 1.0, "saturation": 1.0,
         "temperature": 0.0, "tint": 0.0,
@@ -64,6 +65,23 @@ class Clip:
             raise ValueError("Clip volume must be between 0.0 and 2.0")
         if min(self.fade_in_frames, self.fade_out_frames, self.video_fade_in_frames, self.video_fade_out_frames, self.transition_in_frames) < 0:
             raise ValueError("Fade durations cannot be negative")
+        normalized_keys = []
+        previous_frame = -1
+        for raw_key in self.transform_keyframes or []:
+            frame = int(raw_key.get("frame", 0))
+            values = {key: float(raw_key.get(key, default)) for key, default in
+                      (("x", 0.0), ("y", 0.0), ("scale", 1.0), ("rotation", 0.0))}
+            if frame < 0 or frame >= self.duration_frames or frame <= previous_frame:
+                raise ValueError("Transform keyframes must be ordered inside clip duration")
+            if not all(math.isfinite(value) for value in values.values()):
+                raise ValueError("Transform keyframe values must be finite")
+            if not -2.0 <= values["x"] <= 2.0 or not -2.0 <= values["y"] <= 2.0:
+                raise ValueError("Transform position must be between -2 and 2 frame sizes")
+            if not 0.1 <= values["scale"] <= 4.0 or not -3600.0 <= values["rotation"] <= 3600.0:
+                raise ValueError("Transform scale or rotation is outside supported limits")
+            normalized_keys.append({"frame": frame, **values})
+            previous_frame = frame
+        self.transform_keyframes = normalized_keys
         if self.transition_in_type not in {"dissolve", "wipe_left", "push_left"}:
             raise ValueError("Unsupported video transition type")
         if any(value > self.duration_frames for value in (self.fade_in_frames, self.fade_out_frames, self.video_fade_in_frames, self.video_fade_out_frames, self.transition_in_frames)):
@@ -250,9 +268,19 @@ class TimelineProject:
         original.video_fade_out_frames = 0
         original.video_fade_in_frames = min(original.video_fade_in_frames, original.duration_frames)
         original.transition_in_frames = min(original.transition_in_frames, original.duration_frames)
+        original.transform_keyframes = [dict(k) for k in original.transform_keyframes if k["frame"] < original.duration_frames]
         original.fade_in_frames = min(original.fade_in_frames, original.duration_frames)
         self.clips.append(right)
         return original, right
+
+    def set_clip_transform_keyframes(self, clip_id: str, keyframes: list[dict[str, float]]) -> Clip:
+        """Set frame-relative transform keyframes; values are normalized to frame dimensions."""
+        clip = self.get_clip(clip_id)
+        if clip.media_type != "video" or not clip.track.startswith("V"):
+            raise ValueError("Transform animation requires a video-track clip")
+        clip.transform_keyframes = [dict(item) for item in keyframes]
+        clip.validate()
+        return clip
 
     def set_clip_color(self, clip_id: str, **values: float) -> Clip:
         """Set validated, non-destructive per-clip color grading controls."""
@@ -431,6 +459,7 @@ class TimelineProject:
                 video_fade_out_frames=max(0, int(raw.get("video_fade_out_frames", 0) or 0)),
                 transition_in_frames=max(0, int(raw.get("transition_in_frames", 0) or 0)),
                 transition_in_type=str(raw.get("transition_in_type", "dissolve") or "dissolve"),
+                transform_keyframes=[dict(k) for k in raw.get("transform_keyframes", [])],
                 color_grade=dict(raw.get("color_grade") or {}),
             ))
         return cls(
