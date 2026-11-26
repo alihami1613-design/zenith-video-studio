@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-PROJECT_SCHEMA_VERSION = 21
+PROJECT_SCHEMA_VERSION = 22
 DEFAULT_FPS = 30
 DEFAULT_VIDEO_TRACKS = ("V1", "V2", "V3", "V4")
 DEFAULT_AUDIO_TRACKS = ("A1", "A2", "A3", "A4")
@@ -107,6 +107,7 @@ class Clip:
     mask_shape: str = "rectangle"
     mask_feather_px: float = 0.0
     mask_points: list[list[float]] = field(default_factory=lambda: [[0.5, 0.1], [0.9, 0.9], [0.1, 0.9]])
+    mask_keyframes: list[dict[str, float]] = field(default_factory=list)
     transform_keyframes: list[dict[str, float]] = field(default_factory=list)
     anchor_x: float = 0.5
     anchor_y: float = 0.5
@@ -229,6 +230,27 @@ class Clip:
         if self.mask_shape == "polygon" and not 3 <= len(normalized_points) <= 8:
             raise ValueError("Polygon masks require 3 to 8 points")
         self.mask_points = normalized_points
+        normalized_mask_keys = []
+        previous_mask_frame = -1
+        for raw_key in self.mask_keyframes or []:
+            frame = int(raw_key.get("frame", 0))
+            values = {key: float(raw_key.get(key, default)) for key, default in
+                      (("x", self.mask_x), ("y", self.mask_y), ("width", self.mask_width), ("height", self.mask_height))}
+            if frame < 0 or frame >= self.duration_frames or frame <= previous_mask_frame:
+                raise ValueError("Mask keyframes must be ordered inside clip duration")
+            if not all(math.isfinite(value) for value in values.values()):
+                raise ValueError("Mask keyframe values must be finite")
+            if not (0.0 <= values["x"] < 1.0 and 0.0 <= values["y"] < 1.0
+                    and 0.0 < values["width"] <= 1.0 and 0.0 < values["height"] <= 1.0
+                    and values["x"] + values["width"] <= 1.0 + 1e-9
+                    and values["y"] + values["height"] <= 1.0 + 1e-9):
+                raise ValueError("Mask keyframe rectangle must remain inside the frame")
+            easing = str(raw_key.get("ease", "linear"))
+            if easing not in {"linear", "ease_in", "ease_out", "ease_in_out", "bezier"}:
+                raise ValueError("Unsupported mask keyframe easing")
+            normalized_mask_keys.append({"frame": frame, **values, "ease": easing})
+            previous_mask_frame = frame
+        self.mask_keyframes = normalized_mask_keys
         if any(value > self.duration_frames for value in (self.fade_in_frames, self.fade_out_frames, self.video_fade_in_frames, self.video_fade_out_frames, self.transition_in_frames)):
             raise ValueError("Fade duration cannot exceed clip duration")
         grade = dict(self.color_grade or {})
@@ -471,6 +493,11 @@ class TimelineProject:
             mask_shape=original.mask_shape,
             mask_feather_px=original.mask_feather_px,
             mask_points=[list(point) for point in original.mask_points],
+            mask_keyframes=[
+                dict(key, frame=int(key["frame"]) - (at_frame - original.start_frame))
+                for key in original.mask_keyframes
+                if int(key["frame"]) >= (at_frame - original.start_frame)
+            ],
             transform_keyframes=[
                 dict(key, frame=int(key["frame"]) - (at_frame - original.start_frame))
                 for key in original.transform_keyframes
@@ -485,6 +512,7 @@ class TimelineProject:
         original.video_fade_in_frames = min(original.video_fade_in_frames, original.duration_frames)
         original.transition_in_frames = min(original.transition_in_frames, original.duration_frames)
         original.transform_keyframes = [dict(k) for k in original.transform_keyframes if k["frame"] < original.duration_frames]
+        original.mask_keyframes = [dict(k) for k in original.mask_keyframes if k["frame"] < original.duration_frames]
         original.speed_ramp = [dict(point) for point in original.speed_ramp if point["frame"] < original.duration_frames]
         original.fade_in_frames = min(original.fade_in_frames, original.duration_frames)
         self.clips.append(right)
@@ -756,6 +784,7 @@ class TimelineProject:
                 mask_shape=str(raw.get("mask_shape", "rectangle") or "rectangle"),
                 mask_feather_px=float(raw.get("mask_feather_px", 0.0)),
                 mask_points=[list(point) for point in raw.get("mask_points", [[0.5, 0.1], [0.9, 0.9], [0.1, 0.9]])],
+                mask_keyframes=[dict(k) for k in raw.get("mask_keyframes", [])],
                 transform_keyframes=[dict(k) for k in raw.get("transform_keyframes", [])],
                 anchor_x=float(raw.get("anchor_x", 0.5)),
                 anchor_y=float(raw.get("anchor_y", 0.5)),
