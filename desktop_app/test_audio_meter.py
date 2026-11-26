@@ -14,7 +14,7 @@ class AudioMeterTests(unittest.TestCase):
     def test_reads_only_clip_source_window_and_applies_gains(self):
         clip = self.clip(source_in=30, duration_frames=60, volume=0.5)
         peaks = estimate_track_peaks(
-            [clip], {"voice.wav": [0.1, 0.2, 0.8, 0.6, 0.1]},
+            [clip], {"voice.wav": [0.1] * 20 + [0.8, 0.6, 0.1]},
             30, {"A1": {"volume": 0.5}},
         )
         self.assertAlmostEqual(peaks["A1"], 0.2)
