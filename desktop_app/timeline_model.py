@@ -41,7 +41,7 @@ def transform_eased_progress(keyframe: dict[str, float], progress: float) -> flo
 
 def _transform_value_at(keyframes: list[dict[str, float]], frame: int) -> dict[str, float]:
     """Evaluate the eased transform curve at a clip-local frame."""
-    defaults = {"x": 0.0, "y": 0.0, "scale": 1.0, "rotation": 0.0}
+    defaults = {"x": 0.0, "y": 0.0, "scale": 1.0, "rotation": 0.0, "opacity": 1.0}
     if not keyframes:
         return defaults
     if frame <= int(keyframes[0]["frame"]):
@@ -153,7 +153,7 @@ class Clip:
         for raw_key in self.transform_keyframes or []:
             frame = int(raw_key.get("frame", 0))
             values = {key: float(raw_key.get(key, default)) for key, default in
-                      (("x", 0.0), ("y", 0.0), ("scale", 1.0), ("rotation", 0.0))}
+                      (("x", 0.0), ("y", 0.0), ("scale", 1.0), ("rotation", 0.0), ("opacity", 1.0))}
             if frame < 0 or frame >= self.duration_frames or frame <= previous_frame:
                 raise ValueError("Transform keyframes must be ordered inside clip duration")
             if not all(math.isfinite(value) for value in values.values()):
@@ -162,6 +162,8 @@ class Clip:
                 raise ValueError("Transform position must be between -2 and 2 frame sizes")
             if not 0.1 <= values["scale"] <= 4.0 or not -3600.0 <= values["rotation"] <= 3600.0:
                 raise ValueError("Transform scale or rotation is outside supported limits")
+            if not 0.0 <= values["opacity"] <= 1.0:
+                raise ValueError("Transform opacity must be between 0 and 1")
             easing = str(raw_key.get("ease", "linear"))
             if easing not in {"linear", "ease_in", "ease_out", "ease_in_out", "bezier"}:
                 raise ValueError("Unsupported keyframe easing")
