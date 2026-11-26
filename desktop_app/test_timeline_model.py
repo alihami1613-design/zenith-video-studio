@@ -39,7 +39,7 @@ class TimelineModelTests(unittest.TestCase):
         restored = TimelineProject.from_dict(project.to_dict())
         saved = restored.get_clip(clip.clip_id)
         self.assertEqual(len(saved.transform_keyframes), 2)
-        self.assertEqual(restored.to_dict()["schema_version"], 15)
+        self.assertEqual(restored.to_dict()["schema_version"], 16)
         left, right = restored.split_clip(clip.clip_id, 60)
         self.assertEqual(left.transform_keyframes[0]["frame"], 0)
         self.assertEqual(right.transform_keyframes[0]["frame"], 30)
@@ -128,7 +128,7 @@ class TimelineModelTests(unittest.TestCase):
         ]})
         self.assertEqual(project.clips[0].video_fade_in_frames, 0)
         self.assertEqual(project.clips[0].video_fade_out_frames, 0)
-        self.assertEqual(project.to_dict()["schema_version"], 15)
+        self.assertEqual(project.to_dict()["schema_version"], 16)
 
     def test_cross_dissolve_persists_and_split_does_not_duplicate_it(self):
         project = TimelineProject()
@@ -212,7 +212,7 @@ class TimelineModelTests(unittest.TestCase):
         self.assertAlmostEqual(saved.volume, 0.8)
         self.assertEqual(saved.fade_in_frames, 30)
         self.assertEqual(saved.fade_out_frames, 45)
-        self.assertEqual(project.to_dict()["schema_version"], 15)
+        self.assertEqual(project.to_dict()["schema_version"], 16)
 
     def test_audio_track_mixer_round_trip(self):
         project = TimelineProject()
@@ -373,5 +373,37 @@ class TimelineModelTests(unittest.TestCase):
         clip = project.add_clip("voice.wav", "voice.wav", duration_frames=50, track="A1")
         with self.assertRaises(ValueError):
             project.set_clip_reverse(clip.clip_id, True)
+    def test_speed_ramp_round_trip_split_and_trim(self):
+        project = TimelineProject()
+        clip = project.add_clip("ramp.mp4", "ramp.mp4", duration_frames=100)
+        project.set_clip_speed_ramp(clip.clip_id, [
+            {"frame": 0, "rate": 0.5},
+            {"frame": 40, "rate": 2.0},
+            {"frame": 80, "rate": 1.0},
+        ])
+        restored = TimelineProject.from_dict(project.to_dict())
+        self.assertEqual(restored.get_clip(clip.clip_id).speed_ramp[1],
+                         {"frame": 40, "rate": 2.0})
+        left, right = restored.split_clip(clip.clip_id, 50)
+        self.assertEqual([point["frame"] for point in left.speed_ramp], [0, 40])
+        self.assertEqual([point["frame"] for point in right.speed_ramp], [0, 30])
+        project2 = TimelineProject()
+        trimmed = project2.add_clip("ramp.mp4", "ramp.mp4", duration_frames=100)
+        project2.set_clip_speed_ramp(trimmed.clip_id, [
+            {"frame": 10, "rate": 0.5}, {"frame": 60, "rate": 2.0}
+        ])
+        project2.trim_clip(trimmed.clip_id, new_start_frame=20, new_end_frame=90)
+        self.assertEqual([point["frame"] for point in trimmed.speed_ramp], [40])
+
+    def test_speed_ramp_rejects_invalid_rates_and_audio_clips(self):
+        project = TimelineProject()
+        clip = project.add_clip("ramp.mp4", "ramp.mp4", duration_frames=50)
+        with self.assertRaises(ValueError):
+            project.set_clip_speed_ramp(clip.clip_id, [{"frame": 0, "rate": 5.0}])
+        audio = project.add_clip("voice.wav", "voice.wav", track="A1",
+                                 duration_frames=50)
+        with self.assertRaises(ValueError):
+            project.set_clip_speed_ramp(audio.clip_id, [{"frame": 0, "rate": 1.0}])
+
 if __name__ == "__main__":
     unittest.main()
