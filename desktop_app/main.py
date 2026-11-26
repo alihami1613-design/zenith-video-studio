@@ -515,6 +515,10 @@ class ZenithEditor(QMainWindow):
             ("saturation", "Saturation", 0, 300, 0.01, 100, "اشباع رنگ"),
             ("temperature", "Temperature", -100, 100, 0.01, 0, "سردی و گرمی رنگ"),
             ("tint", "Tint", -100, 100, 0.01, 0, "اصلاح ته‌رنگ سبز/ارغوانی"),
+            ("highlights", "Highlights", -100, 100, 0.01, 0, "روشنایی نواحی روشن تصویر"),
+            ("shadows", "Shadows", -100, 100, 0.01, 0, "جزئیات نواحی سایه"),
+            ("whites", "Whites", -100, 100, 0.01, 0, "سطح سفید و روشن‌ترین نقاط"),
+            ("blacks", "Blacks", -100, 100, 0.01, 0, "سطح سیاه و عمیق‌ترین سایه‌ها"),
         ]
         for key, title, low, high, scale, initial, tooltip in color_specs:
             label = QLabel(f"{title}: {initial * scale:.2f}")
@@ -1225,7 +1229,7 @@ class ZenithEditor(QMainWindow):
             return
         blockers = [QSignalBlocker(slider) for slider, _, _ in self.color_controls.values()]
         for key, (slider, label, scale) in self.color_controls.items():
-            value = float(clip.color_grade.get(key, 0.0 if key in {"exposure", "temperature", "tint"} else 1.0))
+            value = float(clip.color_grade.get(key, 0.0 if key in {"exposure", "temperature", "tint", "highlights", "shadows", "whites", "blacks"} else 1.0))
             slider.setValue(round(value / scale))
             label.setText(f"{key.title()}: {value:.2f}")
         del blockers
