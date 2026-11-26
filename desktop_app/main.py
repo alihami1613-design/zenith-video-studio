@@ -1160,6 +1160,18 @@ class ZenithEditor(QMainWindow):
             "Chroma Key / Mask ذخیره شد؛ در رندر نهایی اعمال می‌شود، نه پیش‌نمایش زنده."
         )
 
+    def _parse_mask_points(self) -> list[list[float]]:
+        points = []
+        for raw_point in self.mask_points_edit.text().split(";"):
+            if raw_point.strip():
+                coords = [float(value.strip()) for value in raw_point.split(",")]
+                if len(coords) != 2:
+                    raise ValueError("هر نقطه ماسک باید دقیقاً دو مختصات x,y داشته باشد")
+                points.append(coords)
+        if not 3 <= len(points) <= 8:
+            raise ValueError("ماسک چندضلعی باید ۳ تا ۸ رأس داشته باشد")
+        return points
+
     def _add_mask_keyframe(self) -> None:
         clip_id = self.timeline_widget.canvas.selected_clip_id
         if not clip_id:
@@ -1176,6 +1188,7 @@ class ZenithEditor(QMainWindow):
                 "y": self.mask_controls["mask_y"].value(),
                 "width": self.mask_controls["mask_width"].value(),
                 "height": self.mask_controls["mask_height"].value(),
+                "points": self._parse_mask_points() if clip.mask_shape == "polygon" else clip.mask_points,
                 "ease": "linear",
             }
             keys = [dict(item) for item in clip.mask_keyframes if int(item["frame"]) != frame]
@@ -1266,13 +1279,17 @@ class ZenithEditor(QMainWindow):
             blocker = QSignalBlocker(self.mask_feather_spin)
             self.mask_feather_spin.setValue(float(clip.mask_feather_px))
             del blocker
-            blocker = QSignalBlocker(self.mask_points_edit)
-            self.mask_points_edit.setText("; ".join(
-                f"{float(point[0]):.3f},{float(point[1]):.3f}" for point in clip.mask_points
-            ))
-            del blocker
             local_frame = max(0, min(clip.duration_frames - 1,
                 self.timeline_project.playhead_frame - clip.start_frame))
+            current_points = clip.mask_points
+            if clip.mask_shape == "polygon" and clip.mask_keyframes:
+                from timeline_model import mask_points_at
+                current_points = mask_points_at(clip.mask_keyframes, local_frame, clip.mask_points)
+            blocker = QSignalBlocker(self.mask_points_edit)
+            self.mask_points_edit.setText("; ".join(
+                f"{float(point[0]):.3f},{float(point[1]):.3f}" for point in current_points
+            ))
+            del blocker
             blocker = QSignalBlocker(self.mask_keyframe_frame_spin)
             self.mask_keyframe_frame_spin.setValue(local_frame)
             del blocker
