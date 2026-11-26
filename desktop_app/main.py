@@ -1267,6 +1267,13 @@ class ZenithEditor(QMainWindow):
             "base": (bx, by, bw, bh), "current": (x, y, width, height)
         }
 
+    def eventFilter(self, watched, event):
+        if watched is getattr(self, "video_widget", None) and event.type() == QEvent.Type.Resize:
+            if hasattr(self, "mask_overlay"):
+                self.mask_overlay.setGeometry(self.video_widget.rect())
+                self.mask_overlay.raise_()
+        return super().eventFilter(watched, event)
+
     def _polygon_mask_edit_started(self) -> None:
         clip_id = self.timeline_widget.canvas.selected_clip_id
         if not clip_id:
@@ -1301,7 +1308,8 @@ class ZenithEditor(QMainWindow):
                 f"{px:.3f},{py:.3f}" for px, py in key["points"]
             ))
             del blocker
-            self._sync_mask_overlay(clip, frame)
+            # Keep the overlay's active drag handle alive; the widget already
+            # updates its own lightweight point list during this mouse gesture.
         except (TypeError, ValueError, KeyError) as exc:
             self.statusBar().showMessage(f"ویرایش رأس ماسک نامعتبر است: {exc}")
 
