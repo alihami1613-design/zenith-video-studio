@@ -6,7 +6,7 @@ from urllib.parse import quote
 
 import imageio_ffmpeg
 import requests
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
 import numpy as np
 import streamlit as st
 
@@ -85,48 +85,51 @@ SCENES = [
 ]
 
 def make_scene_art(index, label, folder):
-    """Create a vertical, coherent cinematic illustration with recognizable human/AI subjects."""
+    """Create a layered, premium editorial frame for the HUMAN + AI film."""
     W, H = 1080, 1920
     yy, xx = np.mgrid[0:H, 0:W]
-    glow = np.clip(1 - np.sqrt(((xx - 700) / 760) ** 2 + ((yy - 980) / 1150) ** 2), 0, 1)
-    t = yy / H
+    # Deep navy base with two soft cinematic light sources.
+    g1 = np.exp(-(((xx-760)/520)**2 + ((yy-820)/760)**2)*1.6)
+    g2 = np.exp(-(((xx-250)/420)**2 + ((yy-1450)/680)**2)*1.8)
+    vignette = np.clip(1 - 0.42*((xx-W/2)/(W*.78))**2 - 0.38*((yy-H/2)/(H*.82))**2, .35, 1)
     arr = np.stack([
-        3 + 8 * glow,
-        8 + 30 * glow + 3 * t,
-        20 + 48 * glow + 7 * t,
+        (4 + 12*g1 + 3*g2)*vignette,
+        (9 + 38*g1 + 18*g2)*vignette,
+        (22 + 68*g1 + 35*g2)*vignette
     ], axis=-1).clip(0,255).astype(np.uint8)
     img = Image.fromarray(arr, "RGB")
+
+    # Soft luminous atmosphere, composited behind the artwork.
+    glow = Image.new("RGBA", (W,H), (0,0,0,0))
+    gd = ImageDraw.Draw(glow)
+    gd.ellipse((430,430,1180,1180), fill=(28,145,220,55))
+    gd.ellipse((-250,1050,550,1850), fill=(15,210,195,35))
+    glow = glow.filter(ImageFilter.GaussianBlur(115))
+    img = Image.alpha_composite(img.convert("RGBA"), glow)
     d = ImageDraw.Draw(img, "RGBA")
-    # Vertical cinematic frame, restrained HUD lines and atmospheric light.
-    d.rounded_rectangle((42, 42, W-42, H-42), radius=30, outline=(130,205,225,75), width=2)
-    for x in range(90, W, 90):
-        d.line((x, 0, x, H), fill=(100,175,210,12), width=1)
-    teal=(65,225,215,235); blue=(95,175,255,235); gold=(245,190,105,245)
-    white=(235,244,250,245)
-    cx, cy = 540, 1110
 
-    def human(x, y, scale=1.0, color=(175,205,225,255), side=False):
-        # Recognizable human bust: head, neck, shoulders and facial profile.
-        r=int(105*scale)
-        d.ellipse((x-r,y-430*scale-r,x+r,y-430*scale+r), fill=(18,38,60,255), outline=color, width=max(3,int(8*scale)))
-        d.ellipse((x-r*.65,y-430*scale-r*.65,x+r*.65,y-430*scale+r*.65), outline=(gold if side else (120,190,220,150)), width=max(2,int(3*scale)))
-        d.rounded_rectangle((x-48*scale,y-330*scale,x+48*scale,y-245*scale), radius=18, fill=(18,38,60,255), outline=color, width=4)
-        d.rounded_rectangle((x-210*scale,y-270*scale,x+210*scale,y+210*scale), radius=int(100*scale), fill=(15,35,58,255), outline=color, width=max(3,int(7*scale)))
-        d.arc((x-78*scale,y-485*scale,x+95*scale,y-360*scale), 185, 345, fill=gold, width=max(2,int(5*scale)))
-        d.ellipse((x+25*scale,y-440*scale,x+43*scale,y-422*scale), fill=gold)
+    try:
+        regular = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+        bold = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+        f_brand = ImageFont.truetype(bold, 27)
+        f_kicker = ImageFont.truetype(bold, 24)
+        f_title = ImageFont.truetype(bold, 54)
+        f_sub = ImageFont.truetype(regular, 22)
+        f_micro = ImageFont.truetype(regular, 18)
+    except Exception:
+        f_brand = f_kicker = f_title = f_sub = f_micro = ImageFont.load_default()
 
-    def robot(x, y, scale=1.0):
-        # Clearly mechanical head, luminous eyes, segmented neck and shoulders.
-        w,h=230*scale,255*scale
-        d.rounded_rectangle((x-w/2,y-430*scale-h/2,x+w/2,y-430*scale+h/2), radius=int(48*scale), fill=(18,43,68,255), outline=blue, width=max(4,int(9*scale)))
-        d.line((x-w*.34,y-430*scale-65*scale,x+w*.34,y-430*scale-65*scale), fill=teal, width=max(3,int(6*scale)))
-        for ex in (-62,62):
-            d.ellipse((x+(ex-17)*scale,y-430*scale-15*scale,x+(ex+17)*scale,y-430*scale+19*scale), fill=teal)
-        d.arc((x-65*scale,y-430*scale+45*scale,x+65*scale,y-430*scale+110*scale), 10, 170, fill=gold, width=max(3,int(6*scale)))
-        d.line((x,y-300*scale,x,y-235*scale), fill=blue, width=max(6,int(16*scale)))
-        d.rounded_rectangle((x-220*scale,y-250*scale,x+220*scale,y+210*scale), radius=int(95*scale), fill=(13,31,52,255), outline=blue, width=max(4,int(8*scale)))
-        for j in range(3):
-            d.line((x-120*scale,y-140*scale+j*80*scale,x+120*scale,y-140*scale+j*80*scale), fill=(90,185,230,150), width=max(2,int(4*scale)))
+    teal=(75,235,218,245); blue=(105,185,255,245); gold=(247,190,105,250)
+    white=(240,247,255,250); muted=(150,190,215,225)
+    # Fine frame, corner markers, and restrained technical grid.
+    d.rounded_rectangle((38,38,W-38,H-38), radius=32, outline=(135,205,235,75), width=2)
+    for x in range(100,W,120):
+        d.line((x,470,x,H-120), fill=(90,155,195,13), width=1)
+    d.line((88,430,W-88,430), fill=(100,205,220,75), width=2)
+    d.line((88,H-175,W-88,H-175), fill=(100,205,220,55), width=2)
+    for x,y,sx,sy in [(70,70,1,1),(W-70,70,-1,1),(70,H-70,1,-1),(W-70,H-70,-1,-1)]:
+        d.line((x,y,x+42*sx,y), fill=teal, width=4)
+        d.line((x,y,x,y+42*sy), fill=teal, width=4)
 
     titles = [
         "THE HUMAN MIND", "MEET THE MACHINE", "HUMAN + AI",
@@ -135,86 +138,154 @@ def make_scene_art(index, label, folder):
         "THE FUTURE OF WORK", "SMART CITIES",
         "A NEW CONNECTION", "OUR SHARED FUTURE"
     ]
-    # A distinct visual story beat for each chapter.
+    subtitles = [
+        "A universe of thought, emotion and imagination",
+        "A new kind of intelligence is taking shape",
+        "Two forms of intelligence. One changing world.",
+        "Patterns become knowledge through connection",
+        "Systems that learn from data and experience",
+        "Earlier insight. More informed decisions.",
+        "Precision, automation and human expertise",
+        "The strongest future is built together",
+        "How will intelligent systems reshape our work?",
+        "Technology woven into the fabric of daily life",
+        "Trust, responsibility and the human connection",
+        "The future is not predetermined. We shape it."
+    ]
+    # Header typography is intentionally large and readable on a phone.
+    d.text((92,92), "ZENITH BEYOND", font=f_brand, fill=white)
+    d.text((92,160), f"CHAPTER  {index+1:02d}   /   12", font=f_kicker, fill=gold)
+    d.text((92,235), titles[index], font=f_title, fill=white, stroke_width=1, stroke_fill=(10,25,42,180))
+    d.text((94,330), subtitles[index], font=f_sub, fill=muted)
+    d.text((92,H-135), "HUMAN  ×  ARTIFICIAL INTELLIGENCE", font=f_kicker, fill=(190,220,235,230))
+    d.text((W-220,H-135), "ZENITH  /  2026", font=f_micro, fill=gold)
+
+    # Main-stage light rings and floating depth markers.
+    d.ellipse((135,500,945,1660), outline=(70,175,220,38), width=3)
+    d.ellipse((185,550,895,1610), outline=(70,175,220,24), width=2)
+    for px,py in [(160,690),(910,780),(180,1450),(890,1430)]:
+        d.ellipse((px-5,py-5,px+5,py+5), fill=teal)
+
+    def human(x, y, scale=1.0):
+        # Layered silhouette, facial profile, neck and shoulders.
+        r=104*scale; hy=y-390*scale
+        d.ellipse((x-r-16,y-390*scale-r-16,x+r+16,y-390*scale+r+16), fill=(45,125,160,38), outline=(100,205,225,85), width=3)
+        d.ellipse((x-r,hy-r,x+r,hy+r), fill=(19,43,66,255), outline=(195,220,238,245), width=max(4,int(7*scale)))
+        d.arc((x-66*scale,hy-78*scale,x+72*scale,hy+75*scale),195,345,fill=gold,width=max(3,int(5*scale)))
+        d.ellipse((x+24*scale,hy-12*scale,x+43*scale,hy+7*scale),fill=white)
+        d.line((x+62*scale,hy+18*scale,x+84*scale,hy+32*scale),fill=(180,215,235,220),width=max(2,int(4*scale)))
+        d.rounded_rectangle((x-45*scale,y-275*scale,x+45*scale,y-190*scale),radius=14,fill=(20,47,70,255),outline=(165,205,225,220),width=3)
+        d.rounded_rectangle((x-210*scale,y-220*scale,x+210*scale,y+245*scale),radius=int(105*scale),fill=(13,34,56,255),outline=(170,210,232,245),width=max(4,int(7*scale)))
+        d.arc((x-160*scale,y-165*scale,x+160*scale,y+205*scale),195,345,fill=(80,175,205,130),width=4)
+        d.ellipse((x-125*scale,y-70*scale,x-105*scale,y-50*scale),fill=teal)
+
+    def robot(x, y, scale=1.0):
+        w=235*scale; h=255*scale; hy=y-390*scale
+        # Back halo and offset shadow create a dimensional, layered read.
+        d.rounded_rectangle((x-w/2-18,hy-h/2-18,x+w/2+18,hy+h/2+18),radius=int(62*scale),fill=(25,115,190,38),outline=(90,175,255,95),width=4)
+        d.rounded_rectangle((x-w/2,hy-h/2,x+w/2,hy+h/2),radius=int(48*scale),fill=(17,43,70,255),outline=blue,width=max(4,int(9*scale)))
+        d.line((x-w*.31,hy-65*scale,x+w*.31,hy-65*scale),fill=teal,width=max(3,int(6*scale)))
+        for ex in (-62,62):
+            d.ellipse((x+(ex-19)*scale,hy-12*scale,x+(ex+19)*scale,hy+26*scale),fill=teal)
+            d.ellipse((x+(ex-7)*scale,hy-1*scale,x+(ex+7)*scale,hy+13*scale),fill=white)
+        d.arc((x-68*scale,hy+40*scale,x+68*scale,hy+112*scale),10,170,fill=gold,width=max(3,int(6*scale)))
+        d.line((x,hy+h/2,x,hy+h/2+78*scale),fill=blue,width=max(6,int(15*scale)))
+        d.rounded_rectangle((x-220*scale,y-215*scale,x+220*scale,y+245*scale),radius=int(95*scale),fill=(12,32,55,255),outline=blue,width=max(4,int(8*scale)))
+        for j in range(3):
+            d.line((x-120*scale,y-105*scale+j*75*scale,x+120*scale,y-105*scale+j*75*scale),fill=(90,185,230,155),width=max(2,int(4*scale)))
+        d.ellipse((x-12*scale,y+130*scale,x+12*scale,y+154*scale),fill=gold)
+
+    cx,cy=540,1190
     if index == 0:
-        human(cx,cy,1.15)
-        d.arc((cx-360,cy-760,cx+360,cy-60), 200, 520, fill=gold, width=8)
+        human(cx,cy,1.16)
+        for r in (350,420,490):
+            d.arc((cx-r,cy-650,cx+r,cy+300),195,505,fill=(gold[0],gold[1],gold[2],100 if r!=420 else 210),width=5)
+        d.ellipse((cx-300,cy-610,cx+300,cy-10),outline=(100,210,235,80),width=3)
     elif index == 1:
-        robot(cx,cy,1.18)
+        robot(cx,cy,1.16)
+        for j in range(8):
+            yy=650+j*65
+            d.line((160,yy,300,yy),fill=(70,170,230,55),width=2)
+            d.line((780,yy,920,yy),fill=(70,170,230,55),width=2)
     elif index == 2:
-        human(350,cy,0.82); robot(760,cy,0.82)
-        d.line((475,cy-400,635,cy-400), fill=gold, width=7)
-        d.ellipse((525,cy-450,575,cy-400), fill=teal)
+        human(340,cy,.83); robot(760,cy,.83)
+        d.line((470,cy-390,610,cy-390),fill=gold,width=8)
+        d.ellipse((520,cy-440,570,cy-390),fill=teal)
+        d.arc((390,700,690,1450),270,90,fill=teal,width=5)
     elif index in (3,4):
-        # Neural network surrounding a central glowing AI core.
-        layers=[[(150,650+i*105) for i in range(7)],
-                [(390,590+i*85) for i in range(9)],
-                [(680,650+i*105) for i in range(7)],
-                [(920,800+i*105) for i in range(4)]]
+        layers=[[(145,700+i*105) for i in range(7)],[(380,610+i*88) for i in range(9)],[(680,700+i*105) for i in range(7)],[(930,830+i*105) for i in range(4)]]
         for left,right in zip(layers,layers[1:]):
             for p in left:
                 for q in right:
-                    d.line((p,q), fill=(65,175,235,90), width=3)
+                    d.line((p,q),fill=(65,175,235,75),width=3)
         for li,layer in enumerate(layers):
             for j,(x,y) in enumerate(layer):
-                r=16 if li in (0,3) else 20
-                d.ellipse((x-r,y-r,x+r,y+r), fill=gold if (j+li)%4==0 else blue, outline=white, width=2)
-        d.ellipse((cx-115,cy-115,cx+115,cy+115), fill=(12,36,60,255), outline=teal, width=9)
-        d.text((cx-48,cy-20),"AI",fill=white)
+                r=17 if li in (0,3) else 22
+                d.ellipse((x-r-7,y-r-7,x+r+7,y+r+7),fill=(40,140,205,45))
+                d.ellipse((x-r,y-r,x+r,y+r),fill=gold if (j+li)%4==0 else blue,outline=white,width=2)
+        d.ellipse((cx-145,cy-145,cx+145,cy+145),fill=(10,33,58,255),outline=teal,width=9)
+        d.ellipse((cx-110,cy-110,cx+110,cy+110),outline=(80,220,210,100),width=3)
+        d.text((cx-54,cy-42),"AI",font=ImageFont.truetype(bold,72) if os.path.exists(bold) else f_title,fill=white)
     elif index == 5:
-        human(330,cy,0.72)
-        # Medical scan panel and diagnostic cross.
-        d.rounded_rectangle((520,650,950,1510), radius=35, fill=(10,30,52,220), outline=teal, width=6)
-        for r in (95,165,235):
-            d.ellipse((735-r,1050-r,735+r,1050+r), outline=(80,205,225,170), width=5)
-        d.line((735,780,735,1320), fill=gold, width=5)
-        d.line((465,1050,1005,1050), fill=gold, width=5)
+        human(315,cy,.76)
+        d.rounded_rectangle((510,650,955,1600),radius=42,fill=(9,29,52,235),outline=teal,width=6)
+        d.rounded_rectangle((550,690,915,1560),radius=28,outline=(100,190,225,80),width=2)
+        for r in (100,175,250):
+            d.ellipse((735-r,1080-r,735+r,1080+r),outline=(80,205,225,155),width=5)
+        d.line((735,780,735,1380),fill=gold,width=5); d.line((435,1080,1035,1080),fill=gold,width=5)
+        d.ellipse((680,1025,790,1135),fill=(12,52,75,255),outline=teal,width=5)
+        d.text((685,1045),"+",font=f_title,fill=white)
     elif index == 6:
-        # Industrial robotic arm, conveyor and factory silhouette.
-        d.rectangle((100,1350,980,1500), fill=(12,30,48,255), outline=blue, width=5)
-        pts=[(250,1300),(390,1080),(560,1170),(740,900),(850,760)]
-        d.line(pts, fill=blue, width=52, joint="curve")
+        d.rounded_rectangle((100,1390,980,1540),radius=15,fill=(12,31,50,255),outline=blue,width=5)
+        pts=[(220,1330),(370,1090),(555,1190),(735,900),(860,740)]
+        d.line(pts,fill=(40,110,190,100),width=82,joint="curve")
+        d.line(pts,fill=blue,width=48,joint="curve")
         for x,y in pts:
-            d.ellipse((x-48,y-48,x+48,y+48), fill=(12,35,58,255), outline=gold, width=9)
+            d.ellipse((x-53,y-53,x+53,y+53),fill=(12,35,58,255),outline=gold,width=9)
+            d.ellipse((x-17,y-17,x+17,y+17),fill=teal)
         for x in (180,430,680,900):
-            d.rectangle((x,1470,x+75,1570), outline=teal, width=4)
+            d.rounded_rectangle((x,1470,x+75,1580),radius=8,outline=teal,width=4)
     elif index == 7:
-        human(330,cy,0.78); robot(760,cy,0.78)
-        d.line((470,cy-180,610,cy-180), fill=gold, width=12)
-        d.ellipse((520,cy-225,570,cy-175), fill=teal)
+        human(330,cy,.78); robot(760,cy,.78)
+        d.line((470,cy-190,610,cy-190),fill=gold,width=12)
+        d.ellipse((520,cy-240,570,cy-190),fill=teal)
+        d.arc((380,700,700,1450),270,90,fill=gold,width=5)
     elif index == 8:
-        human(cx,cy,0.9)
+        human(cx,cy,.9)
         for j in range(4):
-            y=650+j*170
-            d.rounded_rectangle((90,y,310,y+105), radius=18, fill=(12,36,60,230), outline=gold if j%2==0 else teal, width=5)
-            d.line((130,y+55,265,y+55), fill=white, width=4)
+            y=650+j*185
+            d.rounded_rectangle((95,y,355,y+120),radius=22,fill=(13,37,62,240),outline=gold if j%2==0 else teal,width=5)
+            d.ellipse((125,y+38,165,y+78),fill=teal)
+            d.line((190,y+48,315,y+48),fill=white,width=5)
+            d.line((190,y+75,285,y+75),fill=muted,width=3)
     elif index == 9:
         for j in range(7):
-            x=90+j*130; h=300+(j*113)%440
-            d.rectangle((x,1450-h,x+92,1450), fill=(13,39,64,255), outline=blue, width=5)
-            for wy in range(1480-h,1420,65):
-                d.rectangle((x+22,wy,x+38,wy+22), fill=gold)
-                d.rectangle((x+55,wy,x+71,wy+22), fill=teal)
-        d.arc((100,600,980,1650),190,350,fill=gold,width=6)
+            x=80+j*135; bh=310+(j*117)%480
+            d.rounded_rectangle((x,1500-bh,x+100,1500),radius=10,fill=(13,39,65,255),outline=blue,width=5)
+            for wy in range(1520-bh,1450,65):
+                d.rounded_rectangle((x+20,wy,x+37,wy+24),radius=4,fill=gold)
+                d.rounded_rectangle((x+59,wy,x+76,wy+24),radius=4,fill=teal)
+        d.arc((80,560,1000,1700),190,350,fill=gold,width=7)
+        for j in range(6):
+            d.ellipse((160+j*145,800+(j%2)*95,174+j*145,814+(j%2)*95),fill=teal)
     elif index == 10:
-        human(330,cy,0.82); robot(760,cy,0.82)
-        d.line((460,cy-425,620,cy-425), fill=gold, width=8)
+        human(330,cy,.82); robot(760,cy,.82)
+        d.line((470,cy-415,610,cy-415),fill=gold,width=8)
         for j in range(7):
             x=480+j*20
-            d.ellipse((x,cy-445,x+14,cy-431),fill=teal)
+            d.ellipse((x,cy-438,x+14,cy-424),fill=teal)
+        d.arc((300,650,780,1540),205,335,fill=gold,width=6)
     else:
-        human(330,cy,0.82); robot(760,cy,0.82)
-        d.arc((120,520,960,1640),200,520,fill=gold,width=8)
-        d.ellipse((cx-24,cy-30,cx+24,cy+18),fill=teal)
+        human(330,cy,.82); robot(760,cy,.82)
+        d.arc((100,540,980,1710),195,525,fill=gold,width=9)
+        d.ellipse((cx-34,cy-45,cx+34,cy+23),fill=teal)
+        for j in range(12):
+            ang=j*math.pi/6
+            px=cx+int(300*math.cos(ang)); py=cy+int(470*math.sin(ang))
+            d.ellipse((px-5,py-5,px+5,py+5),fill=(gold[0],gold[1],gold[2],180))
 
-    # Clear editorial hierarchy; title text is kept away from the main subject.
-    d.text((95,115),"ZENITH BEYOND",fill=(205,225,238,230))
-    d.text((95,205),f"{index+1:02d} / 12",fill=gold)
-    d.text((95,285),titles[index],fill=white)
-    d.line((95,350,500,350),fill=teal,width=4)
-    d.text((95,390),"HUMAN  ×  ARTIFICIAL INTELLIGENCE",fill=(155,195,215,225))
     out=folder / f"scene_art_{index:02d}.png"
-    img.save(out, quality=95)
+    img.convert("RGB").save(out, quality=96)
     return out
 
 
@@ -241,10 +312,10 @@ if create:
                     status.write(f"طراحی سکانس {i + 1} از ۱۲: {label}")
                     image_path = make_scene_art(i, label, work)
                     clip_path = work / f"scene_{i:02d}.mp4"
-                    vf = "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2,setsar=1,format=yuv420p"
+                    vf = "zoompan=z='min(1+0.00045*on,1.07)':x='iw/2-(iw/zoom/2)+sin(on/38)*12':y='ih/2-(ih/zoom/2)+cos(on/51)*10':d=1:s=1080x1920:fps=30,format=yuv420p"
                     subprocess.run(
                         [ffmpeg, "-y", "-loop", "1", "-framerate", "30", "-i", str(image_path),
-                         "-vf", vf, "-t", "5", "-an", "-c:v", "libx264",
+                         "-vf", vf, "-t", "5.25", "-an", "-c:v", "libx264",
                          "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
                          str(clip_path)],
                         check=True, capture_output=True, text=True, timeout=180,
@@ -259,7 +330,7 @@ if create:
                     clip_path = work / f"scene_{i:02d}.mp4"
                     subprocess.run(
                         [ffmpeg, "-y", "-stream_loop", "-1", "-i", str(input_path),
-                         "-t", "5", "-vf",
+                         "-t", "5.25", "-vf",
                          "scale=1080:1920:force_original_aspect_ratio=increase,"
                          "crop=1080:1920,setsar=1,fps=30,format=yuv420p",
                          "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
@@ -269,16 +340,25 @@ if create:
                     scene_files.append(clip_path)
                     progress.progress(int((i + 1) / len(videos) * 65))
 
-            concat_file = work / "concat.txt"
-            concat_file.write_text(
-                "".join("file '" + p.as_posix().replace("'", "'\\''") + "'\n" for p in scene_files),
-                encoding="utf-8",
-            )
+            # Join the twelve chapters with short cinematic dissolves.
             silent_video = work / "silent.mp4"
+            inputs = []
+            graph_parts = []
+            for i, clip in enumerate(scene_files):
+                inputs += ["-i", str(clip)]
+                graph_parts.append(f"[{i}:v]settb=AVTB,setpts=PTS-STARTPTS,fps=30,format=yuv420p[v{i}]")
+            last = "v0"
+            for i in range(1, len(scene_files)):
+                out = f"xf{i}"
+                offset = i * 5.0
+                graph_parts.append(f"[{last}][v{i}]xfade=transition=fade:duration=0.25:offset={offset:.2f}[{out}]")
+                last = out
             subprocess.run(
-                [ffmpeg, "-y", "-f", "concat", "-safe", "0", "-i", str(concat_file),
-                 "-c", "copy", str(silent_video)],
-                check=True, capture_output=True, text=True, timeout=240,
+                [ffmpeg, "-y", *inputs, "-filter_complex", ";".join(graph_parts),
+                 "-map", f"[{last}]", "-an", "-t", "60", "-c:v", "libx264",
+                 "-preset", "veryfast", "-crf", "19", "-pix_fmt", "yuv420p",
+                 str(silent_video)],
+                check=True, capture_output=True, text=True, timeout=600,
             )
             progress.progress(82)
 
@@ -313,7 +393,7 @@ if create:
                 command += ["-map", "0:v"]
 
             command += [
-                "-t", "60", "-c:v", "libx264", "-preset", "veryfast", "-crf", "22",
+                "-t", "60", "-c:v", "libx264", "-preset", "veryfast", "-crf", "19",
                 "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k",
                 "-movflags", "+faststart", str(final_video),
             ]
@@ -330,11 +410,8 @@ if create:
                 use_container_width=True,
             )
             if mode == "ساخت خودکار ۱۲ سکانس تصویری":
-                st.caption("این نسخه از گرافیک‌های اختصاصی انسان و AI استفاده می‌کند؛ برای فوتورئالیسم سه‌بعدی و حرکت واقعی، موتور تولید ویدئوی AI جداگانه لازم است.")
+                st.caption("نسخه ارتقایافته: طراحی چندلایه، حرکت دوربین آرام، ترنزیشن سینمایی و تایپوگرافی خواناتر. این موتور موشن‌گرافیک است، نه فوتورئالیسم سه‌بعدی.")
 
-    except requests.RequestException as e:
-        st.error("دریافت تصویر از Wikimedia Commons ناموفق بود. اتصال اینترنت سرویس را بررسی کن.")
-        st.code(str(e))
     except subprocess.TimeoutExpired:
         st.error("رندر بیش از زمان مجاز طول کشید. تعداد یا حجم کلیپ‌ها را کمتر کن.")
     except subprocess.CalledProcessError as e:
@@ -345,4 +422,4 @@ if create:
         st.error(f"خطای غیرمنتظره: {e}")
 
 st.markdown("---")
-st.caption("ZENITH BEYOND — Vertical Human & AI | Motion Graphics v4")
+st.caption("ZENITH BEYOND — Human & AI | Cinematic Motion Graphics v5")
