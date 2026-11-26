@@ -12,7 +12,7 @@ from proxy_manager import find_ffmpeg
 from video_color import build_color_filter
 
 
-PREVIEW_VERSION = "graded-preview-v1-960w"
+PREVIEW_VERSION = "graded-preview-v2-tonal-960w"
 
 
 def default_color_preview_cache() -> Path:
