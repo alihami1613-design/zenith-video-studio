@@ -39,7 +39,7 @@ class TimelineModelTests(unittest.TestCase):
         restored = TimelineProject.from_dict(project.to_dict())
         saved = restored.get_clip(clip.clip_id)
         self.assertEqual(len(saved.transform_keyframes), 2)
-        self.assertEqual(restored.to_dict()["schema_version"], 20)
+        self.assertEqual(restored.to_dict()["schema_version"], 21)
         left, right = restored.split_clip(clip.clip_id, 60)
         self.assertEqual(left.transform_keyframes[0]["frame"], 0)
         self.assertEqual(right.transform_keyframes[0]["frame"], 30)
@@ -110,6 +110,45 @@ class TimelineModelTests(unittest.TestCase):
             }],
         })
         self.assertEqual(restored.clips[0].blend_mode, "normal")
+
+    def test_mask_shape_feather_and_polygon_points_round_trip(self):
+        project = TimelineProject()
+        clip = project.add_clip("mask.mp4", "mask.mp4", duration_frames=90)
+        clip.mask_enabled = True
+        clip.mask_shape = "polygon"
+        clip.mask_feather_px = 7.5
+        clip.mask_points = [[0.5, 0.1], [0.9, 0.8], [0.7, 0.95], [0.1, 0.7]]
+        clip.validate()
+        restored = TimelineProject.from_dict(project.to_dict())
+        saved = restored.get_clip(clip.clip_id)
+        self.assertEqual(saved.mask_shape, "polygon")
+        self.assertAlmostEqual(saved.mask_feather_px, 7.5)
+        self.assertEqual(saved.mask_points, clip.mask_points)
+        left, right = restored.split_clip(clip.clip_id, 45)
+        self.assertEqual(left.mask_shape, "polygon")
+        self.assertEqual(right.mask_points, clip.mask_points)
+        right.mask_shape = "ellipse"
+        right.mask_feather_px = 40.1
+        with self.assertRaisesRegex(ValueError, "Mask feather"):
+            right.validate()
+        right.mask_feather_px = 2.0
+        right.mask_shape = "polygon"
+        right.mask_points = [[0.2, 0.2], [0.8, 0.8]]
+        with self.assertRaisesRegex(ValueError, "3 to 8 points"):
+            right.validate()
+
+    def test_mask_shape_defaults_for_schema_v20_projects(self):
+        restored = TimelineProject.from_dict({
+            "schema_version": 20,
+            "clips": [{
+                "path": "old-mask.mp4", "name": "old-mask.mp4",
+                "track": "V1", "duration_frames": 30, "mask_enabled": True,
+            }],
+        })
+        clip = restored.clips[0]
+        self.assertEqual(clip.mask_shape, "rectangle")
+        self.assertEqual(clip.mask_feather_px, 0.0)
+        self.assertEqual(len(clip.mask_points), 3)
 
     def test_chroma_key_and_mask_round_trip_split_validation(self):
         project = TimelineProject()
@@ -245,7 +284,7 @@ class TimelineModelTests(unittest.TestCase):
         ]})
         self.assertEqual(project.clips[0].video_fade_in_frames, 0)
         self.assertEqual(project.clips[0].video_fade_out_frames, 0)
-        self.assertEqual(project.to_dict()["schema_version"], 20)
+        self.assertEqual(project.to_dict()["schema_version"], 21)
 
     def test_cross_dissolve_persists_and_split_does_not_duplicate_it(self):
         project = TimelineProject()
@@ -329,7 +368,7 @@ class TimelineModelTests(unittest.TestCase):
         self.assertAlmostEqual(saved.volume, 0.8)
         self.assertEqual(saved.fade_in_frames, 30)
         self.assertEqual(saved.fade_out_frames, 45)
-        self.assertEqual(project.to_dict()["schema_version"], 20)
+        self.assertEqual(project.to_dict()["schema_version"], 21)
 
     def test_audio_track_mixer_round_trip(self):
         project = TimelineProject()
