@@ -163,7 +163,8 @@ def build_mask_shape_expression(shape: str, x: float, y: float, width: float, he
 def build_animated_mask_shape_expression(shape: str, x_expr: str, y_expr: str,
                                           width_expr: str, height_expr: str,
                                           points: list[list[float]],
-                                          base_rect: tuple[float, float, float, float]) -> str:
+                                          base_rect: tuple[float, float, float, float],
+                                          point_expressions: list[list[str]] | None = None) -> str:
     """Build a per-frame alpha condition using animated normalized mask bounds."""
     if shape == "rectangle":
         return (f"gte(X\,({x_expr})*W)*lt(X\,(({x_expr})+({width_expr}))*W)*"
@@ -179,9 +180,13 @@ def build_animated_mask_shape_expression(shape: str, x_expr: str, y_expr: str,
     bx, by, bw, bh = base_rect
     crossings = []
     transformed = []
-    for px, py in points:
-        tx = f"(({x_expr})+(({float(px):.6f}-{bx:.6f})/{max(bw, 1e-9):.6f})*({width_expr}))*W"
-        ty = f"(({y_expr})+(({float(py):.6f}-{by:.6f})/{max(bh, 1e-9):.6f})*({height_expr}))*H"
+    for point_index, (px, py) in enumerate(points):
+        if point_expressions is not None:
+            tx = f"({point_expressions[point_index][0]})*W"
+            ty = f"({point_expressions[point_index][1]})*H"
+        else:
+            tx = f"(({x_expr})+(({float(px):.6f}-{bx:.6f})/{max(bw, 1e-9):.6f})*({width_expr}))*W"
+            ty = f"(({y_expr})+(({float(py):.6f}-{by:.6f})/{max(bh, 1e-9):.6f})*({height_expr}))*H"
         transformed.append((tx, ty))
     for index, (x1, y1) in enumerate(transformed):
         x2, y2 = transformed[(index + 1) % len(transformed)]
@@ -291,9 +296,21 @@ def build_video_render_command(ffmpeg: str, project: object,
                 y_expr = _keyframe_expression(mask_keys, "y", mask_y, fps, "T")
                 w_expr = _keyframe_expression(mask_keys, "width", mask_w, fps, "T")
                 h_expr = _keyframe_expression(mask_keys, "height", mask_h, fps, "T")
+                point_expressions = None
+                if mask_shape == "polygon":
+                    point_expressions = []
+                    for point_index, fallback_point in enumerate(mask_points):
+                        vertex_x = [{"frame": key["frame"], "ease": key.get("ease", "linear"),
+                                     "value": key.get("points", mask_points)[point_index][0]} for key in mask_keys]
+                        vertex_y = [{"frame": key["frame"], "ease": key.get("ease", "linear"),
+                                     "value": key.get("points", mask_points)[point_index][1]} for key in mask_keys]
+                        point_expressions.append([
+                            _keyframe_expression(vertex_x, "value", fallback_point[0], fps, "T"),
+                            _keyframe_expression(vertex_y, "value", fallback_point[1], fps, "T"),
+                        ])
                 mask_expr = build_animated_mask_shape_expression(
                     mask_shape, x_expr, y_expr, w_expr, h_expr, mask_points,
-                    (mask_x, mask_y, mask_w, mask_h),
+                    (mask_x, mask_y, mask_w, mask_h), point_expressions,
                 )
                 chain += (
                     f",geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':"
