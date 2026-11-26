@@ -701,8 +701,10 @@ class ZenithEditor(QMainWindow):
         previous = next((item for item in reversed(self.timeline_project.clips_on_track(clip.track))
                          if item.start_frame < clip.start_frame), None)
         adjacent = bool(previous and previous.end_frame == clip.start_frame)
+        still_extensions = {".png", ".jpg", ".jpeg", ".bmp", ".webp", ".tif", ".tiff"}
+        source_handles = clip.duration_frames if Path(clip.path).suffix.lower() in still_extensions else clip.source_in
         max_frames = min(clip.duration_frames, previous.duration_frames if adjacent else 0,
-                         self.timeline_project.fps * 5)
+                         source_handles, self.timeline_project.fps * 5)
         self.cross_dissolve_slider.setRange(0, max(max_frames, clip.transition_in_frames))
         self.cross_dissolve_slider.setValue(clip.transition_in_frames)
         self.cross_dissolve_slider.setEnabled(adjacent or clip.transition_in_frames > 0)
