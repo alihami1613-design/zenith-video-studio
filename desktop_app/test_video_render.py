@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
-from video_render import build_video_render_command, validate_render_project
+from video_render import build_mask_shape_expression, build_video_render_command, validate_render_project
 
 
 class VideoRenderTests(unittest.TestCase):
@@ -109,6 +109,49 @@ class VideoRenderTests(unittest.TestCase):
         joined = " ".join(command)
         self.assertNotIn("colorkey=", joined)
         self.assertNotIn("crop=w=", joined)
+
+    def test_ellipse_mask_uses_alpha_geometry_and_feather(self):
+        with tempfile.TemporaryDirectory() as folder:
+            project = self.project(folder)
+            clip = project.clips[0]
+            clip.mask_enabled = True
+            clip.mask_shape = "ellipse"
+            clip.mask_x = 0.2
+            clip.mask_y = 0.1
+            clip.mask_width = 0.6
+            clip.mask_height = 0.8
+            clip.mask_feather_px = 6.0
+            command = build_video_render_command("ffmpeg", project, "out.mp4")
+        joined = " ".join(command)
+        self.assertIn("geq=r='r(X,Y)'", joined)
+        self.assertIn("lte(pow((X-960.000000)/576.000000", joined)
+        self.assertIn("gblur=sigma=6.000:steps=1:planes=8", joined)
+        self.assertNotIn("crop=w=", joined)
+
+    def test_polygon_mask_expression_supports_three_to_eight_points(self):
+        expression = build_mask_shape_expression(
+            "polygon", 0.0, 0.0, 1.0, 1.0,
+            [[0.5, 0.1], [0.9, 0.9], [0.1, 0.9]], 1920, 1080,
+        )
+        self.assertIn("mod(", expression)
+        self.assertIn("eq(", expression)
+        self.assertGreaterEqual(expression.count("if("), 3)
+        with self.assertRaisesRegex(ValueError, "at least 3 points"):
+            build_mask_shape_expression("polygon", 0, 0, 1, 1, [[0, 0], [1, 1]], 1920, 1080)
+
+    def test_polygon_mask_render_filter_and_zero_feather_omit_blur(self):
+        with tempfile.TemporaryDirectory() as folder:
+            project = self.project(folder)
+            clip = project.clips[0]
+            clip.mask_enabled = True
+            clip.mask_shape = "polygon"
+            clip.mask_points = [[0.5, 0.1], [0.9, 0.9], [0.1, 0.9]]
+            clip.mask_feather_px = 0.0
+            command = build_video_render_command("ffmpeg", project, "out.mp4")
+        joined = " ".join(command)
+        self.assertIn("geq=r='r(X,Y)'", joined)
+        self.assertIn("mod(", joined)
+        self.assertNotIn("gblur=", joined)
 
     def test_builds_alpha_aware_multiply_blend_pipeline(self):
         with tempfile.TemporaryDirectory() as folder:
