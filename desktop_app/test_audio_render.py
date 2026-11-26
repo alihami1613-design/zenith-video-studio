@@ -205,7 +205,7 @@ class AudioRenderCommandTests(unittest.TestCase):
         joined = " ".join(command)
         self.assertIn("atrim=start=1.000000:duration=5.000000", joined)
         self.assertIn("atrim=start=1.000000:duration=", joined)
-        self.assertIn("atempo=0.500000", joined)
+        self.assertIn("atempo=0.575000", joined)
 
 
     def test_reverse_embedded_audio_is_reversed(self):
