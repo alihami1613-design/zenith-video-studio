@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-PROJECT_SCHEMA_VERSION = 11
+PROJECT_SCHEMA_VERSION = 12
 DEFAULT_FPS = 30
 DEFAULT_VIDEO_TRACKS = ("V1", "V2", "V3", "V4")
 DEFAULT_AUDIO_TRACKS = ("A1", "A2", "A3", "A4")
@@ -60,6 +60,8 @@ class Clip:
     transition_in_frames: int = 0
     transition_in_type: str = "dissolve"
     transform_keyframes: list[dict[str, float]] = field(default_factory=list)
+    anchor_x: float = 0.5
+    anchor_y: float = 0.5
     color_grade: dict[str, float] = field(default_factory=lambda: {
         "exposure": 0.0, "contrast": 1.0, "saturation": 1.0,
         "temperature": 0.0, "tint": 0.0,
@@ -82,6 +84,11 @@ class Clip:
             raise ValueError("Clip volume must be between 0.0 and 2.0")
         if min(self.fade_in_frames, self.fade_out_frames, self.video_fade_in_frames, self.video_fade_out_frames, self.transition_in_frames) < 0:
             raise ValueError("Fade durations cannot be negative")
+        for axis in ('anchor_x', 'anchor_y'):
+            value = float(getattr(self, axis))
+            if not math.isfinite(value) or not 0.0 <= value <= 1.0:
+                raise ValueError('Transform anchor must be between 0 and 1')
+            setattr(self, axis, value)
         normalized_keys = []
         previous_frame = -1
         for raw_key in self.transform_keyframes or []:
@@ -96,7 +103,10 @@ class Clip:
                 raise ValueError("Transform position must be between -2 and 2 frame sizes")
             if not 0.1 <= values["scale"] <= 4.0 or not -3600.0 <= values["rotation"] <= 3600.0:
                 raise ValueError("Transform scale or rotation is outside supported limits")
-            normalized_keys.append({"frame": frame, **values})
+            easing = str(raw_key.get("ease", "linear"))
+            if easing not in {"linear", "ease_in", "ease_out", "ease_in_out"}:
+                raise ValueError("Unsupported keyframe easing")
+            normalized_keys.append({"frame": frame, **values, "ease": easing})
             previous_frame = frame
         self.transform_keyframes = normalized_keys
         if self.transition_in_type not in {"dissolve", "wipe_left", "push_left"}:
@@ -493,6 +503,8 @@ class TimelineProject:
                 transition_in_frames=max(0, int(raw.get("transition_in_frames", 0) or 0)),
                 transition_in_type=str(raw.get("transition_in_type", "dissolve") or "dissolve"),
                 transform_keyframes=[dict(k) for k in raw.get("transform_keyframes", [])],
+                anchor_x=float(raw.get("anchor_x", 0.5)),
+                anchor_y=float(raw.get("anchor_y", 0.5)),
                 color_grade=dict(raw.get("color_grade") or {}),
             ))
         return cls(
