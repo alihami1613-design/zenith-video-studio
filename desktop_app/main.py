@@ -360,8 +360,9 @@ class ZenithEditor(QMainWindow):
         self.mask_overlay = PolygonMaskOverlay(self.video_widget)
         self.mask_overlay.setGeometry(self.video_widget.rect())
         self.video_widget.installEventFilter(self)
-        self.mask_overlay.editingStarted.connect(self._polygon_mask_edit_started)
+        self.mask_overlay.editingStarted.connect(self._mask_overlay_edit_started)
         self.mask_overlay.pointsChanged.connect(self._polygon_mask_points_changed)
+        self.mask_overlay.geometryChanged.connect(self._mask_geometry_changed)
         preview_layout.addWidget(self.video_widget, 1)
 
         playback = QHBoxLayout()
@@ -1256,10 +1257,12 @@ class ZenithEditor(QMainWindow):
              y + ((float(py) - by) / bh) * height]
             for px, py in points
         ]
-        editable = bool(clip.mask_enabled and clip.mask_shape == "polygon" and key is not None)
+        editable = bool(clip.mask_enabled and key is not None)
         self.mask_overlay.set_mask(
             display_points, self.timeline_project.width,
-            self.timeline_project.height, editable
+            self.timeline_project.height, bool(clip.mask_enabled),
+            shape=clip.mask_shape, rect=[x, y, width, height],
+            geometry_editable=editable
         )
         self.mask_overlay.setGeometry(self.video_widget.rect())
         self.mask_overlay.raise_()
@@ -1274,15 +1277,37 @@ class ZenithEditor(QMainWindow):
                 self.mask_overlay.raise_()
         return super().eventFilter(watched, event)
 
-    def _polygon_mask_edit_started(self) -> None:
+    def _mask_overlay_edit_started(self) -> None:
         clip_id = self.timeline_widget.canvas.selected_clip_id
         if not clip_id:
             return
         clip = self.timeline_project.get_clip(clip_id)
         frame = self.timeline_project.playhead_frame - clip.start_frame
-        if (clip.mask_enabled and clip.mask_shape == "polygon"
-                and any(int(key["frame"]) == frame for key in clip.mask_keyframes)):
+        if clip.mask_enabled and any(int(key["frame"]) == frame for key in clip.mask_keyframes):
             self._push_undo()
+
+    def _mask_geometry_changed(self, rect) -> None:
+        clip_id = self.timeline_widget.canvas.selected_clip_id
+        if not clip_id:
+            return
+        try:
+            clip = self.timeline_project.get_clip(clip_id)
+            frame = self.timeline_project.playhead_frame - clip.start_frame
+            key = next((item for item in clip.mask_keyframes if int(item["frame"]) == frame), None)
+            if key is None or not clip.mask_enabled or clip.mask_shape == "polygon":
+                return
+            x, y, width, height = [float(value) for value in rect]
+            key.update({"x": x, "y": y, "width": width, "height": height})
+            clip.validate()
+            for name, value in (("x", x), ("y", y), ("width", width), ("height", height)):
+                control = self.mask_controls[f"mask_{name}"]
+                blocker = QSignalBlocker(control)
+                control.setValue(value)
+                del blocker
+            self.timeline_widget.refresh()
+            self.statusBar().showMessage("محدوده ماسک تغییر کرد؛ کل حرکت با یک Undo برمی‌گردد.")
+        except (KeyError, TypeError, ValueError) as exc:
+            self.statusBar().showMessage(f"تغییر محدوده ماسک نامعتبر است: {exc}")
 
     def _polygon_mask_points_changed(self, points) -> None:
         clip_id = self.timeline_widget.canvas.selected_clip_id
