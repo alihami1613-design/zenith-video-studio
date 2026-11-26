@@ -69,9 +69,9 @@ class TimelineCanvas(QWidget):
         track = self._track_at(point.y())
         if not track:
             return None
-        frame = self._x_frame(point.x())
         for clip in reversed(self.project.clips_on_track(track)):
-            if clip.start_frame <= frame < clip.end_frame:
+            left, right = self._frame_x(clip.start_frame), self._frame_x(clip.end_frame)
+            if left - TRIM_HANDLE_PX <= point.x() <= right + TRIM_HANDLE_PX:
                 return clip
         return None
 
@@ -170,7 +170,8 @@ class TimelineCanvas(QWidget):
                 clip.track = target_track
         elif self._drag_mode == "left":
             proposed = self._snap(self._drag_start_frame + delta_frames, clip.clip_id, "left")
-            new_start = max(0, min(proposed, self._original_end - 1))
+            earliest_start = max(0, self._drag_start_frame - self._original_source_in)
+            new_start = max(earliest_start, min(proposed, self._original_end - 1))
             clip.source_in = self._original_source_in + (new_start - self._drag_start_frame)
             clip.start_frame = new_start
             clip.duration_frames = self._original_end - new_start
