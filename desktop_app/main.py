@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 from timeline_model import TimelineProject
 from timeline_widget import TimelineWidget
 from media_probe import probe_media, duration_to_frames
+from proxy_manager import create_proxy
 
 APP_NAME = "ZENITH Desktop"
 PROJECT_VERSION = 2
@@ -54,6 +55,26 @@ class MediaProbeTask(QRunnable):
             self.signals.finished.emit(self.path, None, str(exc))
 
 
+class ProxyTaskSignals(QObject):
+    finished = Signal(str, str, str)
+
+
+class ProxyTask(QRunnable):
+    """Generate one proxy in the background with a single task per source."""
+
+    def __init__(self, path: str) -> None:
+        super().__init__()
+        self.path = path
+        self.signals = ProxyTaskSignals()
+
+    def run(self) -> None:
+        try:
+            result = create_proxy(self.path)
+            self.signals.finished.emit(self.path, str(result), "")
+        except Exception as exc:
+            self.signals.finished.emit(self.path, "", str(exc))
+
+
 class ZenithEditor(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
@@ -62,6 +83,9 @@ class ZenithEditor(QMainWindow):
         self._probe_pool = QThreadPool(self)
         self._probe_pool.setMaxThreadCount(2)
         self._probe_tasks: list[MediaProbeTask] = []
+        self._proxy_pool = QThreadPool(self)
+        self._proxy_pool.setMaxThreadCount(1)
+        self._proxy_tasks: list[ProxyTask] = []
         self._undo_stack: list[dict[str, Any]] = []
         self._redo_stack: list[dict[str, Any]] = []
         self._history_limit = 50
@@ -125,9 +149,13 @@ class ZenithEditor(QMainWindow):
         import_btn.clicked.connect(self.import_media)
         add_btn = QPushButton("افزودن به تایم‌لاین  →")
         add_btn.clicked.connect(self.add_selected_to_timeline)
+        self.proxy_button = QPushButton("ساخت Proxy سبک")
+        self.proxy_button.setToolTip("ساخت نسخه کم‌حجم برای پیش‌نمایش؛ فایل اصلی تغییر نمی‌کند")
+        self.proxy_button.clicked.connect(self.create_proxy_for_selected_media)
         media_layout.addWidget(self.media_list)
         media_layout.addWidget(import_btn)
         media_layout.addWidget(add_btn)
+        media_layout.addWidget(self.proxy_button)
 
         preview_panel = self._panel("پیش‌نمایش")
         preview_layout = preview_panel.layout()
@@ -235,13 +263,17 @@ class ZenithEditor(QMainWindow):
         if row < 0 or row >= len(self.media_items):
             return
         item = self.media_items[row]
-        path = Path(item["path"])
-        if not path.exists():
-            self.media_info.setText(f"فایل پیدا نشد؛ بعداً امکان اتصال مجدد اضافه می‌شود:\n{path}")
+        source_path = Path(item["path"])
+        if not source_path.exists():
+            self.media_info.setText(f"فایل پیدا نشد؛ بعداً امکان اتصال مجدد اضافه می‌شود:\n{source_path}")
             return
-        self._load_preview_source(path, 0)
-        self.media_info.setText(f"{item['name']}\n{path}")
-        self.statusBar().showMessage(f"آماده پخش: {item['name']}")
+        proxy_value = item.get("proxy_path")
+        proxy_path = Path(proxy_value) if proxy_value else None
+        preview_path = proxy_path if proxy_path and proxy_path.is_file() else source_path
+        self._load_preview_source(preview_path, 0)
+        mode = "پیش‌نمایش Proxy" if preview_path != source_path else "پیش‌نمایش فایل اصلی"
+        self.media_info.setText(f"{item['name']}\n{mode}\n{source_path}")
+        self.statusBar().showMessage(f"{mode}: {item['name']}")
 
     def _select_timeline_clip(self, clip_id: str) -> None:
         try:
@@ -251,15 +283,66 @@ class ZenithEditor(QMainWindow):
         self.media_info.setText(f"کلیپ انتخاب‌شده: {clip.name}\nمسیر: {clip.track}")
         if Path(clip.path).exists():
             position_ms = int(clip.source_in * 1000 / self.timeline_project.fps)
-            self._load_preview_source(Path(clip.path), position_ms)
+            preview_path = Path(clip.path)
             for index, media in enumerate(self.media_items):
                 if media.get("path") == clip.path:
+                    proxy_value = media.get("proxy_path")
+                    candidate = Path(proxy_value) if proxy_value else None
+                    if candidate and candidate.is_file():
+                        preview_path = candidate
+                        self.media_info.setText(
+                            f"کلیپ انتخاب‌شده: {clip.name}\nپیش‌نمایش Proxy\nمسیر اصلی: {clip.path}"
+                        )
                     # Updating the bin selection must not reload the source and
                     # cancel the clip's source-in seek.
                     blocker = QSignalBlocker(self.media_list)
                     self.media_list.setCurrentRow(index)
                     del blocker
                     break
+            self._load_preview_source(preview_path, position_ms)
+
+    def create_proxy_for_selected_media(self) -> None:
+        row = self.media_list.currentRow()
+        if row < 0 or row >= len(self.media_items):
+            self.statusBar().showMessage("ابتدا یک فایل ویدیویی را انتخاب کنید")
+            return
+        item = self.media_items[row]
+        source = Path(item["path"])
+        metadata = item.get("metadata") or {}
+        if source.suffix.lower() in {".png", ".jpg", ".jpeg"} or not metadata.get("has_video"):
+            self.statusBar().showMessage("برای این فایل ویدیویی، ساخت Proxy لازم یا پشتیبانی‌شده نیست")
+            return
+        existing = item.get("proxy_path")
+        if existing and Path(existing).is_file():
+            self.statusBar().showMessage("Proxy این فایل از قبل آماده است")
+            return
+        if any(task.path == str(source) for task in self._proxy_tasks):
+            self.statusBar().showMessage("ساخت Proxy این فایل در حال انجام است")
+            return
+        task = ProxyTask(str(source))
+        task.signals.finished.connect(self._proxy_finished)
+        self._proxy_tasks.append(task)
+        self.proxy_button.setEnabled(False)
+        self.statusBar().showMessage("در حال ساخت Proxy سبک در پس‌زمینه؛ فایل اصلی دست‌نخورده می‌ماند...")
+        self._proxy_pool.start(task)
+
+    def _proxy_finished(self, path: str, proxy_path: str, error: str) -> None:
+        self._proxy_tasks = [task for task in self._proxy_tasks if task.path != path]
+        for index, item in enumerate(self.media_items):
+            if item.get("path") != path:
+                continue
+            if proxy_path and Path(proxy_path).is_file():
+                item["proxy_path"] = proxy_path
+                self.media_list.item(index).setText(
+                    self.media_list.item(index).text().split("  •  Proxy آماده")[0] + "  •  Proxy آماده"
+                )
+                self.statusBar().showMessage(f"Proxy آماده شد: {item['name']} | فایل اصلی حفظ شد")
+                if self.media_list.currentRow() == index:
+                    self._preview_media_row(index)
+            else:
+                self.statusBar().showMessage(f"ساخت Proxy ناموفق بود: {error}")
+            break
+        self.proxy_button.setEnabled(True)
 
     def _load_preview_source(self, path: Path, position_ms: int = 0) -> None:
         self.player.stop()
@@ -390,6 +473,7 @@ class ZenithEditor(QMainWindow):
             record = {
                 "path": path, "name": Path(path).name,
                 "metadata": None, "probe_state": "pending",
+                "proxy_path": None,
             }
             self.media_items.append(record)
             self.media_list.addItem(QListWidgetItem(record["name"] + "  •  در حال بررسی"))
@@ -557,6 +641,7 @@ class ZenithEditor(QMainWindow):
                     "name": str(item.get("name") or Path(path).name),
                     "metadata": cached_metadata if isinstance(cached_metadata, dict) else None,
                     "probe_state": "ready" if isinstance(cached_metadata, dict) else "pending",
+                    "proxy_path": str(item.get("proxy_path")) if item.get("proxy_path") and Path(str(item.get("proxy_path"))).is_file() else None,
                 })
         except (OSError, ValueError, TypeError, KeyError) as exc:
             QMessageBox.critical(self, "خطای باز کردن", f"پروژه بارگذاری نشد؛ پروژه فعلی حفظ شد.\n{exc}")
