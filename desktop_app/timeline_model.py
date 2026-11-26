@@ -10,7 +10,7 @@ import math
 from typing import Any
 from uuid import uuid4
 
-PROJECT_SCHEMA_VERSION = 3
+PROJECT_SCHEMA_VERSION = 4
 DEFAULT_FPS = 30
 DEFAULT_VIDEO_TRACKS = ("V1", "V2", "V3", "V4")
 DEFAULT_AUDIO_TRACKS = ("A1", "A2", "A3", "A4")
@@ -242,7 +242,7 @@ class TimelineProject:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "TimelineProject":
-        """Load schema v3 and migrate older path/name/track list projects."""
+        """Load schema v4 and migrate older path/name/track list projects."""
         fps = int(data.get("fps", DEFAULT_FPS) or DEFAULT_FPS)
         raw_clips = data.get("clips")
         if raw_clips is None:
