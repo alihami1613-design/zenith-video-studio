@@ -459,7 +459,7 @@ class ZenithEditor(QMainWindow):
         self.speed_ramp_label = QLabel("Speed Ramp: هنوز نقطه‌ای ثبت نشده")
         self.speed_ramp_label.setWordWrap(True)
         inspector_layout.addWidget(self.speed_ramp_label)
-        self.speed_ramp_status_label = QLabel("فعلاً ذخیره‌سازی منحنی؛ رندر تدریجی در مرحله بعد")
+        self.speed_ramp_status_label = QLabel("Speed Ramp در خروجی نهایی اعمال می‌شود؛ پیش‌نمایش زنده هنوز فعال نیست.")
         self.speed_ramp_status_label.setWordWrap(True)
         inspector_layout.addWidget(self.speed_ramp_status_label)
 
@@ -1004,7 +1004,7 @@ class ZenithEditor(QMainWindow):
             return
         self._sync_transform_controls()
         self.statusBar().showMessage(
-            "نقطه Speed Ramp در پروژه ذخیره شد؛ اعمال آن در رندر نهایی هنوز در دست توسعه است."
+            "نقطه Speed Ramp ذخیره شد و در خروجی نهایی تصویر و صدای همین کلیپ اعمال می‌شود."
         )
 
     def _clear_speed_ramp(self) -> None:
@@ -1021,7 +1021,7 @@ class ZenithEditor(QMainWindow):
             self.statusBar().showMessage(f"پاک‌کردن Speed Ramp انجام نشد: {exc}")
             return
         self._sync_transform_controls()
-        self.statusBar().showMessage("منحنی Speed Ramp از کلیپ پاک شد.")
+        self.statusBar().showMessage("منحنی Speed Ramp پاک شد؛ سرعت ثابت کلیپ دوباره استفاده می‌شود.")
 
     def _add_transform_keyframe(self) -> None:
         clip_id = self.timeline_widget.canvas.selected_clip_id
