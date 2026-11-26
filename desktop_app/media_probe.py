@@ -86,13 +86,13 @@ def _from_ffmpeg_summary(path: Path, executable: str) -> dict[str, Any]:
         capture_output=True, text=True, timeout=30,
     )
     summary = completed.stderr or completed.stdout
-    duration_match = re.search(r"Duration:\\s*(\\d+):(\\d+):(\\d+(?:\\.\\d+)?)", summary)
+    duration_match = re.search(r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)", summary)
     duration = None
     if duration_match:
         hours, minutes, seconds = duration_match.groups()
         duration = int(hours) * 3600 + int(minutes) * 60 + float(seconds)
     video_match = re.search(
-        r"Stream #.*?Video:.*?(\\d{2,6})x(\\d{2,6}).*?(\\d+(?:\\.\\d+)?)\\s*fps",
+        r"Stream #.*?Video:.*?(\d{2,6})x(\d{2,6}).*?(\d+(?:\.\d+)?)\s*fps",
         summary, re.IGNORECASE,
     )
     audio_match = re.search(r"Stream #.*?Audio:", summary, re.IGNORECASE)
