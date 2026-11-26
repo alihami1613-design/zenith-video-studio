@@ -153,7 +153,7 @@ def build_mask_shape_expression(shape: str, x: float, y: float, width: float, he
         if y1 < y2:
             crossings.append(f"if(gt(Y\\,{y1:.6f})*lte(Y\\,{y2:.6f})*lt(X\\,{cross_x})\\,1\\,0)")
         else:
-            crossings.append(f"if(gt(Y\\,{y2:.6f})*lte(Y\\,{y1:.6f})*gt(X\\,{cross_x})\\,1\\,0)")
+            crossings.append(f"if(gt(Y\\,{y2:.6f})*lte(Y\\,{y1:.6f})*lt(X\\,{cross_x})\\,1\\,0)")
     if not crossings:
         raise ValueError("Polygon mask cannot contain only horizontal edges")
     count = "+".join(crossings)
