@@ -698,12 +698,20 @@ class ZenithEditor(QMainWindow):
             self.cross_dissolve_label.setText("Cross Dissolve In: —")
             return
         blockers = QSignalBlocker(self.cross_dissolve_slider)
-        max_frames = min(clip.duration_frames, self.timeline_project.fps * 5)
-        self.cross_dissolve_slider.setRange(0, max_frames)
-        self.cross_dissolve_slider.setValue(min(clip.transition_in_frames, max_frames))
+        previous = next((item for item in reversed(self.timeline_project.clips_on_track(clip.track))
+                         if item.start_frame < clip.start_frame), None)
+        adjacent = bool(previous and previous.end_frame == clip.start_frame)
+        max_frames = min(clip.duration_frames, previous.duration_frames if adjacent else 0,
+                         self.timeline_project.fps * 5)
+        self.cross_dissolve_slider.setRange(0, max(max_frames, clip.transition_in_frames))
+        self.cross_dissolve_slider.setValue(clip.transition_in_frames)
+        self.cross_dissolve_slider.setEnabled(adjacent or clip.transition_in_frames > 0)
         del blockers
         fps = max(1, self.timeline_project.fps)
-        self.cross_dissolve_label.setText(f"Cross Dissolve In: {clip.transition_in_frames / fps:.1f} ثانیه")
+        if not adjacent and clip.transition_in_frames == 0:
+            self.cross_dissolve_label.setText("Cross Dissolve: نیازمند کلیپ قبلی چسبیده")
+        else:
+            self.cross_dissolve_label.setText(f"Cross Dissolve In: {clip.transition_in_frames / fps:.1f} ثانیه")
 
     def _cross_dissolve_changed(self, *_: Any) -> None:
         clip_id = self.timeline_widget.canvas.selected_clip_id
