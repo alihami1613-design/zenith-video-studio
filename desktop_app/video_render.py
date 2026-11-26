@@ -103,7 +103,7 @@ def _keyframe_expression(keyframes: list[dict[str, float]], field: str, default:
         t1, v1 = points[index + 1]
         linear = f"({v0:.6f}+({v1-v0:.6f})*({time_expr}-{t0:.6f})/{(t1-t0):.6f})"
         expression = f"if(lt({time_expr}\\,{t1:.6f})\\,{linear}\\,{expression})"
-    return f"if(lt(T\\,{points[0][0]:.6f})\\,{points[0][1]:.6f}\\,{expression})"
+    return f"if(lt({time_expr}\\,{points[0][0]:.6f})\\,{points[0][1]:.6f}\\,{expression})"
 
 
 def build_video_render_command(ffmpeg: str, project: object,
