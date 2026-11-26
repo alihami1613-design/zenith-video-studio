@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-PROJECT_SCHEMA_VERSION = 17
+PROJECT_SCHEMA_VERSION = 18
 DEFAULT_FPS = 30
 DEFAULT_VIDEO_TRACKS = ("V1", "V2", "V3", "V4")
 DEFAULT_AUDIO_TRACKS = ("A1", "A2", "A3", "A4")
@@ -86,7 +86,7 @@ class Clip:
     color_grade: dict[str, float] = field(default_factory=lambda: {
         "exposure": 0.0, "contrast": 1.0, "saturation": 1.0,
         "temperature": 0.0, "tint": 0.0,
-        "highlights": 0.0, "shadows": 0.0, "whites": 0.0, "blacks": 0.0,
+        "highlights": 0.0, "shadows": 0.0, "whites": 0.0, "blacks": 0.0,\n        "wheel_shadows_r": 0.0, "wheel_shadows_g": 0.0, "wheel_shadows_b": 0.0,\n        "wheel_midtones_r": 0.0, "wheel_midtones_g": 0.0, "wheel_midtones_b": 0.0,\n        "wheel_highlights_r": 0.0, "wheel_highlights_g": 0.0, "wheel_highlights_b": 0.0,
     })
 
     @property
