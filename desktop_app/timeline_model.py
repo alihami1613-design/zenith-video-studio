@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-PROJECT_SCHEMA_VERSION = 12
+PROJECT_SCHEMA_VERSION = 13
 DEFAULT_FPS = 30
 DEFAULT_VIDEO_TRACKS = ("V1", "V2", "V3", "V4")
 DEFAULT_AUDIO_TRACKS = ("A1", "A2", "A3", "A4")
@@ -62,6 +62,7 @@ class Clip:
     transform_keyframes: list[dict[str, float]] = field(default_factory=list)
     anchor_x: float = 0.5
     anchor_y: float = 0.5
+    playback_rate: float = 1.0
     color_grade: dict[str, float] = field(default_factory=lambda: {
         "exposure": 0.0, "contrast": 1.0, "saturation": 1.0,
         "temperature": 0.0, "tint": 0.0,
@@ -84,6 +85,10 @@ class Clip:
             raise ValueError("Clip volume must be between 0.0 and 2.0")
         if min(self.fade_in_frames, self.fade_out_frames, self.video_fade_in_frames, self.video_fade_out_frames, self.transition_in_frames) < 0:
             raise ValueError("Fade durations cannot be negative")
+        rate = float(self.playback_rate)
+        if not math.isfinite(rate) or not 0.25 <= rate <= 4.0:
+            raise ValueError('Playback rate must be between 0.25x and 4.0x')
+        self.playback_rate = rate
         for axis in ('anchor_x', 'anchor_y'):
             value = float(getattr(self, axis))
             if not math.isfinite(value) or not 0.0 <= value <= 1.0:
@@ -257,7 +262,7 @@ class TimelineProject:
         if start < 0 or end <= start:
             raise ValueError("Trim must leave a positive clip duration")
         removed_from_left = start - clip.start_frame
-        clip.source_in += removed_from_left
+        clip.source_in += round(removed_from_left * clip.playback_rate)
         clip.start_frame = start
         clip.duration_frames = end - start
         clip.fade_in_frames = max(0, clip.fade_in_frames - removed_from_left)
@@ -290,7 +295,7 @@ class TimelineProject:
             name=original.name,
             track=original.track,
             start_frame=at_frame,
-            source_in=original.source_in + (at_frame - original.start_frame),
+            source_in=original.source_in + round((at_frame - original.start_frame) * original.playback_rate),
             duration_frames=original.end_frame - at_frame,
             media_type=original.media_type,
             has_audio=original.has_audio,
@@ -351,6 +356,33 @@ class TimelineProject:
         clip.validate()
         return clip
 
+    def set_clip_speed(self, clip_id: str, playback_rate: float) -> Clip:
+        """Change playback rate while preserving the source-media span."""
+        clip = self.get_clip(clip_id)
+        if clip.media_type != "video" or not clip.track.startswith("V"):
+            raise ValueError("Playback speed control requires a video-track clip")
+        rate = float(playback_rate)
+        if not math.isfinite(rate) or not 0.25 <= rate <= 4.0:
+            raise ValueError("Playback rate must be between 0.25x and 4.0x")
+        old_duration = clip.duration_frames
+        new_duration = max(1, round(old_duration * clip.playback_rate / rate))
+        ratio = new_duration / old_duration
+        clip.transform_keyframes = [
+            dict(key, frame=min(new_duration - 1, round(int(key["frame"]) * ratio)))
+            for key in clip.transform_keyframes
+        ]
+        clip.transform_keyframes.sort(key=lambda item: int(item["frame"]))
+        clip.transform_keyframes = [
+            key for index, key in enumerate(clip.transform_keyframes)
+            if index == 0 or key["frame"] > clip.transform_keyframes[index - 1]["frame"]
+        ]
+        for field_name in ("fade_in_frames", "fade_out_frames", "video_fade_in_frames",
+                           "video_fade_out_frames", "transition_in_frames"):
+            setattr(clip, field_name, min(new_duration, round(getattr(clip, field_name) * ratio)))
+        clip.duration_frames = new_duration
+        clip.playback_rate = rate
+        clip.validate()
+        return clip
     def set_clip_video_fade(self, clip_id: str, *, fade_in_frames: int | None = None,
                             fade_out_frames: int | None = None) -> Clip:
         """Set non-destructive visual fades, measured in timeline frames."""
@@ -505,6 +537,7 @@ class TimelineProject:
                 transform_keyframes=[dict(k) for k in raw.get("transform_keyframes", [])],
                 anchor_x=float(raw.get("anchor_x", 0.5)),
                 anchor_y=float(raw.get("anchor_y", 0.5)),
+                playback_rate=float(raw.get("playback_rate", 1.0)),
                 color_grade=dict(raw.get("color_grade") or {}),
             ))
         return cls(
