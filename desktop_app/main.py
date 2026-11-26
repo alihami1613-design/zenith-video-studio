@@ -238,6 +238,7 @@ class ZenithEditor(QMainWindow):
         self._speed_ramp_preview_pool = QThreadPool(self)
         self._speed_ramp_preview_pool.setMaxThreadCount(1)
         self._speed_ramp_preview_tasks: list[SpeedRampPreviewTask] = []
+        self._speed_ramp_preview_pending: set[str] = set()
         self.waveforms: dict[str, list[float]] = {}
         self._undo_stack: list[dict[str, Any]] = []
         self._redo_stack: list[dict[str, Any]] = []
@@ -1022,6 +1023,117 @@ class ZenithEditor(QMainWindow):
         self.statusBar().showMessage(
             f"Speed {rate:g}x applied; clip length is now {clip.duration_frames} frames. Check for overlaps."
         )
+
+    def _speed_ramp_changed(self, clip_id: str, points: list) -> None:
+        try:
+            self.timeline_project.set_clip_speed_ramp(clip_id, points)
+        except (KeyError, ValueError) as exc:
+            if self._undo_stack:
+                self._undo_stack.pop()
+            self._update_history_buttons()
+            self.timeline_widget.refresh()
+            self.statusBar().showMessage(f"ویرایش منحنی Speed Ramp انجام نشد: {exc}")
+            return
+        self._sync_transform_controls()
+        self.timeline_widget.refresh()
+        self.statusBar().showMessage("منحنی تغییر کرد؛ پیش‌نمایش سبک در پس‌زمینه به‌روزرسانی می‌شود...")
+        self._start_speed_ramp_preview(clip_id, automatic=True)
+
+    def preview_speed_ramp(self) -> None:
+        clip_id = self.timeline_widget.canvas.selected_clip_id
+        if not clip_id:
+            self.statusBar().showMessage("ابتدا یک کلیپ دارای Speed Ramp انتخاب کن")
+            return
+        self._start_speed_ramp_preview(clip_id, automatic=False)
+
+    def _start_speed_ramp_preview(self, clip_id: str, automatic: bool) -> None:
+        try:
+            clip = self.timeline_project.get_clip(clip_id)
+        except KeyError:
+            return
+        if (clip.media_type != "video" or not clip.track.startswith("V")
+                or not clip.speed_ramp):
+            return
+        if clip.reverse_playback or clip.transition_in_frames > 0:
+            if not automatic:
+                self.statusBar().showMessage(
+                    "پیش‌نمایش Speed Ramp با Reverse یا Transition ورودی هم‌زمان پشتیبانی نمی‌شود."
+                )
+            return
+        source_path = Path(clip.path)
+        if not source_path.is_file():
+            if not automatic:
+                self.statusBar().showMessage("فایل اصلی کلیپ برای پیش‌نمایش پیدا نشد")
+            return
+        if any(task.clip_id == clip_id for task in self._speed_ramp_preview_tasks):
+            if automatic:
+                self._speed_ramp_preview_pending.add(clip_id)
+            else:
+                self.statusBar().showMessage("پیش‌نمایش این کلیپ در حال ساخته‌شدن است")
+            return
+        local_start = max(
+            0, min(clip.duration_frames - 1,
+                   self.timeline_project.playhead_frame - clip.start_frame)
+        )
+        preview_frames = min(
+            clip.duration_frames - local_start,
+            max(1, self.timeline_project.fps * 5),
+        )
+        task = SpeedRampPreviewTask(
+            clip_id, str(source_path), clip.source_in, clip.duration_frames,
+            self.timeline_project.fps, clip.speed_ramp, local_start, preview_frames,
+        )
+        task.signals.finished.connect(self._speed_ramp_preview_finished)
+        self._speed_ramp_preview_tasks.append(task)
+        self.speed_ramp_preview_button.setEnabled(False)
+        self.speed_ramp_status_label.setText(
+            "در حال ساخت پیش‌نمایش کوتاه ۴۸۰px/15fps در پس‌زمینه..."
+        )
+        self._speed_ramp_preview_pool.start(task)
+
+    def _speed_ramp_preview_finished(
+        self, clip_id: str, preview_path: str, error: str
+    ) -> None:
+        finished_task = next(
+            (task for task in self._speed_ramp_preview_tasks
+             if task.clip_id == clip_id), None
+        )
+        self._speed_ramp_preview_tasks = [
+            task for task in self._speed_ramp_preview_tasks
+            if task.clip_id != clip_id
+        ]
+        try:
+            clip = self.timeline_project.get_clip(clip_id)
+        except KeyError:
+            clip = None
+        if error:
+            self.speed_ramp_status_label.setText("ساخت پیش‌نمایش ناموفق بود؛ جزئیات در نوار وضعیت")
+            self.statusBar().showMessage(f"پیش‌نمایش Speed Ramp ناموفق بود: {error}")
+        elif clip and finished_task and clip.speed_ramp == finished_task.points:
+            if self.timeline_widget.canvas.selected_clip_id == clip_id:
+                self._load_preview_source(Path(preview_path), 0)
+            self.speed_ramp_status_label.setText(
+                "پیش‌نمایش سبک آماده شد؛ برای دیدن نتیجه، پخش را اجرا کن."
+            )
+            self.statusBar().showMessage("پیش‌نمایش Speed Ramp به‌روز شد")
+        pending = clip_id in self._speed_ramp_preview_pending
+        self._speed_ramp_preview_pending.discard(clip_id)
+        if pending and clip and clip.speed_ramp:
+            self._start_speed_ramp_preview(clip_id, automatic=True)
+        else:
+            selected = self.timeline_widget.canvas.selected_clip_id
+            if selected:
+                try:
+                    selected_clip = self.timeline_project.get_clip(selected)
+                    self.speed_ramp_preview_button.setEnabled(
+                        selected_clip.media_type == "video"
+                        and selected_clip.track.startswith("V")
+                        and bool(selected_clip.speed_ramp)
+                    )
+                except KeyError:
+                    self.speed_ramp_preview_button.setEnabled(False)
+            else:
+                self.speed_ramp_preview_button.setEnabled(False)
 
     def _add_speed_ramp_point(self) -> None:
         clip_id = self.timeline_widget.canvas.selected_clip_id
