@@ -535,6 +535,72 @@ class AudioRenderCommandTests(unittest.TestCase):
             self.assertLess(abs(overlap_middle - before) / before, 0.35)
             self.assertLess(abs(overlap_middle - after) / after, 0.35)
 
+    def test_ffmpeg_sidechain_ducking_reduces_music_during_voice_and_recovers(self):
+        import math
+        import shutil
+        import subprocess
+        import wave
+
+        ffmpeg = shutil.which("ffmpeg")
+        if not ffmpeg:
+            self.skipTest("FFmpeg is not installed")
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            music = root / "music.wav"
+            voice = root / "voice.wav"
+            output = root / "ducked.wav"
+            for path, frequency, duration in ((music, 440, 5), (voice, 880, 2)):
+                subprocess.run(
+                    [ffmpeg, "-y", "-v", "error", "-f", "lavfi", "-i",
+                     f"sine=frequency={frequency}:sample_rate=48000:duration={duration}",
+                     "-c:a", "pcm_s16le", str(path)],
+                    check=True, timeout=30,
+                )
+            music_clip = self.make_clip(
+                music, clip_id="music", track="A2", audio_track="A2",
+                start_frame=0, source_in=0, duration_frames=125, end_frame=125,
+                volume=1.0, fade_in_frames=0, fade_out_frames=0,
+            )
+            voice_clip = self.make_clip(
+                voice, clip_id="voice", track="A1", audio_track="A1",
+                start_frame=50, source_in=0, duration_frames=50, end_frame=100,
+                volume=1.0, fade_in_frames=0, fade_out_frames=0,
+            )
+            subprocess.run(
+                build_audio_mix_command(
+                    ffmpeg, [music_clip, voice_clip], 25, output, 125,
+                    audio_track_settings={
+                        "A1": {"volume": 1.0, "muted": False, "solo": False},
+                        "A2": {"volume": 1.0, "muted": False, "solo": False},
+                    },
+                    audio_ducking={
+                        "enabled": True, "voice_track": "A1", "music_track": "A2",
+                        "reduction_db": 18.0, "attack_ms": 20, "release_ms": 250,
+                    },
+                ), check=True, timeout=60,
+            )
+            with wave.open(str(output), "rb") as rendered:
+                self.assertEqual(rendered.getframerate(), 48000)
+                frames = rendered.readframes(rendered.getnframes())
+
+            def rms_at(seconds, window=0.35):
+                start = int(seconds * 48000) * 2
+                count = int(window * 48000) * 2
+                chunk = frames[start * 2:(start + count) * 2]
+                values = [int.from_bytes(chunk[i:i + 2], "little", signed=True)
+                          for i in range(0, len(chunk), 2)]
+                return math.sqrt(sum(value * value for value in values) / max(1, len(values)))
+
+            pre_voice = rms_at(1.0)
+            during_voice = rms_at(2.8)
+            recovered = rms_at(4.2)
+            self.assertGreater(pre_voice, 1000)
+            self.assertGreater(recovered, 1000)
+            self.assertLess(during_voice, pre_voice * 0.80,
+                           f"Music should duck under voice: pre={pre_voice}, during={during_voice}")
+            self.assertGreater(recovered, during_voice * 1.25,
+                              f"Music should recover after voice: ducked={during_voice}, recovered={recovered}")
+
 
 if __name__ == "__main__":
     unittest.main()
