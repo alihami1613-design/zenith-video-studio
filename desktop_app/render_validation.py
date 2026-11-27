@@ -10,6 +10,8 @@ import re
 import subprocess
 from pathlib import Path
 
+from render_quality import RenderVisualQualityReport, inspect_rendered_video
+
 
 @dataclass(frozen=True)
 class RenderValidationReport:
@@ -23,6 +25,8 @@ class RenderValidationReport:
     has_audio: bool
     video_codec: str
     decode_succeeded: bool
+    visual_quality: RenderVisualQualityReport | None
+    visual_scan_error: str | None
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -109,7 +113,18 @@ def validate_rendered_mp4(
             + detail[-1200:]
         )
 
+    # Visual findings are review cues only. A diagnostic failure must not
+    # discard an otherwise structurally valid, fully decoded export.
+    visual_quality = None
+    visual_scan_error = None
+    try:
+        visual_quality = inspect_rendered_video(
+            path, ffmpeg, timeout_seconds=timeout_seconds
+        )
+    except (RuntimeError, ValueError):
+        visual_scan_error = "اسکن بصری کامل نشد؛ بازبینی چشمی خروجی لازم است."
+
     return RenderValidationReport(
         True, path.stat().st_size, duration, width, height, fps,
-        True, has_audio, codec, True,
+        True, has_audio, codec, True, visual_quality, visual_scan_error,
     )
