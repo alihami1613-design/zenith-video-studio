@@ -133,7 +133,8 @@ class AudioRenderCommandTests(unittest.TestCase):
         joined = " ".join(command)
         self.assertIn("sidechaincompress=threshold=0.025", joined)
         self.assertIn("attack=20:release=500", joined)
-        self.assertIn("[track1][track0]", joined)
+        self.assertIn("[track0]apad[duckcontrol]", joined)
+        self.assertIn("[track1][duckcontrol]sidechaincompress", joined)
         self.assertIn("[musicducked]", joined)
 
     def test_ducking_rejects_same_or_unavailable_track(self):
