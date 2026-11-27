@@ -164,7 +164,10 @@ def analyze_project_media(
                     warnings=tuple(str(value) for value in energy.warnings),
                 )
             except Exception as exc:
-                warnings.append(f"Audio energy analysis failed: {exc}")
+                warnings.append(
+                    f"Audio energy analysis failed ({type(exc).__name__}); "
+                    "diagnostic details were withheld to protect local file paths."
+                )
 
         if warnings:
             report_warnings.extend(
