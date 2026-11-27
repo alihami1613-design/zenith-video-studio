@@ -27,12 +27,23 @@ class AudioSummary:
 
 
 @dataclass(frozen=True)
+class AudioEnergySummary:
+    window_seconds: float
+    analyzed_duration_seconds: float
+    # Compact dBFS envelope; no PCM samples are retained in the report.
+    energy_dbfs: tuple[tuple[float, float], ...]
+    transient_candidates_seconds: tuple[float, ...]
+    warnings: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class AssetAnalysis:
     asset_id: str
     media_type: str
     scene_boundaries_seconds: tuple[float, ...] = ()
     visual_samples: tuple[VisualSampleSummary, ...] = ()
     audio: AudioSummary | None = None
+    audio_energy: AudioEnergySummary | None = None
     warnings: tuple[str, ...] = ()
 
 
@@ -54,6 +65,7 @@ def analyze_project_media(
     scene_detector: Callable | None = None,
     visual_sampler: Callable | None = None,
     audio_analyzer: Callable | None = None,
+    audio_energy_analyzer: Callable | None = None,
 ) -> MediaAnalysisReport:
     """Run local analysis per asset, isolating failures so one bad file won't abort all.
 
@@ -75,6 +87,9 @@ def analyze_project_media(
     if audio_analyzer is None:
         from ai_editor.audio_analysis import analyze_audio
         audio_analyzer = analyze_audio
+    if audio_energy_analyzer is None:
+        from ai_editor.audio_energy import analyze_audio_energy
+        audio_energy_analyzer = analyze_audio_energy
 
     results: list[AssetAnalysis] = []
     report_warnings: list[str] = list(context.warnings)
@@ -84,6 +99,7 @@ def analyze_project_media(
         scene_times: tuple[float, ...] = ()
         samples: tuple[VisualSampleSummary, ...] = ()
         audio: AudioSummary | None = None
+        audio_energy: AudioEnergySummary | None = None
 
         if not item.exists:
             continue
@@ -133,6 +149,22 @@ def analyze_project_media(
                 )
             except Exception as exc:
                 warnings.append(f"Audio analysis failed: {exc}")
+            try:
+                energy = audio_energy_analyzer(asset.path)
+                audio_energy = AudioEnergySummary(
+                    window_seconds=float(energy.window_seconds),
+                    analyzed_duration_seconds=float(energy.analyzed_duration_seconds),
+                    energy_dbfs=tuple(
+                        (float(point.time_seconds), float(point.rms_dbfs))
+                        for point in energy.energy_envelope
+                    ),
+                    transient_candidates_seconds=tuple(
+                        float(value) for value in energy.transient_candidates_seconds
+                    ),
+                    warnings=tuple(str(value) for value in energy.warnings),
+                )
+            except Exception as exc:
+                warnings.append(f"Audio energy analysis failed: {exc}")
 
         if warnings:
             report_warnings.extend(
@@ -144,6 +176,7 @@ def analyze_project_media(
             scene_boundaries_seconds=scene_times,
             visual_samples=samples,
             audio=audio,
+            audio_energy=audio_energy,
             warnings=tuple(warnings),
         ))
 
