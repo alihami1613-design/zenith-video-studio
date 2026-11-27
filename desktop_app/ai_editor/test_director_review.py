@@ -4,7 +4,10 @@ import unittest
 from pathlib import Path
 
 from timeline_model import TimelineProject
-from ai_editor.director_review import review_edit, review_is_current, build_gap_repair_plan
+from ai_editor.director_review import (
+    review_edit, review_is_current, build_gap_repair_plan,
+    build_music_alignment_plan,
+)
 from ai_editor.executor import preview_edit_plan
 from ai_editor.project_context import build_project_context
 from ai_editor.narrative import StoryBeat, StoryAct, StoryBlueprint
@@ -187,6 +190,83 @@ class DirectorReviewTests(unittest.TestCase):
             self.assertTrue(all(
                 finding.requires_user_approval for finding in report.findings
             ))
+
+    def test_music_alignment_plan_trims_and_moves_cut_in_isolated_preview(self):
+        with tempfile.TemporaryDirectory() as folder:
+            project = self._project(folder)
+            project.clips[0].duration_frames = 45
+            music = Path(folder) / "music.wav"
+            music.write_bytes(b"music")
+            project.add_clip(
+                str(music), "Music", track="A1", start_frame=0,
+                duration_frames=180, media_type="audio",
+            )
+
+            def probe(path):
+                if Path(path).suffix == ".wav":
+                    return {
+                        "duration_seconds": 10.0, "width": None, "height": None,
+                        "fps": None, "has_video": False, "has_audio": True,
+                        "probe_method": "test",
+                    }
+                return {
+                    "duration_seconds": 20.0, "width": 1920, "height": 1080,
+                    "fps": 30.0, "has_video": True, "has_audio": False,
+                    "probe_method": "test",
+                }
+
+            context = build_project_context(project, probe_fn=probe)
+            video_asset = next(
+                item.asset.asset_id for item in context.assets
+                if item.asset.path == str(Path(folder) / "a.mp4")
+            )
+            audio_asset = next(
+                item.asset.asset_id for item in context.assets
+                if item.asset.path == str(music)
+            )
+            media = MediaAnalysisReport(
+                1,
+                (
+                    AssetAnalysis(video_asset, "video"),
+                    AssetAnalysis(
+                        audio_asset, "audio",
+                        spectral_audio=SpectralAudioSummary(
+                            8000, 512, 128, 120.0, 0.9,
+                            (1.4,), (1.4,),
+                            ("Estimated pulse candidates; not verified beats.",),
+                        ),
+                    ),
+                ),
+                (),
+            )
+            report = review_edit(project, context, media_analysis=media)
+            finding = next(
+                item for item in report.findings
+                if item.category == "audio_visual_sync"
+            )
+            self.assertEqual(finding.target_frame, 42)
+            self.assertEqual(finding.related_clip_id, project.clips[0].clip_id)
+            draft = build_music_alignment_plan(
+                report, project, [item.asset for item in context.assets]
+            )
+            self.assertEqual([op.kind for op in draft.edit_plan.operations], [
+                "trim_clip", "move_clip",
+            ])
+            preview = preview_edit_plan(
+                project, draft.edit_plan, [item.asset for item in context.assets]
+            )
+            self.assertEqual(preview.project.clips[0].end_frame, 42)
+            self.assertEqual(preview.project.clips[1].start_frame, 42)
+            self.assertEqual(project.clips[0].end_frame, 45)
+            self.assertEqual(project.clips[1].start_frame, 45)
+            self.assertTrue(draft.edit_plan.requires_user_approval)
+
+    def test_music_alignment_plan_rejects_later_or_noncontiguous_cut(self):
+        with tempfile.TemporaryDirectory() as folder:
+            project = self._project(folder)
+            report = review_edit(project)
+            with self.assertRaises(ValueError):
+                build_music_alignment_plan(report, project, [])
 
     def test_media_analysis_type_is_validated(self):
         with tempfile.TemporaryDirectory() as folder:
