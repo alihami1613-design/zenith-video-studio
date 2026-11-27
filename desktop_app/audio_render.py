@@ -250,9 +250,13 @@ def build_audio_mix_command(
         if not 1 <= attack_ms <= 500 or not 20 <= release_ms <= 3000:
             raise ValueError("زمان Attack یا Release برای Ducking معتبر نیست.")
         ratio = max(1.0, 10 ** (reduction_db / 20.0))
+        # Pad the sidechain control signal with silence to the timeline end so
+        # compressor release is not cut off when the voice track reaches EOF.
+        sidechain_label = "duckcontrol"
+        filters.append(f"[{track_label_map[voice_track]}]apad[{sidechain_label}]")
         ducked_label = "musicducked"
         filters.append(
-            f"[{track_label_map[music_track]}][{track_label_map[voice_track]}]"
+            f"[{track_label_map[music_track]}][{sidechain_label}]"
             f"sidechaincompress=threshold=0.025:ratio={ratio:.4f}:"
             f"attack={attack_ms}:release={release_ms}[{ducked_label}]"
         )
