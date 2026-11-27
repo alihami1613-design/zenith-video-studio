@@ -72,6 +72,20 @@ class MainAIWorkflowWiringTests(unittest.TestCase):
         self.assertIn("media_analysis=self._ai_media_analysis", method)
         self.assertIn("review_edit(", method)
 
+    def test_music_alignment_uses_the_existing_preview_and_approval_gate(self):
+        self.assertIn("build_music_alignment_plan", self.source)
+        self.assertIn(
+            'self.ai_music_align_button.clicked.connect(self.prepare_ai_music_alignment_fixes)',
+            self.source,
+        )
+        method = ast.get_source_segment(
+            self.source, self.methods["prepare_ai_music_alignment_fixes"]
+        )
+        self.assertIn("build_music_alignment_plan(", method)
+        self.assertIn("self.ai_preview_plan_button.setEnabled(True)", method)
+        self.assertIn("self.ai_apply_plan_button.setEnabled(False)", method)
+        self.assertNotIn("apply_edit_plan(", method)
+
     def test_director_gap_fixes_use_existing_preview_and_approval_path(self):
         self.assertIn("build_gap_repair_plan", self.source)
         self.assertIn('self.ai_director_fix_button.clicked.connect(self.prepare_ai_director_fixes)', self.source)
