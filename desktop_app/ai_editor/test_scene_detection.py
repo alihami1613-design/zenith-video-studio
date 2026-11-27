@@ -38,7 +38,8 @@ class SceneDetectionTests(unittest.TestCase):
         self.assertEqual(result.boundaries, (
             SceneBoundary(0.5), SceneBoundary(2.25), SceneBoundary(8.0)
         ))
-        self.assertIn("scale=320:-2,format=gray", captured["command"])
+        filter_arg = captured["command"][captured["command"].index("-vf") + 1]
+        self.assertIn("scale=320:-2,format=gray", filter_arg)
         self.assertIn("0.400", captured["command"][captured["command"].index("-vf") + 1])
         self.assertEqual(captured["kwargs"]["timeout"], 300)
 
