@@ -62,6 +62,33 @@ class AIEditExecutorTests(unittest.TestCase):
             apply_edit_plan(project, plan, ASSETS, approved=True)
         self.assertEqual(project.to_dict(), before)
 
+    def test_split_clip_is_previewed_without_mutating_source_timeline(self):
+        project = TimelineProject()
+        clip = project.add_clip("/media/a.mp4", "a.mp4", start_frame=10, duration_frames=100)
+        clip.color_grade = dict(clip.color_grade, exposure=0.5)
+        plan = make_plan([EditOperation("op-split", "split_clip", {
+            "clip_id": clip.clip_id, "at_frame": 55,
+        })])
+        preview = preview_edit_plan(project, plan, ASSETS)
+        self.assertEqual(len(preview.project.clips), 2)
+        left, right = sorted(preview.project.clips, key=lambda item: item.start_frame)
+        self.assertEqual((left.start_frame, left.end_frame), (10, 55))
+        self.assertEqual((right.start_frame, right.end_frame), (55, 110))
+        self.assertEqual(right.source_in, 45)
+        self.assertEqual(right.color_grade["exposure"], 0.5)
+        self.assertEqual(len(project.clips), 1)
+        self.assertEqual(project.clips[0].end_frame, 110)
+        self.assertEqual(preview.created_clip_ids, (right.clip_id,))
+
+    def test_split_clip_rejects_boundary_outside_clip(self):
+        project = TimelineProject()
+        clip = project.add_clip("/media/a.mp4", "a.mp4", start_frame=10, duration_frames=100)
+        plan = make_plan([EditOperation("op-split", "split_clip", {
+            "clip_id": clip.clip_id, "at_frame": 10,
+        })])
+        with self.assertRaises(ValueError):
+            preview_edit_plan(project, plan, ASSETS)
+
     def test_trim_can_change_only_one_edge(self):
         project = TimelineProject()
         clip = project.add_clip("/media/a.mp4", "a.mp4", start_frame=10, duration_frames=100)
