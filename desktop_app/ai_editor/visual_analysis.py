@@ -53,7 +53,7 @@ def _ffmpeg_path() -> str:
 
 def _jpeg_dimensions(data: bytes) -> tuple[int, int]:
     """Read JPEG SOF dimensions without requiring an imaging dependency."""
-    if len(data) < 4 or data[:2] != b"\\xff\\xd8":
+    if len(data) < 4 or data[:2] != b"\xff\xd8":
         raise RuntimeError("FFmpeg output is not a valid JPEG image.")
     index = 2
     while index + 4 <= len(data):
