@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QListWidget,
     QListWidgetItem, QSplitter, QFrame, QStatusBar, QSlider, QCheckBox, QComboBox,
     QProgressBar, QDoubleSpinBox, QLineEdit, QSpinBox, QPlainTextEdit, QGroupBox,
+    QSizePolicy,
 )
 
 from timeline_model import TimelineProject, mask_values_at, mask_points_at, transform_eased_progress
@@ -727,9 +728,12 @@ class ZenithEditor(QMainWindow):
         media_layout.addWidget(self.relink_button)
 
         preview_panel = self._panel("پیش‌نمایش")
+        preview_panel.setMinimumSize(0, 0)
         preview_layout = preview_panel.layout()
         self.video_widget = QVideoWidget()
-        self.video_widget.setMinimumHeight(300)
+        # Let the native video surface shrink with its splitter cell on shorter screens.
+        self.video_widget.setMinimumSize(0, 0)
+        self.video_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.video_widget.setStyleSheet("background:#050506;")
         self.player.setVideoOutput(self.video_widget)
         self.mask_overlay = PolygonMaskOverlay(self.video_widget)
@@ -1269,9 +1273,15 @@ class ZenithEditor(QMainWindow):
         inspector_layout.addWidget(self.duck_reduction_slider)
         inspector_layout.addStretch(1)
 
+        for panel in (media_panel, preview_panel, inspector_panel):
+            panel.setMinimumSize(0, 0)
         top_split.addWidget(media_panel)
         top_split.addWidget(preview_panel)
         top_split.addWidget(inspector_panel)
+        top_split.setChildrenCollapsible(False)
+        top_split.setStretchFactor(0, 1)
+        top_split.setStretchFactor(1, 3)
+        top_split.setStretchFactor(2, 1)
         top_split.setSizes([280, 760, 300])
         outer.addWidget(top_split, 3)
 
