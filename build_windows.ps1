@@ -3,13 +3,23 @@ $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $Root
 
-$Python = Get-Command py -ErrorAction SilentlyContinue
-if ($Python) {
-    & py -3.11 -m venv .venv-build
-    if ($LASTEXITCODE -ne 0) { throw "ساخت محیط Python ناموفق بود." }
-    $VenvPython = Join-Path $Root ".venv-build\Scripts\python.exe"
+$Launcher = Get-Command py -ErrorAction SilentlyContinue
+if ($Launcher) {
+    & $Launcher.Source -3.11 -m venv (Join-Path $Root ".venv-build")
+    if ($LASTEXITCODE -ne 0) { throw "ساخت محیط Python 3.11 ناموفق بود." }
 } else {
-    $VenvPython = (Get-Command python -ErrorAction Stop).Source
+    $Python = Get-Command python -ErrorAction Stop
+    $Version = & $Python.Source -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"
+    if ($LASTEXITCODE -ne 0 -or $Version.Trim() -ne "3.11") {
+        throw "Python 3.11 لازم است. Python پیدا‌شده: $Version"
+    }
+    & $Python.Source -m venv (Join-Path $Root ".venv-build")
+    if ($LASTEXITCODE -ne 0) { throw "ساخت محیط Python 3.11 ناموفق بود." }
+}
+
+$VenvPython = Join-Path $Root ".venv-build\Scripts\python.exe"
+if (-not (Test-Path $VenvPython -PathType Leaf)) {
+    throw "Python محیط ساخت پیدا نشد."
 }
 
 & $VenvPython -m pip install --upgrade pip
