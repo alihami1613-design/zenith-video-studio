@@ -56,6 +56,8 @@ on:
       - "desktop_app/test_render_quality.py"
       - "desktop_app/render_audio_quality.py"
       - "desktop_app/test_render_audio_quality.py"
+      - "desktop_app/render_audio_quality.py"
+      - "desktop_app/test_render_audio_quality.py"
       - "desktop_app/speed_ramp.py"
       - "desktop_app/test_speed_ramp.py"
       - "desktop_app/speed_ramp_preview.py"
