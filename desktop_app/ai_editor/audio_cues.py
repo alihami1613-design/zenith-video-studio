@@ -7,7 +7,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import math
-from typing import Iterable
 
 from ai_editor.contracts import EditPlanError
 from ai_editor.media_analysis import AudioSummary
@@ -49,7 +48,8 @@ def build_audio_cue_map(
         if (isinstance(value, bool) or not isinstance(value, (int, float))
                 or not math.isfinite(value) or value < 0):
             raise EditPlanError(f"{name} must be a non-negative finite number.")
-    if media_duration_seconds <= 0 or fps < 1 or isinstance(fps, bool) or not isinstance(fps, int):
+    if (media_duration_seconds <= 0 or isinstance(fps, bool)
+            or not isinstance(fps, int) or fps < 1):
         raise EditPlanError("A positive media duration and integer frame rate are required.")
     if minimum_pause_seconds > 10 or edge_window_seconds > 5:
         raise EditPlanError("Audio cue thresholds exceed safe limits.")
