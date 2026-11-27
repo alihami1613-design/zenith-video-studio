@@ -3582,6 +3582,9 @@ class ZenithEditor(QMainWindow):
                 audio_track="A1" if track.startswith("V") else track,
             )
         except ValueError as exc:
+            if self._undo_stack:
+                self._undo_stack.pop()
+            self._update_history_buttons()
             QMessageBox.warning(self, "افزودن کلیپ", str(exc))
             return
         self._refresh_timeline()
@@ -3602,6 +3605,9 @@ class ZenithEditor(QMainWindow):
         try:
             self.timeline_project.remove_clip(clip_id, ripple=False)
         except KeyError:
+            if self._undo_stack:
+                self._undo_stack.pop()
+            self._update_history_buttons()
             return
         self.timeline_widget.canvas.selected_clip_id = None
         self._refresh_timeline()
@@ -3618,6 +3624,9 @@ class ZenithEditor(QMainWindow):
                 clip_id, self.timeline_project.playhead_frame
             )
         except ValueError:
+            if self._undo_stack:
+                self._undo_stack.pop()
+            self._update_history_buttons()
             self.statusBar().showMessage("مکان‌نما باید داخل محدوده کلیپ انتخاب‌شده باشد")
             return
         self.timeline_widget.canvas.selected_clip_id = right.clip_id
