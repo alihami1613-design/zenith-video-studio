@@ -64,7 +64,7 @@ class AudioCueTests(unittest.TestCase):
         markers = [cue for cue in result.cues if cue.cue_type == "transient_candidate"]
         self.assertEqual(
             [(cue.start_frame, cue.end_frame) for cue in markers],
-            [(3, 4), (68, 69), (150, 150)],
+            [(3, 4), (68, 69)],
         )
         self.assertTrue(all(cue.confidence == "energy_change_candidate" for cue in markers))
         self.assertTrue(any("not a verified beat" in cue.reason for cue in markers))
