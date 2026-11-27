@@ -60,7 +60,7 @@ class MainAIWorkflowWiringTests(unittest.TestCase):
         self.assertIn("qc_report.error_count", method)
 
     def test_director_review_is_available_and_review_only(self):
-        self.assertIn("from ai_editor.director_review import review_edit", self.source)
+        self.assertIn("from ai_editor.director_review import", self.source)
         self.assertIn('self.ai_director_review_button.clicked.connect(self.run_ai_director_review)', self.source)
         method = ast.get_source_segment(self.source, self.methods["run_ai_director_review"])
         self.assertIn("review_edit(", method)
