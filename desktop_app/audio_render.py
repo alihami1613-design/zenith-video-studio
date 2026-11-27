@@ -137,9 +137,11 @@ def build_audio_mix_command(
         playback_rate = float(getattr(clip, "playback_rate", 1.0)) if is_embedded_video_audio else 1.0
         transition_pre_roll = visual_fade_in.get(clip.clip_id, 0) if is_embedded_video_audio else 0
         effective_duration_frames = int(clip.duration_frames) + transition_pre_roll
-        effective_source_in = int(clip.source_in) - round(transition_pre_roll * playback_rate)
-        if effective_source_in < 0:
-            raise ValueError(f"برای صدای ترنزیشن کلیپ {clip.name} فریم منبع کافی پیش از نقطه ورود وجود ندارد.")
+        # Match the video renderer: clamp pre-roll to the beginning of
+        # the source when a high playback rate consumes more source frames.
+        effective_source_in = max(
+            0, int(clip.source_in) - round(transition_pre_roll * playback_rate)
+        )
         effective_start_frame = int(clip.start_frame) - transition_pre_roll
         duration = _seconds(effective_duration_frames, fps)
         source_start = _seconds(effective_source_in, fps)
