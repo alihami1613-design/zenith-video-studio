@@ -97,6 +97,8 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - name: Install NumPy for local spectral analysis
+        run: python -m pip install "numpy>=1.26,<3"
       - name: Install FFmpeg for render integration tests
         run: |
           sudo apt-get update
