@@ -3119,7 +3119,9 @@ class ZenithEditor(QMainWindow):
                 volume=self.volume_slider.value() / 100.0,
                 fade_in_frames=self.fade_in_slider.value(),
                 fade_out_frames=self.fade_out_slider.value(),
-                audio_fade_curve=str(self.audio_fade_curve_combo.currentData() or "qsin"),\n                audio_muted=self.audio_mute_checkbox.isChecked(),\n                audio_solo=self.audio_solo_checkbox.isChecked(),
+                audio_fade_curve=str(self.audio_fade_curve_combo.currentData() or "qsin"),
+                audio_muted=self.audio_mute_checkbox.isChecked(),
+                audio_solo=self.audio_solo_checkbox.isChecked(),
             )
         except (KeyError, ValueError) as exc:
             self.statusBar().showMessage(f"تنظیم صدای کلیپ اعمال نشد: {exc}")
