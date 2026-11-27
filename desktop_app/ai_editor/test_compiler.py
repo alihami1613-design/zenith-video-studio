@@ -3,6 +3,7 @@ import unittest
 
 from ai_editor.compiler import compile_story_to_edit_plan
 from ai_editor.cinematic_edit import design_cinematic_rhythm
+from ai_editor.music_sync import MusicSyncDecision, MusicSyncDesign
 from ai_editor.contracts import EditPlanError, MediaAsset
 from ai_editor.narrative import StoryAct, StoryBeat, StoryBlueprint
 from ai_editor.project_context import MediaInventoryItem, ProjectContext
@@ -118,6 +119,60 @@ class StoryCompilerTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(EditPlanError, "duration differ"):
             compile_story_to_edit_plan(story, make_context())
+
+
+    def test_compiles_approved_music_sync_durations_into_real_clip_operations(self):
+        story = make_story()
+        context = make_context()
+        cinematic = design_cinematic_rhythm(story, context)
+        sync = MusicSyncDesign(
+            fps=30, total_frames=210, estimated_bpm=120.0, tempo_confidence=0.8,
+            decisions=(
+                MusicSyncDecision("beat-001", 0, 0, 123, 120, 123, 4.1, 3,
+                                  "candidate", "Matched a nearby pulse.",),
+                MusicSyncDecision("beat-002", 1, 123, 87, 90, None, None, 0,
+                                  "unchanged", "Narrative hold retained."),
+            ),
+            warnings=("Review the extended source range.",),
+        )
+        plan = compile_story_to_edit_plan(
+            story, context, cinematic_design=cinematic, music_sync_design=sync
+        )
+        clips = [op for op in plan.operations if op.kind == "add_clip"]
+        self.assertEqual([op.parameters["start_frame"] for op in clips], [0, 123])
+        self.assertEqual([op.parameters["duration_frames"] for op in clips], [123, 87])
+        self.assertTrue(any("extends the selected source range" in warning for warning in plan.warnings))
+        preview = preview_edit_plan(
+            TimelineProject(), plan, [item.asset for item in context.assets]
+        )
+        self.assertEqual([clip.duration_frames for clip in preview.project.clips], [123, 87])
+        self.assertEqual(preview.project.duration_frames, 210)
+
+    def test_music_sync_compilation_requires_cinematic_design(self):
+        story = make_story()
+        sync = MusicSyncDesign(30, 210, 120.0, 0.8, (), ())
+        with self.assertRaisesRegex(EditPlanError, "requires its source cinematic"):
+            compile_story_to_edit_plan(
+                story, make_context(), music_sync_design=sync
+            )
+
+    def test_music_sync_compilation_rejects_source_overrun(self):
+        story = make_story()
+        context = make_context()
+        cinematic = design_cinematic_rhythm(story, context)
+        sync = MusicSyncDesign(
+            30, 210, 120.0, 0.8,
+            (
+                MusicSyncDecision("beat-001", 0, 0, 303, 120, 303, 10.1, 183,
+                                  "candidate", "Invalid overrun."),
+                MusicSyncDecision("beat-002", 1, 303, -93, 90, None, None, 0,
+                                  "unchanged", "Invalid duration."),
+            ), (),
+        )
+        with self.assertRaises(EditPlanError):
+            compile_story_to_edit_plan(
+                story, context, cinematic_design=cinematic, music_sync_design=sync
+            )
 
     def test_missing_project_fps_is_rejected(self):
         context = make_context()
