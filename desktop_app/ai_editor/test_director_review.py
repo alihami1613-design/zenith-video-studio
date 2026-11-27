@@ -17,7 +17,7 @@ class DirectorReviewTests(unittest.TestCase):
         a.write_bytes(b"a")
         b.write_bytes(b"b")
         project = TimelineProject(fps=30)
-        project.add_clip(str(a), "Opening", start_frame=0, duration_frames=15)
+        project.add_clip(str(a), "Opening", start_frame=0, duration_frames=12)
         project.add_clip(str(b), "Second", start_frame=45, duration_frames=420)
         return project
 
