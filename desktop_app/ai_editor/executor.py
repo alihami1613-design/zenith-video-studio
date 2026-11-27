@@ -52,6 +52,9 @@ def _apply_operations(project: TimelineProject, plan: EditPlan,
             created.append(clip.clip_id)
         elif kind == "move_clip":
             project.move_clip(p["clip_id"], p["start_frame"], p.get("track"))
+        elif kind == "split_clip":
+            _, right = project.split_clip(p["clip_id"], p["at_frame"])
+            created.append(right.clip_id)
         elif kind == "trim_clip":
             project.trim_clip(
                 p["clip_id"],
