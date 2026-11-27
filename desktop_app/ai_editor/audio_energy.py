@@ -101,11 +101,14 @@ def analyze_audio_energy(
         raw = raw[:-1]
 
     sample_count = len(raw) // 2
-    decoded = struct.unpack(f"<{sample_count}h", raw)
     envelope: list[AudioEnergyPoint] = []
     rms_values: list[float] = []
+    # Decode one short window at a time: never expand the full PCM payload
+    # into millions of Python integers on memory-constrained desktop systems.
     for start in range(0, sample_count, samples_per_window):
-        block = decoded[start:min(sample_count, start + samples_per_window)]
+        end = min(sample_count, start + samples_per_window)
+        byte_start, byte_end = start * 2, end * 2
+        block = struct.unpack(f"<{end - start}h", raw[byte_start:byte_end])
         level = _rms(block)
         rms_values.append(level)
         dbfs = 20.0 * math.log10(max(level, 1e-8))
