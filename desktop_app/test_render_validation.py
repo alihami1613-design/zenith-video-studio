@@ -6,6 +6,8 @@ import unittest
 from pathlib import Path
 
 from render_validation import validate_rendered_mp4
+from timeline_model import TimelineProject
+from video_render import render_timeline_mp4
 
 FFMPEG = shutil.which("ffmpeg")
 
@@ -68,6 +70,24 @@ class RenderValidationTests(unittest.TestCase):
                     expected_fps=25, expected_duration_seconds=1.0,
                     expect_audio=False,
                 )
+
+    def test_timeline_renderer_validates_before_finalizing_mp4(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            source = root / "source.mp4"
+            output = root / "final.mp4"
+            self._make_mp4(source)
+            project = TimelineProject(fps=25, width=96, height=64)
+            project.add_clip(str(source), "Test shot", duration_frames=25)
+            result = render_timeline_mp4(project, output, timeout_seconds=90)
+            self.assertEqual(result, output.resolve())
+            report = validate_rendered_mp4(
+                result, FFMPEG, expected_width=96, expected_height=64,
+                expected_fps=25, expected_duration_seconds=1.0,
+                expect_audio=False,
+            )
+            self.assertTrue(report.valid)
+            self.assertTrue(report.decode_succeeded)
 
     def test_corrupt_or_empty_output_is_rejected(self):
         with tempfile.TemporaryDirectory() as folder:
