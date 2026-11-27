@@ -778,6 +778,16 @@ class ZenithEditor(QMainWindow):
         self.volume_slider.valueChanged.connect(self._audio_controls_changed)
         inspector_layout.addWidget(self.volume_slider)
 
+        self.audio_pan_label = QLabel("Stereo Pan: Center")
+        inspector_layout.addWidget(self.audio_pan_label)
+        self.audio_pan_slider = QSlider(Qt.Horizontal)
+        self.audio_pan_slider.setRange(-100, 100)
+        self.audio_pan_slider.setValue(0)
+        self.audio_pan_slider.setToolTip("تعادل صدای چپ و راست؛ ۱۰۰- چپ، صفر وسط، ۱۰۰ راست")
+        self.audio_pan_slider.sliderPressed.connect(self._push_undo)
+        self.audio_pan_slider.valueChanged.connect(self._audio_controls_changed)
+        inspector_layout.addWidget(self.audio_pan_slider)
+
         self.audio_mute_checkbox = QCheckBox("Mute فقط این کلیپ")
         self.audio_mute_checkbox.toggled.connect(self._audio_controls_changed)
         inspector_layout.addWidget(self.audio_mute_checkbox)
@@ -2203,17 +2213,19 @@ class ZenithEditor(QMainWindow):
             except KeyError:
                 clip = None
         enabled = bool(clip and (clip.media_type == "audio" or (clip.media_type == "video" and clip.has_audio)))
-        for control in (self.volume_slider, self.fade_in_slider, self.fade_out_slider, self.audio_mute_checkbox, self.audio_solo_checkbox):
+        for control in (self.volume_slider, self.audio_pan_slider, self.fade_in_slider, self.fade_out_slider, self.audio_mute_checkbox, self.audio_solo_checkbox):
             control.setEnabled(enabled)
         if not enabled:
             self.volume_value_label.setText("حجم صدا: —")
+            self.audio_pan_label.setText("Stereo Pan: —")
             self.fade_in_label.setText("Fade In: —")
             self.fade_out_label.setText("Fade Out: —")
             return
         blockers = [QSignalBlocker(control) for control in
-                    (self.volume_slider, self.fade_in_slider, self.fade_out_slider,
+                    (self.volume_slider, self.audio_pan_slider, self.fade_in_slider, self.fade_out_slider,
                      self.audio_fade_curve_combo)]
         self.volume_slider.setValue(round(clip.volume * 100))
+        self.audio_pan_slider.setValue(round(float(getattr(clip, "audio_pan", 0.0)) * 100))
         self.audio_mute_checkbox.setChecked(bool(getattr(clip, "audio_muted", False)))
         self.audio_solo_checkbox.setChecked(bool(getattr(clip, "audio_solo", False)))
         self.audio_fade_curve_combo.setCurrentIndex(
@@ -2225,7 +2237,7 @@ class ZenithEditor(QMainWindow):
         self.fade_in_slider.setValue(min(clip.fade_in_frames, max_fade))
         self.fade_out_slider.setValue(min(clip.fade_out_frames, max_fade))
         del blockers
-        pan = self.audio_pan_slider.value()
+        pan = round(float(getattr(clip, "audio_pan", 0.0)) * 100)
         self.audio_pan_label.setText("Stereo Pan: " + ("Left " + str(abs(pan)) + "%" if pan < 0 else "Right " + str(pan) + "%" if pan > 0 else "Center"))
         self.volume_value_label.setText(f"حجم صدا: {round(clip.volume * 100)}٪")
         fps = max(1, self.timeline_project.fps)
@@ -3117,6 +3129,7 @@ class ZenithEditor(QMainWindow):
             self.timeline_project.set_clip_audio(
                 clip_id,
                 volume=self.volume_slider.value() / 100.0,
+                audio_pan=self.audio_pan_slider.value() / 100.0,
                 fade_in_frames=self.fade_in_slider.value(),
                 fade_out_frames=self.fade_out_slider.value(),
                 audio_fade_curve=str(self.audio_fade_curve_combo.currentData() or "qsin"),
@@ -3128,6 +3141,8 @@ class ZenithEditor(QMainWindow):
             self._sync_audio_controls()
             return
         self.volume_value_label.setText(f"حجم صدا: {round(clip.volume * 100)}٪")
+        pan = round(float(clip.audio_pan) * 100)
+        self.audio_pan_label.setText("Stereo Pan: " + ("Left " + str(abs(pan)) + "%" if pan < 0 else "Right " + str(pan) + "%" if pan > 0 else "Center"))
         fps = max(1, self.timeline_project.fps)
         self.fade_in_label.setText(f"Fade In: {clip.fade_in_frames / fps:.1f} ثانیه")
         self.fade_out_label.setText(f"Fade Out: {clip.fade_out_frames / fps:.1f} ثانیه")
