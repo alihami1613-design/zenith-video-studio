@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import Qt, QUrl, QSignalBlocker, QObject, Signal, QRunnable, QThreadPool, QEvent
+from PySide6.QtCore import Qt, QUrl, QSignalBlocker, QObject, Signal, QRunnable, QThreadPool, QEvent, QTimer
 from PySide6.QtGui import QAction, QFont
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtMultimediaWidgets import QVideoWidget
@@ -34,6 +34,7 @@ from bezier_curve_widget import BezierCurveWidget
 from speed_ramp_preview import create_speed_ramp_preview
 from video_render import render_timeline_mp4
 from polygon_mask_overlay import PolygonMaskOverlay
+from project_recovery import default_recovery_path, write_recovery, read_recovery, clear_recovery
 
 APP_NAME = "ZENITH Desktop"
 PROJECT_VERSION = 2
@@ -300,7 +301,13 @@ class ZenithEditor(QMainWindow):
         self._build_menu()
         self._build_ui()
         self._apply_theme()
+        self._recovery_path = default_recovery_path()
+        self._recovery_timer = QTimer(self)
+        self._recovery_timer.setInterval(60_000)
+        self._recovery_timer.timeout.connect(self._autosave_recovery)
+        self._recovery_timer.start()
         self.statusBar().showMessage("آماده | فایل‌های رسانه‌ای را وارد کنید")
+        QTimer.singleShot(0, self._check_recovery)
 
     def _build_menu(self) -> None:
         file_menu = self.menuBar().addMenu("فایل")
@@ -351,6 +358,10 @@ class ZenithEditor(QMainWindow):
         media_layout.addWidget(import_btn)
         media_layout.addWidget(add_btn)
         media_layout.addWidget(self.proxy_button)
+        self.relink_button = QPushButton("اتصال مجدد فایل گمشده")
+        self.relink_button.setToolTip("فایل جایگزین را انتخاب کنید تا مسیر رسانه در پروژه و تایم‌لاین اصلاح شود")
+        self.relink_button.clicked.connect(self.relink_selected_media)
+        media_layout.addWidget(self.relink_button)
 
         preview_panel = self._panel("پیش‌نمایش")
         preview_layout = preview_panel.layout()
@@ -2129,6 +2140,7 @@ class ZenithEditor(QMainWindow):
 
     def closeEvent(self, event) -> None:
         if self._confirm_project_switch("بستن برنامه"):
+            clear_recovery(self._recovery_path)
             event.accept()
         else:
             event.ignore()
@@ -2136,6 +2148,7 @@ class ZenithEditor(QMainWindow):
     def new_project(self) -> None:
         if not self._confirm_project_switch("ساخت پروژه جدید"):
             return
+        clear_recovery(self._recovery_path)
         self.player.stop()
         self.player.setSource(QUrl())
         self.project_path = None
@@ -2452,6 +2465,7 @@ class ZenithEditor(QMainWindow):
             temp_path.write_text(payload, encoding="utf-8")
             os.replace(temp_path, self.project_path)
             self._saved_project_snapshot = self._project_snapshot()
+            clear_recovery(self._recovery_path)
             self.statusBar().showMessage(f"پروژه ذخیره شد: {self.project_path.name}")
         except (OSError, TypeError, ValueError) as exc:
             try:
@@ -2460,42 +2474,39 @@ class ZenithEditor(QMainWindow):
                 pass
             QMessageBox.critical(self, "خطای ذخیره", str(exc))
 
-    def open_project(self) -> None:
-        filename, _ = QFileDialog.getOpenFileName(
-            self, "باز کردن پروژه", "", "ZENITH Project (*.znproj)"
-        )
-        if not filename:
-            return
-        try:
-            data = json.loads(Path(filename).read_text(encoding="utf-8"))
-            if not isinstance(data, dict):
-                raise ValueError("ساختار فایل پروژه معتبر نیست")
-            media = data.get("media", [])
-            if not isinstance(media, list):
-                raise ValueError("فهرست رسانه‌های پروژه معتبر نیست")
-            # Accept both the new schema and older projects containing
-            # a simple 'timeline' list. Validate before replacing current state.
-            timeline_data = data.get("timeline_project", data)
-            loaded_timeline = TimelineProject.from_dict(timeline_data)
-            loaded_media = []
-            for item in media:
-                if not isinstance(item, dict) or not item.get("path"):
-                    continue
-                path = str(item["path"])
-                cached_metadata = item.get("metadata")
-                loaded_media.append({
-                    "path": path,
-                    "name": str(item.get("name") or Path(path).name),
-                    "metadata": cached_metadata if isinstance(cached_metadata, dict) else None,
-                    "probe_state": "ready" if isinstance(cached_metadata, dict) else "pending",
-                    "proxy_path": str(item.get("proxy_path")) if item.get("proxy_path") and Path(str(item.get("proxy_path"))).is_file() else None,
-                })
-        except (OSError, ValueError, TypeError, KeyError) as exc:
-            QMessageBox.critical(self, "خطای باز کردن", f"پروژه بارگذاری نشد؛ پروژه فعلی حفظ شد.\n{exc}")
-            return
+    def _prepare_project_data(self, data: dict[str, Any]) -> tuple[TimelineProject, list[dict[str, Any]]]:
+        """Validate project structure and prepare media records before changing live state."""
+        media = data.get("media", [])
+        if not isinstance(media, list):
+            raise ValueError("فهرست رسانه‌های پروژه معتبر نیست")
+        timeline_data = data.get("timeline_project", data)
+        if not isinstance(timeline_data, dict):
+            raise ValueError("ساختار تایم‌لاین پروژه معتبر نیست")
+        loaded_timeline = TimelineProject.from_dict(timeline_data)
+        loaded_media: list[dict[str, Any]] = []
+        for item in media:
+            if not isinstance(item, dict) or not item.get("path"):
+                continue
+            path = str(item["path"])
+            exists = Path(path).is_file()
+            cached_metadata = item.get("metadata")
+            metadata = cached_metadata if exists and isinstance(cached_metadata, dict) else None
+            proxy_value = item.get("proxy_path")
+            proxy_path = str(proxy_value) if proxy_value and Path(str(proxy_value)).is_file() else None
+            loaded_media.append({
+                "path": path,
+                "name": str(item.get("name") or Path(path).name),
+                "metadata": metadata,
+                "probe_state": "missing" if not exists else ("ready" if metadata else "pending"),
+                "missing_path": not exists,
+                "proxy_path": proxy_path,
+            })
+        return loaded_timeline, loaded_media
 
-        if not self._confirm_project_switch("باز کردن پروژه دیگر"):
-            return
+    def _apply_project_data(self, data: dict[str, Any], project_path: Path | None,
+                            recovered: bool = False) -> None:
+        """Apply a validated project or recovery snapshot to the editor."""
+        loaded_timeline, loaded_media = self._prepare_project_data(data)
         self.player.stop()
         self.player.setSource(QUrl())
         self.timeline_project = loaded_timeline
@@ -2503,9 +2514,12 @@ class ZenithEditor(QMainWindow):
         self._redo_stack.clear()
         self._update_history_buttons()
         self.media_items = loaded_media
-        self.project_path = Path(filename)
+        self.project_path = project_path
         self.media_list.clear()
         for item in self.media_items:
+            if item.get("missing_path"):
+                self.media_list.addItem(item["name"] + "  •  فایل گمشده — اتصال مجدد لازم است")
+                continue
             metadata = item.get("metadata")
             if isinstance(metadata, dict):
                 seconds = metadata.get("duration_seconds")
@@ -2527,7 +2541,110 @@ class ZenithEditor(QMainWindow):
             if metadata.get("has_audio") and Path(item["path"]).is_file():
                 self._start_waveform(item["path"])
         self._set_playhead(self.timeline_project.playhead_frame)
-        self.statusBar().showMessage(f"پروژه باز شد: {self.project_path.name}")
+        if recovered:
+            self.statusBar().showMessage("نسخه بازیابی‌شده بارگذاری شد؛ فایل اصلی پروژه بازنویسی نشده است.")
+        elif self.project_path:
+            self.statusBar().showMessage(f"پروژه باز شد: {self.project_path.name}")
+        else:
+            self.statusBar().showMessage("پروژه بازیابی شد؛ برای ذخیره دائمی از ذخیره پروژه استفاده کنید.")
+
+    def _autosave_recovery(self) -> None:
+        """Write a recovery snapshot only when authored project state is dirty."""
+        if not self._has_unsaved_changes():
+            return
+        try:
+            write_recovery(
+                self._recovery_path,
+                self._project_data(),
+                str(self.project_path) if self.project_path else None,
+            )
+            self.statusBar().showMessage("بازیابی خودکار پروژه به‌روز شد", 4000)
+        except (OSError, TypeError, ValueError) as exc:
+            self.statusBar().showMessage(f"ذخیره بازیابی خودکار ناموفق بود: {exc}", 8000)
+
+    def _check_recovery(self) -> None:
+        """Offer a previous crash snapshot without ever overwriting its source project."""
+        payload = read_recovery(self._recovery_path)
+        if payload is None:
+            return
+        answer = QMessageBox.question(
+            self,
+            "بازیابی جلسه قبلی",
+            "یک نسخه بازیابی از جلسه قبلی ZENITH پیدا شد. آیا می‌خواهید آن را بازیابی کنید؟\n\n"
+            "فایل اصلی پروژه بازنویسی نخواهد شد.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.Yes,
+        )
+        if answer != QMessageBox.Yes:
+            clear_recovery(self._recovery_path)
+            return
+        try:
+            project_data = payload["project_data"]
+            project_path_value = payload.get("project_path")
+            original_path = Path(project_path_value) if project_path_value else None
+            self._apply_project_data(project_data, original_path, recovered=True)
+            clear_recovery(self._recovery_path)
+        except (OSError, ValueError, TypeError, KeyError) as exc:
+            QMessageBox.warning(self, "بازیابی ناموفق بود", f"نسخه بازیابی بارگذاری نشد؛ فایل بازیابی حفظ شد.\n{exc}")
+
+    def relink_selected_media(self) -> None:
+        row = self.media_list.currentRow()
+        if row < 0 or row >= len(self.media_items):
+            self.statusBar().showMessage("ابتدا فایل گمشده را از فهرست رسانه‌ها انتخاب کنید")
+            return
+        item = self.media_items[row]
+        if not item.get("missing_path") and Path(item["path"]).is_file():
+            self.statusBar().showMessage("فایل انتخاب‌شده گمشده نیست")
+            return
+        replacement, _ = QFileDialog.getOpenFileName(
+            self, "اتصال مجدد رسانه", "", MEDIA_FILTER
+        )
+        if not replacement:
+            return
+        new_path = str(Path(replacement).resolve())
+        if any(other is not item and other.get("path") == new_path for other in self.media_items):
+            QMessageBox.warning(self, "اتصال مجدد", "این فایل از قبل در فهرست رسانه‌های پروژه وجود دارد.")
+            return
+        old_path = item["path"]
+        item["path"] = new_path
+        item["name"] = Path(new_path).name
+        item["metadata"] = None
+        item["probe_state"] = "pending"
+        item["missing_path"] = False
+        item["proxy_path"] = None
+        for clip in self.timeline_project.clips:
+            if clip.path == old_path:
+                clip.path = new_path
+                clip.name = item["name"]
+        self.media_list.item(row).setText(item["name"] + "  •  در حال بررسی")
+        self._refresh_timeline()
+        task = MediaProbeTask(new_path)
+        task.signals.finished.connect(self._media_probe_finished)
+        self._probe_tasks.append(task)
+        self._probe_pool.start(task)
+        self.statusBar().showMessage(f"مسیر رسانه اصلاح شد: {item['name']}")
+
+    def open_project(self) -> None:
+        filename, _ = QFileDialog.getOpenFileName(
+            self, "باز کردن پروژه", "", "ZENITH Project (*.znproj)"
+        )
+        if not filename:
+            return
+        try:
+            data = json.loads(Path(filename).read_text(encoding="utf-8"))
+            if not isinstance(data, dict):
+                raise ValueError("ساختار فایل پروژه معتبر نیست")
+            self._prepare_project_data(data)
+        except (OSError, ValueError, TypeError, KeyError) as exc:
+            QMessageBox.critical(self, "خطای باز کردن", f"پروژه بارگذاری نشد؛ پروژه فعلی حفظ شد.\n{exc}")
+            return
+        if not self._confirm_project_switch("باز کردن پروژه دیگر"):
+            return
+        clear_recovery(self._recovery_path)
+        try:
+            self._apply_project_data(data, Path(filename))
+        except (OSError, ValueError, TypeError, KeyError) as exc:
+            QMessageBox.critical(self, "خطای باز کردن", f"پروژه بارگذاری نشد؛ پروژه فعلی حفظ شد.\n{exc}")
 
 
 def main() -> None:
