@@ -250,5 +250,52 @@ class AudioRenderCommandTests(unittest.TestCase):
         self.assertIn("-nostats", command)
 
 
+    def test_overlapping_clips_on_same_track_get_equal_power_crossfade(self):
+        with tempfile.TemporaryDirectory() as folder:
+            first = Path(folder) / "first.wav"
+            second = Path(folder) / "second.wav"
+            first.touch()
+            second.touch()
+            outgoing = self.make_clip(
+                first, clip_id="outgoing", track="A1", audio_track="A1",
+                start_frame=0, duration_frames=120, end_frame=120,
+                fade_in_frames=0, fade_out_frames=0,
+            )
+            incoming = self.make_clip(
+                second, clip_id="incoming", track="A1", audio_track="A1",
+                start_frame=90, duration_frames=120, end_frame=210,
+                fade_in_frames=0, fade_out_frames=0,
+            )
+            command = build_audio_mix_command(
+                "ffmpeg", [outgoing, incoming], 30, "mix.wav", 210
+            )
+        joined = " ".join(command)
+        self.assertIn("afade=t=out:st=3.000000:d=1.000000:curve=iqsin", joined)
+        self.assertIn("afade=t=in:st=0:d=1.000000:curve=qsin", joined)
+
+    def test_non_overlapping_clips_do_not_get_automatic_crossfade(self):
+        with tempfile.TemporaryDirectory() as folder:
+            first = Path(folder) / "first.wav"
+            second = Path(folder) / "second.wav"
+            first.touch()
+            second.touch()
+            outgoing = self.make_clip(
+                first, clip_id="outgoing", track="A1", audio_track="A1",
+                start_frame=0, duration_frames=90, end_frame=90,
+                fade_in_frames=0, fade_out_frames=0,
+            )
+            incoming = self.make_clip(
+                second, clip_id="incoming", track="A1", audio_track="A1",
+                start_frame=90, duration_frames=90, end_frame=180,
+                fade_in_frames=0, fade_out_frames=0,
+            )
+            command = build_audio_mix_command(
+                "ffmpeg", [outgoing, incoming], 30, "mix.wav", 180
+            )
+        joined = " ".join(command)
+        self.assertNotIn("curve=qsin", joined)
+        self.assertNotIn("curve=iqsin", joined)
+
+
 if __name__ == "__main__":
     unittest.main()
