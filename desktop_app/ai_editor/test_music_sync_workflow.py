@@ -5,18 +5,34 @@ from ai_editor.contracts import EditPlanError, MediaAsset
 from ai_editor.media_analysis import AssetAnalysis, MediaAnalysisReport, SpectralAudioSummary
 from ai_editor.music_sync_workflow import build_music_aware_edit_draft
 from ai_editor.project_context import MediaInventoryItem, ProjectContext
-from ai_editor.test_compiler import make_context, make_story
+from ai_editor.narrative import StoryAct, StoryBeat, StoryBlueprint
+
+
+def make_story():
+    beats = (
+        StoryBeat("beat-001", 0, "hook", "Opening", "Hook the viewer",
+                  4.0, "video-1", 0.0, 4.0,
+                  "Strong first image", "Ask a question", "Impact", "hard_cut"),
+        StoryBeat("beat-002", 1, "resolution", "Ending", "Resolve the idea",
+                  3.0, "video-1", 4.0, 7.0,
+                  "Quiet final frame", "Close the story", "Music resolves", "fade"),
+    )
+    return StoryBlueprint(
+        "story-demo", "Create a documentary", "A clear logline",
+        "A meaningful takeaway", "Curiosity to clarity", 7.0,
+        (StoryAct("act-1", "opening", "Opening act", "What happens next?", beats),),
+    )
 
 
 def context_with_music():
-    base = make_context()
+    video = MediaAsset("video-1", "/private/video.mp4", "video", 300, 30, 1920, 1080)
     music = MediaAsset("music-1", "/private/music.wav", "audio", 300, 30)
     return ProjectContext(
-        base.schema_version, base.project,
-        base.assets + (
+        1, {"fps": 30, "width": 1920, "height": 1080},
+        (
+            MediaInventoryItem(video, True, 100, 10.0, 1920, 1080, 30.0, "ffprobe"),
             MediaInventoryItem(music, True, 100, 10.0, 0, 0, 30.0, "ffprobe"),
-        ),
-        base.warnings, base.errors,
+        ), (), (),
     )
 
 
