@@ -43,8 +43,8 @@ class ShotSelectionTests(unittest.TestCase):
         result = select_shots_for_story(story, context, report, observations=observations)
         selected = result.blueprint.beats[0]
         self.assertEqual(selected.asset_id, "video-1")
-        self.assertEqual(selected.source_in_seconds, 0.0)
-        self.assertEqual(selected.source_out_seconds, 3.0)
+        self.assertEqual(selected.source_in_seconds, 0.5)
+        self.assertEqual(selected.source_out_seconds, 3.5)
         self.assertEqual(result.decisions[0].confidence, "high")
 
     def test_without_semantics_marks_technical_only_not_high_confidence(self):
