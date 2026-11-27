@@ -37,6 +37,7 @@ from speed_ramp_preview import create_speed_ramp_preview
 from video_render import render_timeline_mp4
 from polygon_mask_overlay import PolygonMaskOverlay
 from project_recovery import default_recovery_path, write_recovery, read_recovery, clear_recovery
+from project_storage import atomic_write_text
 from ai_editor.project_context import build_project_context, media_inventory_fingerprint
 from ai_editor.media_analysis import analyze_project_media
 from ai_editor.narrative import build_story_request, parse_story_blueprint_json, request_story_blueprint
@@ -3814,8 +3815,7 @@ class ZenithEditor(QMainWindow):
         temp_path = self.project_path.with_name(self.project_path.name + ".tmp")
         try:
             payload = json.dumps(self._project_data(), ensure_ascii=False, indent=2)
-            temp_path.write_text(payload, encoding="utf-8")
-            os.replace(temp_path, self.project_path)
+            atomic_write_text(self.project_path, payload)
             self._saved_project_snapshot = self._project_snapshot()
             clear_recovery(self._recovery_path)
             self.statusBar().showMessage(f"پروژه ذخیره شد: {self.project_path.name}")
