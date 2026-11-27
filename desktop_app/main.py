@@ -3494,11 +3494,17 @@ class ZenithEditor(QMainWindow):
         if not paths:
             return
         known = {item["path"] for item in self.media_items}
-        added = 0
+        new_paths = []
         for raw_path in paths:
             path = str(Path(raw_path).resolve())
-            if path in known:
-                continue
+            if path not in known:
+                new_paths.append(path)
+                known.add(path)
+        if not new_paths:
+            self.statusBar().showMessage("همه فایل‌های انتخاب‌شده از قبل در پروژه وجود دارند")
+            return
+        self._push_undo()
+        for path in new_paths:
             record = {
                 "path": path, "name": Path(path).name,
                 "metadata": None, "probe_state": "pending",
@@ -3510,9 +3516,7 @@ class ZenithEditor(QMainWindow):
             task.signals.finished.connect(self._media_probe_finished)
             self._probe_tasks.append(task)
             self._probe_pool.start(task)
-            known.add(path)
-            added += 1
-        self.statusBar().showMessage(f"{added} فایل جدید وارد شد")
+        self.statusBar().showMessage(f"{len(new_paths)} فایل جدید وارد شد")
 
     def _media_probe_finished(self, path: str, metadata: object, error: str) -> None:
         self._probe_tasks = [task for task in self._probe_tasks if task.path != path]
