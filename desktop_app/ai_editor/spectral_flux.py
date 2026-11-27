@@ -108,7 +108,9 @@ def analyze_spectral_flux(
                                       start + hop_size * frames_per_chunk), hop_size)
         frames = np.stack([samples[pos:pos + frame_size] for pos in starts])
         magnitude = np.abs(np.fft.rfft(frames * window, axis=1))
-        magnitude /= np.maximum(magnitude.sum(axis=1, keepdims=True), 1e-8)
+        # Log compression preserves amplitude attacks while limiting extreme peaks.
+        # Per-frame normalization would erase kick/drum amplitude changes.
+        magnitude = np.log1p(magnitude)
         if previous is not None:
             first_flux = np.maximum(magnitude[0] - previous, 0).sum()
             chunk_flux = np.maximum(magnitude[1:] - magnitude[:-1], 0).sum(axis=1)
