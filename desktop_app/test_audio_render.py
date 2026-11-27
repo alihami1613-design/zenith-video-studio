@@ -38,6 +38,24 @@ class AudioRenderCommandTests(unittest.TestCase):
         self.assertIn("atrim=duration=15.000000", joined)
         self.assertIn("pcm_s16le", joined)
 
+    def test_manual_fades_use_selected_curve(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / "voice.wav"
+            source.touch()
+            clip = self.make_clip(source, audio_fade_curve="exp")
+            command = build_audio_mix_command("ffmpeg", [clip], 30, "mix.wav")
+        joined = " ".join(command)
+        self.assertIn("afade=t=in:st=0:d=1.000000:curve=exp", joined)
+        self.assertIn("afade=t=out:st=8.000000:d=2.000000:curve=exp", joined)
+
+    def test_invalid_fade_curve_rejected_by_renderer(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / "voice.wav"
+            source.touch()
+            clip = self.make_clip(source, audio_fade_curve="badcurve")
+            with self.assertRaises(ValueError):
+                build_audio_mix_command("ffmpeg", [clip], 30, "mix.wav")
+
     def test_rejects_empty_audio_tracks(self):
         with self.assertRaises(ValueError):
             build_audio_mix_command("ffmpeg", [], 30, "out.wav")
