@@ -62,6 +62,20 @@ class AudioRenderCommandTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 build_audio_mix_command("ffmpeg", [self.make_clip(source, audio_pan=1.5)], 30, "mix.wav")
 
+    def test_pan_generates_stereo_balance_filter(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / "voice.wav"
+            source.touch()
+            command = build_audio_mix_command("ffmpeg", [self.make_clip(source, audio_pan=-0.5)], 30, "mix.wav")
+        self.assertIn("pan=stereo|c0=1.000000*c0|c1=0.500000*c1", " ".join(command))
+
+    def test_invalid_pan_rejected_by_renderer(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / "voice.wav"
+            source.touch()
+            with self.assertRaises(ValueError):
+                build_audio_mix_command("ffmpeg", [self.make_clip(source, audio_pan=1.5)], 30, "mix.wav")
+
     def test_invalid_fade_curve_rejected_by_renderer(self):
         with tempfile.TemporaryDirectory() as folder:
             source = Path(folder) / "voice.wav"
