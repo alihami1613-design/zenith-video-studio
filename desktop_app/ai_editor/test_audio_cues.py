@@ -4,6 +4,7 @@ import unittest
 from ai_editor.audio_cues import build_audio_cue_map
 from ai_editor.contracts import EditPlanError
 from ai_editor.media_analysis import AudioSummary
+from ai_editor.audio_energy import AudioEnergyAnalysis, AudioEnergyPoint
 
 
 class AudioCueTests(unittest.TestCase):
@@ -41,6 +42,42 @@ class AudioCueTests(unittest.TestCase):
             build_audio_cue_map(audio, media_duration_seconds=10, fps=0)
         with self.assertRaises(EditPlanError):
             build_audio_cue_map(audio, media_duration_seconds=float("nan"), fps=30)
+
+
+    def test_adds_energy_change_markers_as_review_only_frame_cues(self):
+        audio = AudioSummary((), peak_db=-1.0, mean_db=-18.0)
+        energy = AudioEnergyAnalysis(
+            sample_rate=4000,
+            window_seconds=0.1,
+            analyzed_duration_seconds=5.0,
+            energy_envelope=(
+                AudioEnergyPoint(0.0, 0.1, -20.0),
+                AudioEnergyPoint(0.1, 0.5, -6.0),
+            ),
+            transient_candidates_seconds=(0.1, 2.25, 5.0, 6.0),
+            warnings=("Transient candidates are not verified beats.",),
+        )
+        result = build_audio_cue_map(
+            audio, media_duration_seconds=5.0, fps=30,
+            energy_analysis=energy,
+        )
+        markers = [cue for cue in result.cues if cue.cue_type == "transient_candidate"]
+        self.assertEqual(
+            [(cue.start_frame, cue.end_frame) for cue in markers],
+            [(3, 4), (68, 69), (150, 150)],
+        )
+        self.assertTrue(all(cue.confidence == "energy_change_candidate" for cue in markers))
+        self.assertTrue(any("not a verified beat" in cue.reason for cue in markers))
+        self.assertTrue(any("not beat-synchronized edits" in warning for warning in result.warnings))
+        self.assertTrue(result.requires_user_review)
+
+    def test_rejects_wrong_energy_analysis_type(self):
+        audio = AudioSummary((), peak_db=-1.0, mean_db=-18.0)
+        with self.assertRaises(EditPlanError):
+            build_audio_cue_map(
+                audio, media_duration_seconds=5.0, fps=30,
+                energy_analysis={"transient_candidates_seconds": [1.0]},
+            )
 
     def test_rejects_wrong_audio_input_type(self):
         with self.assertRaises(EditPlanError):
