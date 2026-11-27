@@ -284,6 +284,7 @@ class ZenithEditor(QMainWindow):
         self._redo_stack: list[dict[str, Any]] = []
         self._history_limit = 50
         self.timeline_project = TimelineProject()
+        self._saved_project_snapshot = self._project_snapshot()
         self.player = QMediaPlayer(self)
         self.audio_output = QAudioOutput(self)
         self.player.setAudioOutput(self.audio_output)
@@ -324,7 +325,7 @@ class ZenithEditor(QMainWindow):
         outer.setSpacing(10)
 
         header = QHBoxLayout()
-        brand = QLabel("ZENITH <span style='color:#D6AE55'>BEYOND</span>")
+        brand = QLabel("ZENITH <span style='color:#D6AE55'>DESKTOP</span>")
         brand.setObjectName("brand")
         subtitle = QLabel("DESKTOP VIDEO STUDIO  •  PERFORMANCE FIRST")
         subtitle.setObjectName("subtitle")
@@ -2087,7 +2088,54 @@ class ZenithEditor(QMainWindow):
                 f"ساخت شکل موج برای {Path(path).name} ناموفق بود: {error}"
             )
 
+    def _project_snapshot(self) -> str:
+        """Return a stable snapshot of user-authored project state.
+
+        Probe metadata and generated proxy paths are intentionally excluded:
+        they are derived/cache data and must not trigger unsaved-change prompts.
+        """
+        media = [
+            {"path": str(item.get("path", "")), "name": str(item.get("name", ""))}
+            for item in self.media_items
+        ]
+        payload = {
+            "media": media,
+            "timeline_project": self.timeline_project.to_dict(),
+        }
+        return json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+    def _has_unsaved_changes(self) -> bool:
+        return self._project_snapshot() != self._saved_project_snapshot
+
+    def _confirm_project_switch(self, action: str) -> bool:
+        if not self._has_unsaved_changes():
+            return True
+        dialog = QMessageBox(self)
+        dialog.setIcon(QMessageBox.Warning)
+        dialog.setWindowTitle("تغییرات ذخیره‌نشده")
+        dialog.setText(f"پروژه تغییرات ذخیره‌نشده دارد. پیش از {action} چه کاری انجام شود؟")
+        save_button = dialog.addButton("ذخیره", QMessageBox.AcceptRole)
+        discard_button = dialog.addButton("صرف‌نظر از تغییرات", QMessageBox.DestructiveRole)
+        cancel_button = dialog.addButton("انصراف", QMessageBox.RejectRole)
+        dialog.setDefaultButton(save_button)
+        dialog.exec()
+        clicked = dialog.clickedButton()
+        if clicked is discard_button:
+            return True
+        if clicked is not save_button:
+            return False
+        self.save_project()
+        return not self._has_unsaved_changes()
+
+    def closeEvent(self, event) -> None:
+        if self._confirm_project_switch("بستن برنامه"):
+            event.accept()
+        else:
+            event.ignore()
+
     def new_project(self) -> None:
+        if not self._confirm_project_switch("ساخت پروژه جدید"):
+            return
         self.player.stop()
         self.player.setSource(QUrl())
         self.project_path = None
@@ -2098,6 +2146,7 @@ class ZenithEditor(QMainWindow):
         self._undo_stack.clear()
         self._redo_stack.clear()
         self._update_history_buttons()
+        self._saved_project_snapshot = self._project_snapshot()
         self.media_list.clear()
         self.media_info.setText("برای پیش‌نمایش، یک فایل را از فهرست رسانه‌ها انتخاب کنید.")
         self._refresh_timeline()
@@ -2402,6 +2451,7 @@ class ZenithEditor(QMainWindow):
             payload = json.dumps(self._project_data(), ensure_ascii=False, indent=2)
             temp_path.write_text(payload, encoding="utf-8")
             os.replace(temp_path, self.project_path)
+            self._saved_project_snapshot = self._project_snapshot()
             self.statusBar().showMessage(f"پروژه ذخیره شد: {self.project_path.name}")
         except (OSError, TypeError, ValueError) as exc:
             try:
@@ -2444,6 +2494,8 @@ class ZenithEditor(QMainWindow):
             QMessageBox.critical(self, "خطای باز کردن", f"پروژه بارگذاری نشد؛ پروژه فعلی حفظ شد.\n{exc}")
             return
 
+        if not self._confirm_project_switch("باز کردن پروژه دیگر"):
+            return
         self.player.stop()
         self.player.setSource(QUrl())
         self.timeline_project = loaded_timeline
@@ -2469,6 +2521,7 @@ class ZenithEditor(QMainWindow):
                 self._probe_tasks.append(task)
                 self._probe_pool.start(task)
         self._refresh_timeline()
+        self._saved_project_snapshot = self._project_snapshot()
         for item in self.media_items:
             metadata = item.get("metadata") or {}
             if metadata.get("has_audio") and Path(item["path"]).is_file():
