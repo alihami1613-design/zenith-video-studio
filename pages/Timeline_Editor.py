@@ -120,13 +120,24 @@ if len(st.session_state.timeline_video)>=2:
 elif st.session_state.timeline_video:
     st.info("برای ترکیب، حداقل دو کلیپ به تایم‌لاین اضافه کنید.")
 
-st.subheader("۷ — نمای ترتیب زمانی")
+st.subheader("۷ — نمای گرافیکی تایم‌لاین")
 clips=sorted(st.session_state.timeline_video,key=lambda x:x.get("start",0))
 if clips:
     total=max((c.get("start",0)+c.get("duration",0) for c in clips),default=0)
     st.metric("مدت تخمینی تایم‌لاین",f"{total:.1f} ثانیه")
-    for c in clips:
-        st.write(f"{c['name']} · آغاز {c.get('start',0):.1f}s · طول {c.get('duration',0):.1f}s")
+    if total>0:
+        st.caption("نمای ساده مقیاس‌دار: محل و طول کلیپ‌ها تقریبی و بر مبنای زمان شروع و مدت هستند.")
+        for ci,c in enumerate(clips):
+            start=max(0.0,float(c.get("start",0)))
+            dur=max(0.1,float(c.get("duration",0)))
+            left_pct=min(100,start/total*100)
+            width_pct=max(1,min(100-left_pct,dur/total*100))
+            st.markdown(f"""
+<div style="margin:8px 0 3px;font-size:13px">{ci+1}. {c['name']} — {start:.1f}s تا {start+dur:.1f}s</div>
+<div style="background:rgba(120,120,120,.16);border-radius:8px;height:28px;position:relative;overflow:hidden">
+<div style="position:absolute;left:{left_pct:.2f}%;width:{width_pct:.2f}%;height:28px;background:#4c83c3;border-radius:6px;color:white;text-align:center;line-height:28px;white-space:nowrap;overflow:hidden;font-size:12px">V1 · {dur:.1f}s</div></div>
+""",unsafe_allow_html=True)
+    st.caption("در رندر فعلی، کلیپ‌ها پشت سر هم قرار می‌گیرند و فاصله‌های زمانی/هم‌پوشانی هنوز اعمال نمی‌شوند.")
 else:
     st.info("برای آغاز، ویدئو وارد کنید.")
 
