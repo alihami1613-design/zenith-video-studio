@@ -4,19 +4,31 @@ import tempfile
 from pathlib import Path
 
 st.set_page_config(page_title="ZENITH Timeline", page_icon="🎞️", layout="wide")
-st.title("🎞️ ZENITH — Multi-track Timeline")
-st.caption("مرحله چهارم: پیش‌نمایش و استخراج واقعی بخش انتخابی کلیپ.")
-st.warning("صفحه مستقل و آزمایشی است؛ صفحات Documentary_Editor و Auto_Studio تغییر نمی‌کنند.")
+st.title("🎞️ ZENITH — Timeline Editor")
+st.caption("ویرایشگر مستقل و آزمایشی؛ پردازش سبک برای سازگاری با سیستم‌های معمولی.")
+st.warning("این صفحه مستقل است و به صفحات Documentary_Editor و Auto_Studio دست نمی‌زند.")
 
 if "timeline_video" not in st.session_state:
     st.session_state.timeline_video = []
 if "timeline_audio" not in st.session_state:
     st.session_state.timeline_audio = []
 
+def move_clip(index, direction):
+    clips = st.session_state.timeline_video
+    target = index + direction
+    if 0 <= target < len(clips):
+        clips[index], clips[target] = clips[target], clips[index]
+        # Keep a simple sequential timeline after reordering.
+        cursor = 0.0
+        for item in clips:
+            item["start"] = cursor
+            item["duration"] = max(.1, float(item.get("trim_out", 5))-float(item.get("trim_in", 0)))
+            cursor += item["duration"]
+
 st.subheader("۱ — وارد کردن رسانه")
-videos=st.file_uploader("ویدئوها (V1)",type=["mp4","mov","mkv","avi","webm"],accept_multiple_files=True,key="tl_v")
-audios=st.file_uploader("صداها (A1)",type=["mp3","wav","m4a","aac","ogg"],accept_multiple_files=True,key="tl_a")
-if st.button("افزودن رسانه به تایم‌لاین"):
+videos = st.file_uploader("ویدئوها (V1)", type=["mp4","mov","mkv","avi","webm"], accept_multiple_files=True, key="tl_v")
+audios = st.file_uploader("فایل‌های صوتی", type=["mp3","wav","m4a","aac","ogg"], accept_multiple_files=True, key="tl_a")
+if st.button("افزودن رسانه"):
     for f in videos or []:
         if f.name not in [x["name"] for x in st.session_state.timeline_video]:
             st.session_state.timeline_video.append({"name":f.name,"size":f.size,"duration":5.0,"start":0.0,"trim_in":0.0,"trim_out":5.0,"source":f})
@@ -26,119 +38,110 @@ if st.button("افزودن رسانه به تایم‌لاین"):
     st.success("رسانه اضافه شد.")
 
 st.divider()
-st.subheader("۲ — تنظیم نقاط برش")
-for i,clip in enumerate(st.session_state.timeline_video):
-    with st.expander(f"V1 · {clip['name']}",expanded=True):
-        a,b,c=st.columns(3)
-        clip["trim_in"]=a.number_input("شروع برش (ثانیه)",min_value=0.0,value=float(clip.get("trim_in",0)),step=.1,key=f"tin{i}")
-        clip["trim_out"]=b.number_input("پایان برش (ثانیه)",min_value=.1,value=max(float(clip.get("trim_out",clip.get("duration",5))),float(clip.get("trim_in",0))+.1),step=.1,key=f"tout{i}")
-        clip["start"]=c.number_input("جای کلیپ در تایم‌لاین",min_value=0.0,value=float(clip.get("start",0)),step=.5,key=f"vstart{i}")
-        if clip["trim_out"]>clip["trim_in"]:
-            clip["duration"]=clip["trim_out"]-clip["trim_in"]
-            st.write(f"مدت بخش انتخابی: {clip['duration']:.2f} ثانیه")
+st.subheader("۲ — تنظیم کلیپ‌ها")
+for i, clip in enumerate(st.session_state.timeline_video):
+    with st.expander(f"V1 · {clip['name']}", expanded=False):
+        col1,col2,col3 = st.columns(3)
+        clip["trim_in"] = col1.number_input("شروع برش (ثانیه)", min_value=0.0, value=float(clip.get("trim_in",0)), step=.1, key=f"tin{i}")
+        clip["trim_out"] = col2.number_input("پایان برش (ثانیه)", min_value=.1, value=max(float(clip.get("trim_out",5)),float(clip.get("trim_in",0))+.1), step=.1, key=f"tout{i}")
+        clip["start"] = col3.number_input("شروع روی تایم‌لاین (ثانیه)", min_value=0.0, value=float(clip.get("start",0)), step=.5, key=f"vstart{i}")
+        if clip["trim_out"] > clip["trim_in"]:
+            clip["duration"] = clip["trim_out"]-clip["trim_in"]
+            st.write(f"مدت انتخابی: {clip['duration']:.2f} ثانیه")
         else:
-            st.error("پایان باید بعد از شروع باشد.")
-        if st.button("حذف کلیپ",key=f"vdel{i}"):
-            st.session_state.timeline_video.pop(i)
-            st.rerun()
+            st.error("پایان برش باید از شروع بزرگ‌تر باشد.")
+        left,right = st.columns(2)
+        if left.button("⬆️ جابه‌جایی به بالا", key=f"up{i}"):
+            move_clip(i,-1); st.rerun()
+        if right.button("⬇️ جابه‌جایی به پایین", key=f"down{i}"):
+            move_clip(i,1); st.rerun()
+        if st.button("حذف کلیپ",key=f"delete{i}"):
+            st.session_state.timeline_video.pop(i); st.rerun()
 
-st.subheader("۳ — پیش‌نمایش")
+st.subheader("۳ — پیش‌نمایش رسانه")
 if st.session_state.timeline_video:
-    chosen=st.selectbox("انتخاب ویدئو برای پخش",range(len(st.session_state.timeline_video)),format_func=lambda n:st.session_state.timeline_video[n]["name"],key="preview_v")
-    st.video(st.session_state.timeline_video[chosen]["source"],start_time=int(st.session_state.timeline_video[chosen].get("trim_in",0)))
+    vi = st.selectbox("پیش‌نمایش ویدئو",range(len(st.session_state.timeline_video)),format_func=lambda n:st.session_state.timeline_video[n]["name"],key="preview_v")
+    st.video(st.session_state.timeline_video[vi]["source"],start_time=int(st.session_state.timeline_video[vi].get("trim_in",0)))
 if st.session_state.timeline_audio:
-    chosen_a=st.selectbox("انتخاب فایل صوتی",range(len(st.session_state.timeline_audio)),format_func=lambda n:st.session_state.timeline_audio[n]["name"],key="preview_a")
-    st.audio(st.session_state.timeline_audio[chosen_a]["source"])
+    ai = st.selectbox("پیش‌نمایش صدا",range(len(st.session_state.timeline_audio)),format_func=lambda n:st.session_state.timeline_audio[n]["name"],key="preview_a")
+    st.audio(st.session_state.timeline_audio[ai]["source"])
 
-st.subheader("۴ — استخراج واقعی بخش انتخابی (Trim)")
-st.caption("این عملیات فایل خروجی جدید می‌سازد و فایل اصلی را تغییر نمی‌دهد. برای جلوگیری از فشار زیاد روی سیستم، کلیپ‌ها جداگانه پردازش می‌شوند.")
+st.subheader("۴ — برش و خروجی مستقل")
+st.caption("فایل اصلی تغییر نمی‌کند؛ یک فایل جدید ساخته می‌شود.")
 if st.session_state.timeline_video:
-    idx=st.selectbox("کلیپ موردنظر برای برش",range(len(st.session_state.timeline_video)),format_func=lambda n:st.session_state.timeline_video[n]["name"],key="trim_export_select")
+    idx=st.selectbox("انتخاب کلیپ برای برش",range(len(st.session_state.timeline_video)),format_func=lambda n:st.session_state.timeline_video[n]["name"],key="trim_export_select")
     clip=st.session_state.timeline_video[idx]
-    if clip["trim_out"]>clip["trim_in"] and st.button("برش و آماده‌سازی فایل خروجی"):
+    if st.button("استخراج بخش انتخابی"):
         try:
             import imageio_ffmpeg
             ffmpeg=imageio_ffmpeg.get_ffmpeg_exe()
-            ext=Path(clip["name"]).suffix or ".mp4"
             with tempfile.TemporaryDirectory() as td:
-                inp=Path(td)/("input"+ext)
-                out=Path(td)/"trimmed.mp4"
+                inp=Path(td)/("input"+(Path(clip["name"]).suffix or ".mp4")); out=Path(td)/"trimmed.mp4"
                 inp.write_bytes(clip["source"].getvalue())
                 cmd=[ffmpeg,"-y","-ss",str(clip["trim_in"]),"-i",str(inp),"-t",str(clip["trim_out"]-clip["trim_in"]),"-c:v","libx264","-preset","ultrafast","-crf","23","-c:a","aac","-movflags","+faststart",str(out)]
                 result=subprocess.run(cmd,capture_output=True,text=True,timeout=240)
-                if result.returncode!=0 or not out.exists():
-                    st.error("برش انجام نشد. ممکن است فرمت یا کدک فایل پشتیبانی نشود.")
+                if result.returncode or not out.exists(): st.error("برش ناموفق بود؛ احتمالاً کدک یا فرمت پشتیبانی نشده.")
                 else:
-                    data=out.read_bytes()
-                    st.video(data)
+                    data=out.read_bytes(); st.video(data)
                     st.download_button("دانلود کلیپ برش‌خورده",data=data,file_name=Path(clip["name"]).stem+"_trim.mp4",mime="video/mp4")
-        except Exception as e:
-            st.error(f"خطا در پردازش: {e}")
+        except Exception as e: st.error(f"خطا: {e}")
 
+st.subheader("۵ — تنظیم صدا")
+video_gain=st.slider("صدای کلیپ‌های اصلی",0.0,2.0,1.0,.1,key="video_gain")
+audio_gain=st.slider("صدای فایل صوتی انتخابی",0.0,2.0,.35,.05,key="audio_gain")
+selected_audio_idx=None
+if st.session_state.timeline_audio:
+    selected_audio_idx=st.selectbox("انتخاب موسیقی/صدا",range(len(st.session_state.timeline_audio)),format_func=lambda n:st.session_state.timeline_audio[n]["name"],key="mix_audio_select")
 
-st.subheader("۵ — تنظیم صدای خروجی")\nvideo_gain=st.slider("میزان صدای ویدئوهای اصلی",0.0,2.0,1.0,0.1,key="video_gain")\naudio_gain=st.slider("میزان صدای موسیقی/فایل A1",0.0,2.0,0.35,0.05,key="audio_gain")\nselected_audio_idx=None\nif st.session_state.timeline_audio:\n    selected_audio_idx=st.selectbox("انتخاب فایل صوتی برای خروجی",range(len(st.session_state.timeline_audio)),format_func=lambda n:st.session_state.timeline_audio[n]["name"],key="mix_audio_select")\n\nst.subheader("۶ — ترکیب کلیپ‌ها و ساخت ویدئوی واحد")
-st.caption("کلیپ‌ها بر اساس ترتیب زمان شروع پشت سر هم ترکیب می‌شوند. فاصله‌های خالی، لایه‌ها و صداهای مستقل هنوز در خروجی نهایی لحاظ نمی‌شوند. خروجی سبک 720p برای کاهش فشار روی سیستم ساخته می‌شود.")
-if len(st.session_state.timeline_video)>=2:
-    if st.button("ساخت ویدئوی ترکیبی از کلیپ‌ها"):
-        try:
-            import imageio_ffmpeg
-            ffmpeg=imageio_ffmpeg.get_ffmpeg_exe()
-            ordered=sorted(st.session_state.timeline_video,key=lambda x:x.get("start",0))
-            with tempfile.TemporaryDirectory() as td:
-                td=Path(td)
-                segment_paths=[]
-                progress=st.progress(0)
-                status=st.empty()
-                for i,clip in enumerate(ordered):
-                    if clip.get("trim_out",5)<=clip.get("trim_in",0):
-                        raise ValueError("یکی از کلیپ‌ها نقطه برش نامعتبر دارد.")
-                    ext=Path(clip["name"]).suffix or ".mp4"
-                    src=td/f"source_{i}{ext}"
-                    seg=td/f"segment_{i}.mp4"
-                    src.write_bytes(clip["source"].getvalue())
-                    length=float(clip["trim_out"])-float(clip["trim_in"])
-                    status.write(f"در حال پردازش کلیپ {i+1} از {len(ordered)}")
-                    cmd=[ffmpeg,"-y","-ss",str(clip["trim_in"]),"-i",str(src),"-t",str(length),"-vf","scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,fps=30","-c:v","libx264","-preset","ultrafast","-crf","24","-pix_fmt","yuv420p","-c:a","aac","-b:a","128k","-ar","44100","-ac","2","-movflags","+faststart",str(seg)]
-                    result=subprocess.run(cmd,capture_output=True,text=True,timeout=300)
-                    if result.returncode!=0 or not seg.exists():
-                        raise RuntimeError(f"پردازش کلیپ {i+1} شکست خورد.")
-                    segment_paths.append(seg)
-                    progress.progress((i+1)/len(ordered))
-                concat_file=td/"concat.txt"
-                concat_file.write_text("\n".join("file '"+p.as_posix()+"'" for p in segment_paths),encoding="utf-8")
-                output=td/"ZENITH_combined.mp4"
-                cmd=[ffmpeg,"-y","-f","concat","-safe","0","-i",str(concat_file),"-c","copy","-movflags","+faststart",str(output)]
-                result=subprocess.run(cmd,capture_output=True,text=True,timeout=300)
-                if result.returncode!=0 or not output.exists():
-                    raise RuntimeError("مرحله ترکیب کلیپ‌ها ناموفق بود.")
-                data=output.read_bytes()
-                status.success("ویدئوی ترکیبی آماده شد.")
-                st.video(data)
-                st.download_button("دانلود ویدئوی ترکیبی",data=data,file_name="ZENITH_combined.mp4",mime="video/mp4")
-        except Exception as e:
-            st.error(f"خطا: {e}")
-elif st.session_state.timeline_video:
-    st.info("برای ترکیب، حداقل دو کلیپ به تایم‌لاین اضافه کنید.")
+st.subheader("۶ — ترکیب کلیپ‌ها")
+st.caption("کلیپ‌ها طبق ترتیب شروع به هم متصل می‌شوند. خروجی 720p و 30fps با تنظیمات سبک ساخته می‌شود. فاصله‌های خالی و هم‌پوشانی هنوز در رندر اعمال نمی‌شوند.")
+if len(st.session_state.timeline_video)>=2 and st.button("رندر ویدئوی ترکیبی"):
+    try:
+        import imageio_ffmpeg
+        ffmpeg=imageio_ffmpeg.get_ffmpeg_exe()
+        ordered=sorted(st.session_state.timeline_video,key=lambda x:x.get("start",0))
+        with tempfile.TemporaryDirectory() as td:
+            td=Path(td); segments=[]; progress=st.progress(0); status=st.empty()
+            for i,c in enumerate(ordered):
+                length=float(c["trim_out"])-float(c["trim_in"])
+                if length<=0: raise ValueError("یک کلیپ نقطه برش نامعتبر دارد.")
+                src=td/f"src_{i}{Path(c['name']).suffix or '.mp4'}"; seg=td/f"seg_{i}.mp4"
+                src.write_bytes(c["source"].getvalue()); status.write(f"پردازش کلیپ {i+1}/{len(ordered)}")
+                cmd=[ffmpeg,"-y","-ss",str(c["trim_in"]),"-i",str(src),"-t",str(length),"-vf","scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,fps=30","-c:v","libx264","-preset","ultrafast","-crf","24","-pix_fmt","yuv420p","-c:a","aac","-b:a","128k","-ar","44100","-ac","2","-movflags","+faststart",str(seg)]
+                rr=subprocess.run(cmd,capture_output=True,text=True,timeout=300)
+                if rr.returncode or not seg.exists(): raise RuntimeError(f"پردازش کلیپ {i+1} ناموفق شد.")
+                segments.append(seg); progress.progress((i+1)/len(ordered))
+            listing=td/"concat.txt"
+            listing.write_text("\n".join("file '"+p.as_posix()+"'" for p in segments),encoding="utf-8")
+            joined=td/"joined.mp4"
+            rr=subprocess.run([ffmpeg,"-y","-f","concat","-safe","0","-i",str(listing),"-c","copy","-movflags","+faststart",str(joined)],capture_output=True,text=True,timeout=300)
+            if rr.returncode or not joined.exists(): raise RuntimeError("اتصال کلیپ‌ها ناموفق شد.")
+            final=joined
+            if selected_audio_idx is not None:
+                aud=td/"music"+Path(st.session_state.timeline_audio[selected_audio_idx]["name"]).suffix
+                aud.write_bytes(st.session_state.timeline_audio[selected_audio_idx]["source"].getvalue())
+                mixed=td/"ZENITH_mixed.mp4"
+                filt=f"[0:a]volume={video_gain}[va];[1:a]volume={audio_gain}[ma];[va][ma]amix=inputs=2:duration=first:dropout_transition=2[a]"
+                rr=subprocess.run([ffmpeg,"-y","-i",str(joined),"-i",str(aud),"-filter_complex",filt,"-map","0:v","-map","[a]","-c:v","copy","-c:a","aac","-b:a","192k","-shortest","-movflags","+faststart",str(mixed)],capture_output=True,text=True,timeout=300)
+                if rr.returncode or not mixed.exists(): raise RuntimeError("ترکیب صدا ناموفق شد.")
+                final=mixed
+            data=final.read_bytes(); status.success("رندر آماده شد.")
+            st.video(data); st.download_button("دانلود ویدئوی نهایی",data=data,file_name="ZENITH_combined.mp4",mime="video/mp4")
+    except Exception as e: st.error(f"خطا در رندر: {e}")
+elif st.session_state.timeline_video and len(st.session_state.timeline_video)<2:
+    st.info("برای رندر ترکیبی، حداقل دو کلیپ وارد کنید.")
 
 st.subheader("۷ — نمای گرافیکی تایم‌لاین")
-clips=sorted(st.session_state.timeline_video,key=lambda x:x.get("start",0))
-if clips:
-    total=max((c.get("start",0)+c.get("duration",0) for c in clips),default=0)
-    st.metric("مدت تخمینی تایم‌لاین",f"{total:.1f} ثانیه")
-    if total>0:
-        st.caption("نمای ساده مقیاس‌دار: محل و طول کلیپ‌ها تقریبی و بر مبنای زمان شروع و مدت هستند.")
-        for ci,c in enumerate(clips):
-            start=max(0.0,float(c.get("start",0)))
-            dur=max(0.1,float(c.get("duration",0)))
-            left_pct=min(100,start/total*100)
-            width_pct=max(1,min(100-left_pct,dur/total*100))
-            st.markdown(f"""
-<div style="margin:8px 0 3px;font-size:13px">{ci+1}. {c['name']} — {start:.1f}s تا {start+dur:.1f}s</div>
-<div style="background:rgba(120,120,120,.16);border-radius:8px;height:28px;position:relative;overflow:hidden">
-<div style="position:absolute;left:{left_pct:.2f}%;width:{width_pct:.2f}%;height:28px;background:#4c83c3;border-radius:6px;color:white;text-align:center;line-height:28px;white-space:nowrap;overflow:hidden;font-size:12px">V1 · {dur:.1f}s</div></div>
-""",unsafe_allow_html=True)
-    st.caption("در رندر فعلی، کلیپ‌ها پشت سر هم قرار می‌گیرند و فاصله‌های زمانی/هم‌پوشانی هنوز اعمال نمی‌شوند.")
+ordered=sorted(st.session_state.timeline_video,key=lambda x:x.get("start",0))
+if ordered:
+    total=max((float(c.get("start",0))+float(c.get("duration",0)) for c in ordered),default=0)
+    st.metric("مدت تخمینی",f"{total:.1f} ثانیه")
+    for j,c in enumerate(ordered):
+        start=max(0,float(c.get("start",0))); duration=max(.1,float(c.get("duration",0)))
+        if total:
+            left=min(100,start/total*100); width=max(1,min(100-left,duration/total*100))
+            st.markdown(f'<div style="font-size:13px;margin-top:7px">{j+1} · {c["name"]} ({start:.1f}–{start+duration:.1f}s)</div><div style="background:rgba(120,120,120,.16);height:26px;border-radius:6px;position:relative;overflow:hidden"><div style="position:absolute;left:{left:.2f}%;width:{width:.2f}%;height:26px;background:#4c83c3;border-radius:6px;color:white;text-align:center;line-height:26px;font-size:12px;overflow:hidden">V1 · {duration:.1f}s</div></div>',unsafe_allow_html=True)
 else:
-    st.info("برای آغاز، ویدئو وارد کنید.")
+    st.info("ویدئو اضافه کنید تا تایم‌لاین نمایش داده شود.")
 
-st.caption("استخراج کلیپ به MP4 با FFmpeg پیاده‌سازی شده؛ ترکیب پشت سر هم کلیپ‌ها در خروجی 720p اضافه شده است؛ ترکیب صدای اصلی و یک فایل صوتی جدا با تنظیم میزان صدا اضافه شده؛ چند ترک صوتی هم‌زمان، زمان‌بندی مستقل صدا، افکت‌ها و رندر حرفه‌ای هنوز در مراحل بعدی هستند.")
+st.caption("امکانات موجود: افزودن چند ویدئو و صدا، پیش‌نمایش، برش، جابه‌جایی کلیپ، تنظیم زمان شروع، نمای گرافیکی، اتصال کلیپ‌ها، کنترل حجم صدا و خروجی MP4. امکانات پیشرفته مانند چندلایه، انتقال‌های تصویری، افکت و زمان‌بندی مستقل ترک‌ها در توسعه بعدی.")
