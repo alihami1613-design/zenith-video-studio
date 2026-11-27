@@ -11,7 +11,7 @@ def design():
     beats = (
         CinematicBeatDecision("beat-1", 0, 0, 120, 4.0, "moderate", "hard_cut", 0, "cut", "", ()),
         CinematicBeatDecision("beat-2", 1, 120, 120, 4.0, "moderate", "hard_cut", 0, "cut", "", ()),
-        CinematicBeatDecision("beat-3", 2, 240, 90, 3.0, "moderate", "hard_cut", 0, "cut", "", ()),
+        CinematicBeatDecision("beat-3", 2, 240, 90, 3.0, "hold", "hard_cut", 0, "cut", "", ()),
     )
     return CinematicEditDesign("balanced", 30, 330, 11.0, beats, ())
 
