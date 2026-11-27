@@ -44,7 +44,7 @@ from ai_editor.shot_selection import select_shots_for_story
 from ai_editor.music_sync_workflow import build_music_aware_edit_draft
 from ai_editor.executor import preview_edit_plan, apply_edit_plan
 from ai_editor.quality_control import run_quality_checks
-from ai_editor.director_review import review_edit
+from ai_editor.director_review import review_edit, build_gap_repair_plan
 from ai_editor.credential_store import store_api_key, delete_api_key
 
 APP_NAME = "ZENITH Desktop"
@@ -440,6 +440,7 @@ class ZenithEditor(QMainWindow):
         self._ai_analysis_media_fingerprint = None
         self._ai_story_blueprint = None
         self._ai_shot_selection_report = None
+        self._ai_director_review_report = None
         self._ai_edit_draft = None
         self._ai_preview_base_project_data: dict[str, Any] | None = None
         self._ai_execution_preview = None
@@ -659,6 +660,9 @@ class ZenithEditor(QMainWindow):
         self.ai_apply_plan_button.clicked.connect(self.apply_ai_edit_draft)
         self.ai_director_review_button = QPushButton("بازبینی کارگردان هوشمند")
         self.ai_director_review_button.clicked.connect(self.run_ai_director_review)
+        self.ai_director_fix_button = QPushButton("آماده‌سازی اصلاح فاصله‌های V1")
+        self.ai_director_fix_button.setToolTip("فقط فاصله‌های اندازه‌گیری‌شده در ترک اصلی را به طرح قابل پیش‌نمایش تبدیل می‌کند.")
+        self.ai_director_fix_button.clicked.connect(self.prepare_ai_director_fixes)
         self.ai_model_plan_button = QPushButton("تولید طرح تدوین با مدل هوش مصنوعی")
         self.ai_model_plan_button.setEnabled(False)
         self.ai_model_plan_button.clicked.connect(self.generate_ai_edit_plan)
@@ -667,6 +671,7 @@ class ZenithEditor(QMainWindow):
         plan_actions.addWidget(self.ai_preview_plan_button)
         plan_actions.addWidget(self.ai_apply_plan_button)
         plan_actions.addWidget(self.ai_director_review_button)
+        plan_actions.addWidget(self.ai_director_fix_button)
         workflow_layout.addLayout(plan_actions)
         outer.addWidget(ai_panel)
 
@@ -1907,6 +1912,10 @@ class ZenithEditor(QMainWindow):
         except Exception as exc:
             QMessageBox.warning(self, "بازبینی کارگردان", str(exc))
             return
+        self._ai_director_review_report = report
+        self.ai_director_fix_button.setEnabled(bool(
+            any(item.finding_id.startswith("gap-V1-") for item in report.findings)
+        ))
         if not report.findings:
             self.ai_analysis_output.appendPlainText(
                 "\\nبازبینی کارگردان: مورد قابل گزارش بر اساس شواهد فعلی پیدا نشد. "
@@ -1933,6 +1942,31 @@ class ZenithEditor(QMainWindow):
         self.statusBar().showMessage(
             "بازبینی کارگردان تمام شد؛ تایم‌لاین بدون تغییر باقی ماند."
         )
+
+    def prepare_ai_director_fixes(self) -> None:
+        """Turn measured V1 gaps into a normal, isolated edit-plan preview."""
+        if not self._ai_context_is_current():
+            return
+        report = self._ai_director_review_report
+        if report is None:
+            QMessageBox.information(self, "اصلاح کارگردان", "ابتدا بازبینی کارگردان را اجرا کنید.")
+            return
+        try:
+            assets = [item.asset for item in self._ai_project_context.assets if item.exists]
+            draft = build_gap_repair_plan(report, self.timeline_project, assets)
+        except Exception as exc:
+            QMessageBox.information(self, "اصلاح کارگردان", str(exc))
+            return
+        self._ai_edit_draft = draft
+        self._ai_execution_preview = None
+        self._ai_preview_base_project_data = None
+        self.ai_preview_plan_button.setEnabled(True)
+        self.ai_apply_plan_button.setEnabled(False)
+        self.ai_analysis_output.appendPlainText(
+            f"\\nطرح اصلاح آماده شد: {len(draft.edit_plan.operations)} جابه‌جایی پیشنهادی برای بستن فاصله‌های V1. "
+            "برای بررسی، پیش‌نمایش ایمن را اجرا کنید؛ هیچ تغییری هنوز اعمال نشده است."
+        )
+        self.statusBar().showMessage("طرح اصلاح کارگردان آماده پیش‌نمایش است؛ اعمال نهایی نیازمند تأیید جداگانه است.")
 
     def apply_ai_edit_draft(self) -> None:
         if self._ai_execution_preview is None or self._ai_edit_draft is None:
