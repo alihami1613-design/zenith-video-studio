@@ -393,9 +393,9 @@ class ZenithEditor(QMainWindow):
         self.ai_music_combo.addItem("پس از تحلیل، موسیقی را انتخاب کنید", None)
         self.ai_music_combo.currentIndexChanged.connect(self._ai_approval_changed)
         self.ai_pace_combo = QComboBox()
-        self.ai_pace_combo.currentIndexChanged.connect(self._ai_approval_changed)
         for label, value in (("متعادل", "balanced"), ("آرام", "calm"), ("پرانرژی", "energetic"), ("تریلر", "trailer")):
             self.ai_pace_combo.addItem(label, value)
+        self.ai_pace_combo.currentIndexChanged.connect(self._ai_approval_changed)
         ai_controls.addWidget(self.ai_analyze_button)
         ai_controls.addWidget(QLabel("موسیقی مرجع:"))
         ai_controls.addWidget(self.ai_music_combo, 2)
