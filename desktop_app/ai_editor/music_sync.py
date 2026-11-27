@@ -7,6 +7,7 @@ a timeline or media file; every suggestion requires explicit user approval.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 
 from ai_editor.contracts import EditPlanError
 from ai_editor.cinematic_edit import CinematicEditDesign
@@ -94,9 +95,13 @@ def design_music_aware_timing(
     ]
     usable = (
         spectral_audio is not None
-        and spectral_audio.estimated_bpm is not None
+        and isinstance(spectral_audio.estimated_bpm, (int, float))
+        and not isinstance(spectral_audio.estimated_bpm, bool)
+        and math.isfinite(float(spectral_audio.estimated_bpm))
+        and 20.0 <= float(spectral_audio.estimated_bpm) <= 300.0
         and isinstance(spectral_audio.tempo_confidence, (int, float))
         and not isinstance(spectral_audio.tempo_confidence, bool)
+        and math.isfinite(float(spectral_audio.tempo_confidence))
         and minimum_tempo_confidence <= spectral_audio.tempo_confidence <= 1.0
     )
     pulses: list[float] = []
@@ -131,7 +136,7 @@ def design_music_aware_timing(
                 shift = pulse_frame - original_boundary
                 if abs(shift) > min(tolerance, max_adjust):
                     continue
-                left_duration = pulse_frame - left.start_frame
+                left_duration = pulse_frame - current_start
                 right_duration = right.start_frame + right.duration_frames - pulse_frame
                 if min_frames <= left_duration <= max_frames and min_frames <= right_duration <= max_frames:
                     candidates.append((abs(shift), pulse_frame, pulse))
