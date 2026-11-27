@@ -10,6 +10,7 @@ import hashlib
 from ai_editor.contracts import (
     EditOperation, EditPlan, EditPlanError, ProjectBrief,
 )
+from ai_editor.cinematic_edit import CinematicEditDesign
 from ai_editor.narrative import StoryBlueprint
 from ai_editor.project_context import ProjectContext
 
@@ -17,6 +18,8 @@ from ai_editor.project_context import ProjectContext
 def compile_story_to_edit_plan(
     story: StoryBlueprint,
     context: ProjectContext,
+    *,
+    cinematic_design: CinematicEditDesign | None = None,
 ) -> EditPlan:
     """Turn asset-backed story beats into a reviewable timeline plan.
 
@@ -29,6 +32,33 @@ def compile_story_to_edit_plan(
     if isinstance(fps, bool) or not isinstance(fps, int) or fps < 1:
         raise EditPlanError("Project frame rate is unavailable or invalid.")
 
+    if cinematic_design is not None:
+        if not isinstance(cinematic_design, CinematicEditDesign) or not cinematic_design.requires_user_approval:
+            raise EditPlanError("A valid cinematic design requiring user approval is required.")
+        if cinematic_design.fps != fps:
+            raise EditPlanError("Cinematic design frame rate does not match the project.")
+        if len(cinematic_design.decisions) != len(story.beats):
+            raise EditPlanError("Cinematic design does not cover every story beat.")
+        expected_start = 0
+        for beat, decision in zip(story.beats, cinematic_design.decisions):
+            expected_duration = max(1, round(beat.target_duration_seconds * fps))
+            if (decision.beat_id != beat.beat_id or decision.sequence != beat.sequence
+                    or decision.start_frame != expected_start
+                    or decision.duration_frames != expected_duration):
+                raise EditPlanError("Cinematic design does not match the story beat order or timing.")
+            if decision.transition_type not in {"hard_cut", "dissolve"}:
+                raise EditPlanError("Cinematic design contains an unsupported transition.")
+            if (isinstance(decision.transition_duration_frames, bool)
+                    or not isinstance(decision.transition_duration_frames, int)
+                    or decision.transition_duration_frames < 0
+                    or decision.transition_duration_frames > 3 * fps):
+                raise EditPlanError("Cinematic design transition duration is invalid.")
+            if decision.transition_type == "hard_cut" and decision.transition_duration_frames != 0:
+                raise EditPlanError("Hard cuts cannot have a transition duration.")
+            expected_start += expected_duration
+        if cinematic_design.total_frames != expected_start:
+            raise EditPlanError("Cinematic design total duration does not match the story.")
+
     assets = {
         item.asset.asset_id: item
         for item in context.assets if item.exists
@@ -39,8 +69,11 @@ def compile_story_to_edit_plan(
     last_visual_clip: tuple[str, int, int, str, int] | None = None
     story_digest = hashlib.sha256(story.story_id.encode("utf-8")).hexdigest()[:10]
 
-    for beat in story.beats:
+    for beat_index, beat in enumerate(story.beats):
         target_frames = max(1, round(beat.target_duration_seconds * fps))
+        decision = cinematic_design.decisions[beat_index] if cinematic_design is not None else None
+        if decision is not None and decision.start_frame != cursor_frame:
+            raise EditPlanError("Cinematic design timeline position is inconsistent.")
         if beat.asset_id is None:
             warnings.append(
                 f"{beat.beat_id}: no source asset selected; left as a timeline placeholder."
@@ -100,8 +133,13 @@ def compile_story_to_edit_plan(
             rationale=f"{beat.title}: {beat.purpose}",
         ))
         if media_type == "video":
-            transition_frames = min(round(0.5 * fps), duration_frames)
-            if beat.transition_intent in {"dissolve", "fade", "motivated_transition"} and last_visual_clip is not None:
+            transition_frames = (decision.transition_duration_frames if decision is not None
+                                 else min(round(0.5 * fps), duration_frames))
+            transition_requested = (
+                decision.transition_type == "dissolve" if decision is not None
+                else beat.transition_intent in {"dissolve", "fade", "motivated_transition"}
+            )
+            if transition_requested and last_visual_clip is not None:
                 previous_id, previous_end, previous_duration, previous_type, _previous_source_in = last_visual_clip
                 transition_allowed = (
                     previous_end == cursor_frame
