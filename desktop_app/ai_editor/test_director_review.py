@@ -232,7 +232,7 @@ class DirectorReviewTests(unittest.TestCase):
                         audio_asset, "audio",
                         spectral_audio=SpectralAudioSummary(
                             8000, 512, 128, 120.0, 0.9,
-                            (1.4,), (1.4,),
+                            (1.4333333333,), (1.4333333333,),
                             ("Estimated pulse candidates; not verified beats.",),
                         ),
                     ),
@@ -244,7 +244,7 @@ class DirectorReviewTests(unittest.TestCase):
                 item for item in report.findings
                 if item.category == "audio_visual_sync"
             )
-            self.assertEqual(finding.target_frame, 42)
+            self.assertEqual(finding.target_frame, 43)
             self.assertEqual(finding.related_clip_id, project.clips[0].clip_id)
             draft = build_music_alignment_plan(
                 report, project, [item.asset for item in context.assets]
@@ -255,8 +255,8 @@ class DirectorReviewTests(unittest.TestCase):
             preview = preview_edit_plan(
                 project, draft.edit_plan, [item.asset for item in context.assets]
             )
-            self.assertEqual(preview.project.clips[0].end_frame, 42)
-            self.assertEqual(preview.project.clips[1].start_frame, 42)
+            self.assertEqual(preview.project.clips[0].end_frame, 43)
+            self.assertEqual(preview.project.clips[1].start_frame, 43)
             self.assertEqual(project.clips[0].end_frame, 45)
             self.assertEqual(project.clips[1].start_frame, 45)
             self.assertTrue(draft.edit_plan.requires_user_approval)
