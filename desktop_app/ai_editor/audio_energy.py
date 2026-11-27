@@ -119,7 +119,6 @@ def analyze_audio_energy(
         ))
 
     candidates: list[float] = []
-    min_spacing_windows = max(1, math.ceil(minimum_candidate_spacing_seconds / window_seconds))
     for index in range(1, len(rms_values) - 1):
         baseline_start = max(0, index - 5)
         baseline_values = rms_values[baseline_start:index]
