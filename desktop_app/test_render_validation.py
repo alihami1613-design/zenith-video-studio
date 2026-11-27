@@ -102,6 +102,53 @@ class RenderValidationTests(unittest.TestCase):
             self.assertTrue(report.decode_succeeded)
             self.assertTrue(report.visual_quality.scanned)
 
+    def test_real_multitrack_render_places_upper_video_only_during_its_timeline_range(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            lower = root / "lower-red.mp4"
+            upper = root / "upper-blue.mp4"
+            output = root / "multitrack.mp4"
+            for source, color in ((lower, "red"), (upper, "blue")):
+                command = [
+                    FFMPEG, "-y", "-hide_banner", "-loglevel", "error",
+                    "-f", "lavfi", "-i",
+                    f"color=c={color}:s=64x64:r=25:d=1",
+                    "-c:v", "libx264", "-preset", "ultrafast",
+                    "-threads", "1", "-pix_fmt", "yuv420p", str(source),
+                ]
+                result = subprocess.run(
+                    command, capture_output=True, text=True, timeout=45
+                )
+                self.assertEqual(result.returncode, 0, result.stderr[-2000:])
+
+            project = TimelineProject(fps=25, width=64, height=64)
+            project.add_clip(str(lower), "Lower red", track="V1",
+                             start_frame=0, duration_frames=25)
+            project.add_clip(str(upper), "Upper blue", track="V2",
+                             start_frame=10, duration_frames=10)
+            rendered = render_timeline_mp4(project, output, timeout_seconds=120)
+            self.assertTrue(rendered.is_file())
+
+            def sample_rgb(timestamp):
+                command = [
+                    FFMPEG, "-hide_banner", "-loglevel", "error",
+                    "-ss", f"{timestamp:.3f}", "-i", str(rendered),
+                    "-frames:v", "1", "-vf", "scale=1:1",
+                    "-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1",
+                ]
+                result = subprocess.run(
+                    command, capture_output=True, timeout=30, check=True
+                )
+                self.assertEqual(len(result.stdout), 3)
+                return tuple(result.stdout)
+
+            before_overlay = sample_rgb(0.20)
+            during_overlay = sample_rgb(0.60)
+            after_overlay = sample_rgb(0.90)
+            self.assertGreater(before_overlay[0], before_overlay[2] * 2)
+            self.assertGreater(during_overlay[2], during_overlay[0] * 2)
+            self.assertGreater(after_overlay[0], after_overlay[2] * 2)
+
     def test_corrupt_or_empty_output_is_rejected(self):
         with tempfile.TemporaryDirectory() as folder:
             output = Path(folder) / "broken.mp4"
