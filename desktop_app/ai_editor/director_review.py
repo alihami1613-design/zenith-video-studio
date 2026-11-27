@@ -281,37 +281,37 @@ def review_edit(
                     distance = abs(nearest - timeline_frame)
                     if distance <= 2:
                         next_clip = next(
-                        clip for clip in project.clips
-                        if clip.track == "V1" and clip.start_frame == nearest
-                        and clip.media_type in {"video", "image"}
-                    )
-                    previous_clip = max(
-                        (
                             clip for clip in project.clips
-                            if clip.track == "V1" and clip.media_type in {"video", "image"}
-                            and clip.end_frame <= nearest
-                        ),
-                        key=lambda clip: clip.end_frame,
-                        default=None,
-                    )
-                    add(
-                        f"possible-music-cut-alignment-{audio_clip.clip_id}-{pulse_index + 1}",
-                        "audio_visual_sync", "advisory",
-                        "A video cut is near an estimated music-pulse candidate",
-                        (
-                            f"Estimated pulse at timeline frame {timeline_frame}.",
-                            f"Nearest V1 cut at frame {nearest}; difference {distance} frame(s).",
-                            "Spectral pulse candidates are signal estimates, not verified musical beats.",
-                        ),
-                        "Listen and watch this transition in context before deciding whether the alignment feels intentional.",
-                        clip_id=next_clip.clip_id,
-                        related_clip_id=(
-                            previous_clip.clip_id
-                            if previous_clip is not None and previous_clip.end_frame == nearest
-                            else None
-                        ),
-                        target_frame=timeline_frame,
-                    )
+                            if clip.track == "V1" and clip.start_frame == nearest
+                            and clip.media_type in {"video", "image"}
+                        )
+                        previous_clip = max(
+                            (
+                                clip for clip in project.clips
+                                if clip.track == "V1" and clip.media_type in {"video", "image"}
+                                and clip.end_frame <= nearest
+                            ),
+                            key=lambda clip: clip.end_frame,
+                            default=None,
+                        )
+                        add(
+                            f"possible-music-cut-alignment-{audio_clip.clip_id}-{pulse_index + 1}",
+                            "audio_visual_sync", "advisory",
+                            "A video cut is near an estimated music-pulse candidate",
+                            (
+                                f"Estimated pulse at timeline frame {timeline_frame}.",
+                                f"Nearest V1 cut at frame {nearest}; difference {distance} frame(s).",
+                                "Spectral pulse candidates are signal estimates, not verified musical beats.",
+                            ),
+                            "Listen and watch this transition in context before deciding whether the alignment feels intentional.",
+                            clip_id=next_clip.clip_id,
+                            related_clip_id=(
+                                previous_clip.clip_id
+                                if previous_clip is not None and previous_clip.end_frame == nearest
+                                else None
+                            ),
+                            target_frame=timeline_frame,
+                        )
 
     errors = sum(item.severity == "error" for item in findings)
     warnings = sum(item.severity == "warning" for item in findings)
