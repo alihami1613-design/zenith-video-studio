@@ -6,6 +6,7 @@ timeline, reads media bytes, uploads assets, or claims semantic understanding.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+import math
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -224,10 +225,7 @@ def review_edit(
             measured = analysis_by_id.get(inventory.asset.asset_id)
             if measured is None or not measured.scene_boundaries_seconds:
                 continue
-            source_fps = inventory.source_fps or float(project.fps)
-            if not math.isfinite(source_fps) or source_fps <= 0:
-                continue
-            source_start = clip.source_in / source_fps
+            source_start = clip.source_in / max(1, project.fps)
             source_end = source_start + (
                 clip.duration_frames * clip.playback_rate / max(1, project.fps)
             )
@@ -268,16 +266,12 @@ def review_edit(
                 spectral = measured.spectral_audio if measured is not None else None
                 if spectral is None:
                     continue
-                source_fps = inventory.source_fps or float(project.fps)
-                if not math.isfinite(source_fps) or source_fps <= 0:
-                    continue
                 for pulse_index, pulse_seconds in enumerate(spectral.pulse_candidates_seconds):
                     if not math.isfinite(pulse_seconds):
                         continue
                     timeline_frame = audio_clip.start_frame + round(
-                        (pulse_seconds * source_fps - audio_clip.source_in)
-                        / max(0.000001, audio_clip.playback_rate)
-                        * project.fps / source_fps
+                        (pulse_seconds - audio_clip.source_in / max(1, project.fps))
+                        * project.fps / max(0.000001, audio_clip.playback_rate)
                     )
                     nearest = min(video_cuts, key=lambda frame: abs(frame - timeline_frame))
                     distance = abs(nearest - timeline_frame)
