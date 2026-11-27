@@ -97,6 +97,33 @@ class UndoHistoryWiringTests(unittest.TestCase):
             self.assertEqual(len(branch), 2, f"missing drag mode {mode}")
             self.assertIn("self.editStarted.emit()", branch[1].split("return", 1)[0] if mode != '"ramp"' else press)
 
+    def test_all_bound_main_window_callbacks_are_defined(self):
+        connected = {
+            node.func.attr
+            for node in ast.walk(self.tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "connect"
+            and node.args
+            and isinstance(node.args[0], ast.Attribute)
+            and isinstance(node.args[0].value, ast.Name)
+            and node.args[0].value.id == "self"
+        }
+        self.assertEqual(sorted(connected - set(self.methods)), [])
+
+    def test_speed_and_keyframe_callbacks_are_present(self):
+        required = {
+            "_speed_ramp_changed", "_transform_keyframe_moved",
+            "_transform_keyframe_selected", "_mask_keyframe_moved",
+            "_mask_keyframe_selected", "_add_speed_ramp_point",
+            "_clear_speed_ramp", "preview_speed_ramp",
+            "_apply_clip_speed", "_toggle_clip_motion_blur",
+            "_toggle_clip_reverse", "_sync_bezier_graph_visibility",
+            "_bezier_graph_changed", "_bezier_graph_edit_started",
+            "_bezier_graph_edit_finished",
+        }
+        self.assertTrue(required.issubset(self.methods))
+
 
 if __name__ == "__main__":
     unittest.main()
