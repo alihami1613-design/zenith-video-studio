@@ -45,16 +45,34 @@ jobs:
           $stdout = Join-Path $env:RUNNER_TEMP "zenith-smoke.stdout.log"
           $stderr = Join-Path $env:RUNNER_TEMP "zenith-smoke.stderr.log"
           $process = Start-Process -FilePath $exe -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
-          Start-Sleep -Seconds 10
-          $process.Refresh()
-          if ($process.HasExited) {
-            Write-Host "Application exited during startup with code $($process.ExitCode)."
-            if (Test-Path $stdout) { Get-Content $stdout }
-            if (Test-Path $stderr) { Get-Content $stderr }
-            throw "Packaged desktop application failed its startup smoke test."
+          try {
+            $windowReady = $false
+            for ($attempt = 0; $attempt -lt 20; $attempt++) {
+              Start-Sleep -Seconds 1
+              $process.Refresh()
+              if ($process.HasExited) {
+                Write-Host "Application exited during startup with code $($process.ExitCode)."
+                if (Test-Path $stdout) { Get-Content $stdout }
+                if (Test-Path $stderr) { Get-Content $stderr }
+                throw "Packaged desktop application failed its startup smoke test."
+              }
+              if ($process.MainWindowHandle -ne 0 -and $process.MainWindowTitle -like "*ZENITH Desktop*") {
+                $windowReady = $true
+                break
+              }
+            }
+            if (-not $windowReady) {
+              Write-Host "Process is alive but its main window was not detected."
+              Write-Host "Window title: $($process.MainWindowTitle)"
+              throw "Packaged desktop application did not expose its expected main window."
+            }
+            Write-Host "Main window detected: $($process.MainWindowTitle)"
           }
-          Stop-Process -Id $process.Id -Force
-          Write-Host "Packaged desktop application remained running for 10 seconds."
+          finally {
+            if (-not $process.HasExited) {
+              Stop-Process -Id $process.Id -Force
+            }
+          }
       - name: Upload Windows build artifact
         uses: actions/upload-artifact@v4
         with:
