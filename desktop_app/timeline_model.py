@@ -619,7 +619,8 @@ class TimelineProject:
 
     def set_clip_audio(self, clip_id: str, *, volume: float | None = None,
                         fade_in_frames: int | None = None,
-                        fade_out_frames: int | None = None) -> Clip:
+                        fade_out_frames: int | None = None,
+                        audio_fade_curve: str | None = None) -> Clip:
         """Set non-destructive clip gain and frame-accurate audio fades."""
         clip = self.get_clip(clip_id)
         if volume is not None:
@@ -628,6 +629,8 @@ class TimelineProject:
             clip.fade_in_frames = int(fade_in_frames)
         if fade_out_frames is not None:
             clip.fade_out_frames = int(fade_out_frames)
+        if audio_fade_curve is not None:
+            clip.audio_fade_curve = str(audio_fade_curve)
         clip.validate()
         return clip
 
