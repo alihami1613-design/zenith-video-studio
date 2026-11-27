@@ -38,6 +38,16 @@ jobs:
             throw "Bundled FFmpeg executable is missing."
           }
           Write-Host "Executable and bundled FFmpeg found."
+          $ffmpegPath = $ffmpeg[0].FullName
+          & $ffmpegPath -version
+          if ($LASTEXITCODE -ne 0) {
+            throw "Bundled FFmpeg could not start successfully."
+          }
+          & $ffmpegPath -hide_banner -loglevel error -f lavfi -i "color=c=black:s=64x64:d=0.2" -frames:v 1 -f null NUL
+          if ($LASTEXITCODE -ne 0) {
+            throw "Bundled FFmpeg failed its lavfi frame-processing smoke test."
+          }
+          Write-Host "Bundled FFmpeg version and frame-processing smoke tests passed."
       - name: Smoke-test packaged desktop startup
         shell: pwsh
         run: |
