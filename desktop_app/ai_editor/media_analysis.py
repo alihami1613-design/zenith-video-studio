@@ -37,6 +37,15 @@ class AudioEnergySummary:
 
 
 @dataclass(frozen=True)
+class AudioRhythmSummary:
+    estimated_bpm: float | None
+    confidence: float
+    pulse_period_seconds: float | None
+    pulse_candidates_seconds: tuple[float, ...]
+    warnings: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class AssetAnalysis:
     asset_id: str
     media_type: str
@@ -44,6 +53,7 @@ class AssetAnalysis:
     visual_samples: tuple[VisualSampleSummary, ...] = ()
     audio: AudioSummary | None = None
     audio_energy: AudioEnergySummary | None = None
+    audio_rhythm: AudioRhythmSummary | None = None
     warnings: tuple[str, ...] = ()
 
 
@@ -66,6 +76,7 @@ def analyze_project_media(
     visual_sampler: Callable | None = None,
     audio_analyzer: Callable | None = None,
     audio_energy_analyzer: Callable | None = None,
+    rhythm_analyzer: Callable | None = None,
 ) -> MediaAnalysisReport:
     """Run local analysis per asset, isolating failures so one bad file won't abort all.
 
@@ -90,6 +101,9 @@ def analyze_project_media(
     if audio_energy_analyzer is None:
         from ai_editor.audio_energy import analyze_audio_energy
         audio_energy_analyzer = analyze_audio_energy
+    if rhythm_analyzer is None:
+        from ai_editor.rhythm_analysis import analyze_music_rhythm
+        rhythm_analyzer = analyze_music_rhythm
 
     results: list[AssetAnalysis] = []
     report_warnings: list[str] = list(context.warnings)
@@ -100,6 +114,7 @@ def analyze_project_media(
         samples: tuple[VisualSampleSummary, ...] = ()
         audio: AudioSummary | None = None
         audio_energy: AudioEnergySummary | None = None
+        audio_rhythm: AudioRhythmSummary | None = None
 
         if not item.exists:
             continue
@@ -163,6 +178,22 @@ def analyze_project_media(
                     ),
                     warnings=tuple(str(value) for value in energy.warnings),
                 )
+                try:
+                    rhythm = rhythm_analyzer(energy)
+                    audio_rhythm = AudioRhythmSummary(
+                        estimated_bpm=rhythm.estimated_bpm,
+                        confidence=float(rhythm.confidence),
+                        pulse_period_seconds=rhythm.pulse_period_seconds,
+                        pulse_candidates_seconds=tuple(
+                            float(value) for value in rhythm.pulse_candidates_seconds
+                        ),
+                        warnings=tuple(str(value) for value in rhythm.warnings),
+                    )
+                except Exception as exc:
+                    warnings.append(
+                        f"Music rhythm analysis failed ({type(exc).__name__}); "
+                        "diagnostic details were withheld to protect local file paths."
+                    )
             except Exception as exc:
                 warnings.append(
                     f"Audio energy analysis failed ({type(exc).__name__}); "
@@ -180,6 +211,7 @@ def analyze_project_media(
             visual_samples=samples,
             audio=audio,
             audio_energy=audio_energy,
+            audio_rhythm=audio_rhythm,
             warnings=tuple(warnings),
         ))
 
