@@ -76,10 +76,20 @@ class MediaAnalysisTests(unittest.TestCase):
                 warnings=("RMS periodicity only.",),
             )
 
+        def spectral(path):
+            return SimpleNamespace(
+                sample_rate=8000, frame_size=512, hop_size=128,
+                estimated_bpm=120.0, tempo_confidence=0.9,
+                onset_candidates_seconds=(0.25, 0.75),
+                pulse_candidates_seconds=(0.0, 0.5),
+                warnings=("Spectral onset estimate only.",),
+            )
+
         report = analyze_project_media(
             self.context, scene_detector=scenes,
             visual_sampler=samples, audio_analyzer=audio,
             audio_energy_analyzer=energy, rhythm_analyzer=rhythm,
+            spectral_analyzer=spectral,
         )
         self.assertEqual([item.asset_id for item in report.assets],
                          ["asset-video", "asset-audio", "asset-image"])
@@ -90,6 +100,8 @@ class MediaAnalysisTests(unittest.TestCase):
         self.assertEqual(video.audio_energy.transient_candidates_seconds, (0.1,))
         self.assertEqual(video.audio_rhythm.estimated_bpm, 120.0)
         self.assertEqual(video.audio_rhythm.pulse_candidates_seconds, (0.0, 0.5))
+        self.assertEqual(video.spectral_audio.estimated_bpm, 120.0)
+        self.assertEqual(video.spectral_audio.onset_candidates_seconds, (0.25, 0.75))
         self.assertEqual(len(video.audio_energy.energy_dbfs), 2)
         self.assertEqual(report.assets[1].audio.mean_db, -18.0)
         self.assertIsNotNone(report.assets[1].audio_energy)
