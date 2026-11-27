@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QFileDialog, QMessageBox,
     QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QListWidget,
     QListWidgetItem, QSplitter, QFrame, QStatusBar, QSlider, QCheckBox, QComboBox, QProgressBar, QDoubleSpinBox, QLineEdit, QSpinBox
+    , QPlainTextEdit
 )
 
 from timeline_model import TimelineProject, mask_values_at, mask_points_at, transform_eased_progress
@@ -35,6 +36,8 @@ from speed_ramp_preview import create_speed_ramp_preview
 from video_render import render_timeline_mp4
 from polygon_mask_overlay import PolygonMaskOverlay
 from project_recovery import default_recovery_path, write_recovery, read_recovery, clear_recovery
+from ai_editor.project_context import build_project_context
+from ai_editor.media_analysis import analyze_project_media
 
 APP_NAME = "ZENITH Desktop"
 PROJECT_VERSION = 2
@@ -248,6 +251,29 @@ class VideoRenderTask(QRunnable):
             self.signals.finished.emit("", str(exc))
 
 
+class LocalMediaAnalysisSignals(QObject):
+    finished = Signal(object, object, str)
+
+
+class LocalMediaAnalysisTask(QRunnable):
+    """Run bounded, local-only AI-editor diagnostics away from the GUI thread."""
+
+    def __init__(self, project_data: dict[str, Any], media_paths: list[str]) -> None:
+        super().__init__()
+        self.project_data = project_data
+        self.media_paths = list(media_paths)
+        self.signals = LocalMediaAnalysisSignals()
+
+    def run(self) -> None:
+        try:
+            project = TimelineProject.from_dict(self.project_data)
+            context = build_project_context(project, self.media_paths)
+            report = analyze_project_media(context)
+            self.signals.finished.emit(context, report, "")
+        except Exception as exc:
+            self.signals.finished.emit(None, None, str(exc))
+
+
 class ZenithEditor(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
@@ -275,6 +301,11 @@ class ZenithEditor(QMainWindow):
         self._scope_pool.setMaxThreadCount(1)
         self._scope_tasks: list[RGBHistogramTask] = []
         self._scope_clip_id: str | None = None
+        self._ai_analysis_pool = QThreadPool(self)
+        self._ai_analysis_pool.setMaxThreadCount(1)
+        self._ai_analysis_task: LocalMediaAnalysisTask | None = None
+        self._ai_project_context = None
+        self._ai_media_analysis = None
         self._graded_preview_clip_id: str | None = None
         self._speed_ramp_preview_pool = QThreadPool(self)
         self._speed_ramp_preview_pool.setMaxThreadCount(1)
@@ -340,6 +371,31 @@ class ZenithEditor(QMainWindow):
         header.addStretch(1)
         header.addWidget(subtitle)
         outer.addLayout(header)
+
+        ai_panel = self._panel("AI EDITING  |  تحلیل هوشمند رسانه — محلی و خصوصی")
+        ai_layout = ai_panel.layout()
+        ai_controls = QHBoxLayout()
+        self.ai_analyze_button = QPushButton("تحلیل رسانه‌های پروژه")
+        self.ai_analyze_button.setToolTip("تحلیل محلی صحنه‌ها، نمونه‌های تصویری و ویژگی‌های صوتی؛ بدون ارسال فایل به اینترنت")
+        self.ai_analyze_button.clicked.connect(self.run_ai_media_analysis)
+        self.ai_music_combo = QComboBox()
+        self.ai_music_combo.setMinimumWidth(240)
+        self.ai_music_combo.addItem("پس از تحلیل، موسیقی را انتخاب کنید", None)
+        self.ai_pace_combo = QComboBox()
+        for label, value in (("متعادل", "balanced"), ("آرام", "calm"), ("پرانرژی", "energetic"), ("تریلر", "trailer")):
+            self.ai_pace_combo.addItem(label, value)
+        ai_controls.addWidget(self.ai_analyze_button)
+        ai_controls.addWidget(QLabel("موسیقی مرجع:"))
+        ai_controls.addWidget(self.ai_music_combo, 2)
+        ai_controls.addWidget(QLabel("ریتم تدوین:"))
+        ai_controls.addWidget(self.ai_pace_combo)
+        ai_layout.addLayout(ai_controls)
+        self.ai_analysis_output = QPlainTextEdit()
+        self.ai_analysis_output.setReadOnly(True)
+        self.ai_analysis_output.setMaximumHeight(112)
+        self.ai_analysis_output.setPlainText("هنوز تحلیلی انجام نشده است. تحلیل فقط روی همین رایانه اجرا می‌شود؛ هیچ فایل یا مسیر محلی به سرویس ابری ارسال نمی‌شود. انتخاب موسیقی و ریتم برای مرحله ساخت پیش‌نویس نگه‌داری می‌شود.")
+        ai_layout.addWidget(self.ai_analysis_output)
+        outer.addWidget(ai_panel)
 
         top_split = QSplitter(Qt.Horizontal)
         media_panel = self._panel("رسانه‌ها")
@@ -948,6 +1004,59 @@ class ZenithEditor(QMainWindow):
             QSlider::handle:horizontal { background:#D6AE55; width:13px; margin:-5px 0; border-radius:6px; }
             QStatusBar { color:#B8B8B8; background:#191A1D; }
         """)
+
+    def run_ai_media_analysis(self) -> None:
+        if self._ai_analysis_task is not None or self._ai_analysis_pool.activeThreadCount():
+            self.statusBar().showMessage("تحلیل رسانه‌ها در حال اجراست؛ لطفاً منتظر بمانید.")
+            return
+        paths = [str(item.get("path", "")) for item in self.media_items if item.get("path")]
+        if not paths and not self.timeline_project.clips:
+            QMessageBox.information(self, "تحلیل هوشمند", "ابتدا فایل‌های رسانه‌ای را وارد پروژه کنید.")
+            return
+        self.ai_analyze_button.setEnabled(False)
+        self.ai_analysis_output.setPlainText("تحلیل محلی آغاز شد…\nتشخیص مرز صحنه، نمونه‌برداری تصویری و بررسی صوت در پس‌زمینه انجام می‌شود.")
+        task = LocalMediaAnalysisTask(self.timeline_project.to_dict(), paths)
+        self._ai_analysis_task = task
+        task.signals.finished.connect(self._ai_media_analysis_finished)
+        self._ai_analysis_pool.start(task)
+        self.statusBar().showMessage("تحلیل محلی رسانه‌ها آغاز شد؛ رابط کاربری آزاد می‌ماند.")
+
+    def _ai_media_analysis_finished(self, context: object, report: object, error: str) -> None:
+        self._ai_analysis_task = None
+        self.ai_analyze_button.setEnabled(True)
+        if error or context is None or report is None:
+            self.ai_analysis_output.setPlainText(f"تحلیل کامل نشد: {error or 'نتیجه معتبر دریافت نشد.'}")
+            self.statusBar().showMessage("تحلیل رسانه‌ها ناموفق بود.")
+            return
+        self._ai_project_context = context
+        self._ai_media_analysis = report
+        self.ai_music_combo.clear()
+        self.ai_music_combo.addItem("انتخاب موسیقی مرجع…", None)
+        for item in context.assets:
+            asset = item.asset
+            if item.exists and (asset.media_type == "audio" or (asset.media_type == "video" and asset.has_audio)):
+                self.ai_music_combo.addItem(Path(asset.path).name, asset.asset_id)
+        lines = [
+            f"تحلیل تمام شد | {len(context.assets)} رسانه بررسی‌شده | {len(report.assets)} گزارش تحلیلی",
+            "پردازش محلی بود؛ هیچ فایل رسانه‌ای به فضای ابری ارسال نشد.",
+        ]
+        for result in report.assets:
+            name = next((Path(item.asset.path).name for item in context.assets if item.asset.asset_id == result.asset_id), result.asset_id)
+            details = [f"صحنه‌ها: {len(result.scene_boundaries_seconds)}"]
+            if result.visual_samples:
+                details.append(f"نمونه‌های تصویر: {len(result.visual_samples)}")
+            if result.spectral_audio and result.spectral_audio.estimated_bpm is not None:
+                details.append(f"BPM تخمینی: {result.spectral_audio.estimated_bpm:.1f} (اعتماد {result.spectral_audio.tempo_confidence:.2f})")
+            if result.audio:
+                details.append(f"پیک صدا: {result.audio.peak_db if result.audio.peak_db is not None else 'نامشخص'} dB")
+            lines.append(f"• {name}: " + " | ".join(details))
+            for warning in result.warnings[:2]:
+                lines.append(f"  هشدار: {warning}")
+        if report.warnings:
+            lines.append(f"هشدارهای پروژه: {len(report.warnings)}")
+        lines.append("نکته: BPM و نقاط ضرب فقط تخمین فنی‌اند؛ تأیید شنیداری لازم است. هنوز هیچ کلیپی جابه‌جا یا تدوین نشده است.")
+        self.ai_analysis_output.setPlainText("\n".join(lines))
+        self.statusBar().showMessage("تحلیل محلی آماده است؛ هیچ تغییری در تایم‌لاین اعمال نشد.")
 
     def _preview_media_row(self, row: int) -> None:
         if row < 0 or row >= len(self.media_items):
