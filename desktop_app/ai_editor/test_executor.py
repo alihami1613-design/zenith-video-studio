@@ -49,14 +49,16 @@ class AIEditExecutorTests(unittest.TestCase):
 
     def test_failed_operation_leaves_live_project_unchanged(self):
         project = TimelineProject()
+        existing = project.add_clip("/media/existing.mp4", "existing.mp4",
+                                    start_frame=200, duration_frames=60)
         before = project.to_dict()
         plan = make_plan([EditOperation("op-add", "add_clip", {
             "asset_id": "shot-a", "track": "V1", "start_frame": 0,
             "source_in": 0, "duration_frames": 90,
-        }), EditOperation("op-grade", "set_clip_grade", {
-            "clip_id": "does-not-exist", "grade": {"exposure": 1.0},
+        }), EditOperation("op-transition", "set_transition", {
+            "clip_id": existing.clip_id, "duration_frames": 15,
         })])
-        with self.assertRaises(EditPlanError):
+        with self.assertRaises(ValueError):
             apply_edit_plan(project, plan, ASSETS, approved=True)
         self.assertEqual(project.to_dict(), before)
 
