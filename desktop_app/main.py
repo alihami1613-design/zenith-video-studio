@@ -38,6 +38,10 @@ from polygon_mask_overlay import PolygonMaskOverlay
 from project_recovery import default_recovery_path, write_recovery, read_recovery, clear_recovery
 from ai_editor.project_context import build_project_context
 from ai_editor.media_analysis import analyze_project_media
+from ai_editor.narrative import story_blueprint_from_dict
+from ai_editor.shot_selection import select_shots_for_story
+from ai_editor.music_sync_workflow import build_music_aware_edit_draft
+from ai_editor.executor import preview_edit_plan, apply_edit_plan
 
 APP_NAME = "ZENITH Desktop"
 PROJECT_VERSION = 2
@@ -306,6 +310,12 @@ class ZenithEditor(QMainWindow):
         self._ai_analysis_task: LocalMediaAnalysisTask | None = None
         self._ai_project_context = None
         self._ai_media_analysis = None
+        self._ai_analysis_project_data: dict[str, Any] | None = None
+        self._ai_story_blueprint = None
+        self._ai_shot_selection_report = None
+        self._ai_edit_draft = None
+        self._ai_preview_base_project_data: dict[str, Any] | None = None
+        self._ai_execution_preview = None
         self._graded_preview_clip_id: str | None = None
         self._speed_ramp_preview_pool = QThreadPool(self)
         self._speed_ramp_preview_pool.setMaxThreadCount(1)
@@ -395,6 +405,50 @@ class ZenithEditor(QMainWindow):
         self.ai_analysis_output.setMaximumHeight(112)
         self.ai_analysis_output.setPlainText("هنوز تحلیلی انجام نشده است. تحلیل فقط روی همین رایانه اجرا می‌شود؛ هیچ فایل یا مسیر محلی به سرویس ابری ارسال نمی‌شود. انتخاب موسیقی و ریتم برای مرحله ساخت پیش‌نویس نگه‌داری می‌شود.")
         ai_layout.addWidget(self.ai_analysis_output)
+
+        story_heading = QLabel("STORY & EDIT PLAN  |  طرح داستان، انتخاب نما و تأیید انسانی")
+        story_heading.setObjectName("panel_title")
+        ai_layout.addWidget(story_heading)
+        self.ai_story_json = QPlainTextEdit()
+        self.ai_story_json.setPlaceholderText("JSON طرح داستانِ تولیدشده توسط سرویس هوش مصنوعیِ مورداعتماد خودت را اینجا وارد یا بارگذاری کن…\nفعلاً هیچ ارائه‌دهنده ابری به برنامه متصل نیست.")
+        self.ai_story_json.setMaximumHeight(96)
+        ai_layout.addWidget(self.ai_story_json)
+        story_actions = QHBoxLayout()
+        self.ai_load_story_button = QPushButton("بارگذاری طرح JSON")
+        self.ai_load_story_button.clicked.connect(self.load_ai_story_json)
+        self.ai_validate_story_button = QPushButton("اعتبارسنجی داستان")
+        self.ai_validate_story_button.clicked.connect(self.validate_ai_story)
+        self.ai_select_shots_button = QPushButton("پیشنهاد انتخاب نماها")
+        self.ai_select_shots_button.setEnabled(False)
+        self.ai_select_shots_button.clicked.connect(self.run_ai_shot_selection)
+        story_actions.addWidget(self.ai_load_story_button)
+        story_actions.addWidget(self.ai_validate_story_button)
+        story_actions.addWidget(self.ai_select_shots_button)
+        ai_layout.addLayout(story_actions)
+        approvals = QHBoxLayout()
+        self.ai_story_approval = QCheckBox("داستان را بررسی و تأیید کردم")
+        self.ai_shot_approval = QCheckBox("انتخاب نماها را بررسی و تأیید کردم")
+        self.ai_story_approval.setEnabled(False)
+        self.ai_shot_approval.setEnabled(False)
+        self.ai_story_approval.toggled.connect(self._ai_approval_changed)
+        self.ai_shot_approval.toggled.connect(self._ai_approval_changed)
+        approvals.addWidget(self.ai_story_approval)
+        approvals.addWidget(self.ai_shot_approval)
+        ai_layout.addLayout(approvals)
+        plan_actions = QHBoxLayout()
+        self.ai_build_plan_button = QPushButton("ساخت پیش‌نویس تدوین موسیقی‌محور")
+        self.ai_build_plan_button.setEnabled(False)
+        self.ai_build_plan_button.clicked.connect(self.build_ai_edit_draft)
+        self.ai_preview_plan_button = QPushButton("پیش‌نمایش ایمن روی نسخه جداگانه")
+        self.ai_preview_plan_button.setEnabled(False)
+        self.ai_preview_plan_button.clicked.connect(self.preview_ai_edit_draft)
+        self.ai_apply_plan_button = QPushButton("اعمال نهایی طرح تأییدشده")
+        self.ai_apply_plan_button.setEnabled(False)
+        self.ai_apply_plan_button.clicked.connect(self.apply_ai_edit_draft)
+        plan_actions.addWidget(self.ai_build_plan_button)
+        plan_actions.addWidget(self.ai_preview_plan_button)
+        plan_actions.addWidget(self.ai_apply_plan_button)
+        ai_layout.addLayout(plan_actions)
         outer.addWidget(ai_panel)
 
         top_split = QSplitter(Qt.Horizontal)
@@ -1015,7 +1069,18 @@ class ZenithEditor(QMainWindow):
             return
         self.ai_analyze_button.setEnabled(False)
         self.ai_analysis_output.setPlainText("تحلیل محلی آغاز شد…\nتشخیص مرز صحنه، نمونه‌برداری تصویری و بررسی صوت در پس‌زمینه انجام می‌شود.")
-        task = LocalMediaAnalysisTask(self.timeline_project.to_dict(), paths)
+        self._ai_analysis_project_data = self.timeline_project.to_dict()
+        self._ai_story_blueprint = None
+        self._ai_shot_selection_report = None
+        self._ai_edit_draft = None
+        self._ai_execution_preview = None
+        self._ai_story_approval.setChecked(False)
+        self._ai_shot_approval.setChecked(False)
+        self.ai_select_shots_button.setEnabled(False)
+        self.ai_build_plan_button.setEnabled(False)
+        self.ai_preview_plan_button.setEnabled(False)
+        self.ai_apply_plan_button.setEnabled(False)
+        task = LocalMediaAnalysisTask(self._ai_analysis_project_data, paths)
         self._ai_analysis_task = task
         task.signals.finished.connect(self._ai_media_analysis_finished)
         self._ai_analysis_pool.start(task)
@@ -1057,6 +1122,189 @@ class ZenithEditor(QMainWindow):
         lines.append("نکته: BPM و نقاط ضرب فقط تخمین فنی‌اند؛ تأیید شنیداری لازم است. هنوز هیچ کلیپی جابه‌جا یا تدوین نشده است.")
         self.ai_analysis_output.setPlainText("\n".join(lines))
         self.statusBar().showMessage("تحلیل محلی آماده است؛ هیچ تغییری در تایم‌لاین اعمال نشد.")
+
+    def _ai_context_is_current(self) -> bool:
+        if self._ai_project_context is None or self._ai_analysis_project_data is None:
+            QMessageBox.information(self, "AI Editing", "ابتدا تحلیل رسانه‌های پروژه را اجرا کنید.")
+            return False
+        if self.timeline_project.to_dict() != self._ai_analysis_project_data:
+            QMessageBox.warning(self, "AI Editing", "پروژه پس از تحلیل تغییر کرده است. برای جلوگیری از استفاده از داده قدیمی، تحلیل را دوباره اجرا کنید.")
+            return False
+        return True
+
+    def load_ai_story_json(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(self, "بارگذاری طرح داستان", "", "JSON files (*.json);;All files (*.*)")
+        if not path:
+            return
+        try:
+            content = Path(path).read_text(encoding="utf-8")
+            self.ai_story_json.setPlainText(content)
+            self.statusBar().showMessage("طرح داستان بارگذاری شد؛ برای بررسی ساختار، اعتبارسنجی را اجرا کنید.")
+        except (OSError, UnicodeError) as exc:
+            QMessageBox.warning(self, "بارگذاری طرح", f"خواندن فایل ناموفق بود: {exc}")
+
+    def validate_ai_story(self) -> None:
+        if not self._ai_context_is_current():
+            return
+        try:
+            raw = json.loads(self.ai_story_json.toPlainText())
+            story = story_blueprint_from_dict(raw)
+            story.validate(self._ai_project_context)
+        except Exception as exc:
+            self._ai_story_blueprint = None
+            self._ai_shot_selection_report = None
+            self.ai_select_shots_button.setEnabled(False)
+            self.ai_story_approval.setChecked(False)
+            self.ai_story_approval.setEnabled(False)
+            QMessageBox.warning(self, "اعتبارسنجی داستان", str(exc))
+            return
+        self._ai_story_blueprint = story
+        self._ai_shot_selection_report = None
+        self._ai_edit_draft = None
+        self._ai_execution_preview = None
+        self.ai_story_approval.setChecked(False)
+        self.ai_shot_approval.setChecked(False)
+        self.ai_story_approval.setEnabled(True)
+        self.ai_shot_approval.setEnabled(False)
+        self.ai_select_shots_button.setEnabled(True)
+        self.ai_build_plan_button.setEnabled(False)
+        self.ai_preview_plan_button.setEnabled(False)
+        self.ai_apply_plan_button.setEnabled(False)
+        beat_lines = [f"{beat.sequence + 1}. {beat.title} — {beat.target_duration_seconds:.1f}s" for beat in story.beats]
+        self.ai_analysis_output.appendPlainText(
+            "\nطرح داستان معتبر است اما هنوز تأیید نشده است.\n"
+            f"خلاصه: {story.logline}\nمدت تخمینی: {story.estimated_duration_seconds:.1f}s | Acts: {len(story.acts)} | Beats: {len(story.beats)}\n"
+            + "\n".join(beat_lines)
+        )
+        self.statusBar().showMessage("طرح داستان معتبر شد؛ تأیید انسانی و انتخاب نماها هنوز لازم است.")
+
+    def run_ai_shot_selection(self) -> None:
+        if not self._ai_context_is_current() or self._ai_story_blueprint is None:
+            return
+        try:
+            report = select_shots_for_story(
+                self._ai_story_blueprint, self._ai_project_context, self._ai_media_analysis
+            )
+        except Exception as exc:
+            QMessageBox.warning(self, "انتخاب نماها", str(exc))
+            return
+        self._ai_shot_selection_report = report
+        self._ai_story_blueprint = report.blueprint
+        self._ai_shot_approval.setChecked(False)
+        self._ai_shot_approval.setEnabled(True)
+        self.ai_build_plan_button.setEnabled(False)
+        self.ai_preview_plan_button.setEnabled(False)
+        self.ai_apply_plan_button.setEnabled(False)
+        lines = [
+            f"\nگزارش انتخاب نما: {len(report.decisions)} ضرب داستانی | {report.candidates_considered} بازه بررسی‌شده",
+        ]
+        for decision in report.decisions:
+            lines.append(f"• {decision.beat_id}: {decision.confidence} | امتیاز {decision.score if decision.score is not None else '—'}")
+            lines.extend(f"  - {reason}" for reason in decision.reasons[:2])
+        lines.extend(f"هشدار: {warning}" for warning in report.warnings)
+        lines.append("انتخاب‌ها فقط پیشنهاد فنی‌اند؛ در نبود توصیف معنایی واقعی، ارتباط محتوایی نما با داستان تأیید نشده است.")
+        self.ai_analysis_output.appendPlainText("\n".join(lines))
+        self.statusBar().showMessage("پیشنهاد نماها آماده بررسی است؛ هنوز هیچ تغییری در تایم‌لاین انجام نشده.")
+
+    def _ai_approval_changed(self, *_: Any) -> None:
+        ready = bool(
+            self._ai_story_blueprint is not None
+            and self._ai_shot_selection_report is not None
+            and self.ai_story_approval.isChecked()
+            and self.ai_shot_approval.isChecked()
+            and self.ai_music_combo.currentData()
+        )
+        self.ai_build_plan_button.setEnabled(ready)
+        if not ready:
+            self.ai_edit_draft = None
+            self._ai_execution_preview = None
+            self.ai_preview_plan_button.setEnabled(False)
+            self.ai_apply_plan_button.setEnabled(False)
+
+    def build_ai_edit_draft(self) -> None:
+        if not self._ai_context_is_current():
+            return
+        if not self.ai_story_approval.isChecked() or not self.ai_shot_approval.isChecked():
+            QMessageBox.information(self, "تأییدهای لازم", "ابتدا داستان و انتخاب نماها را جداگانه بررسی و تأیید کنید.")
+            return
+        audio_asset_id = self.ai_music_combo.currentData()
+        if not audio_asset_id:
+            QMessageBox.information(self, "موسیقی مرجع", "یک فایل صوتی یا ویدیوی دارای صدا انتخاب کنید.")
+            return
+        try:
+            self._ai_edit_draft = build_music_aware_edit_draft(
+                self._ai_story_blueprint, self._ai_project_context, self._ai_media_analysis,
+                audio_asset_id=audio_asset_id,
+                story_approved=self.ai_story_approval.isChecked(),
+                shot_selection_approved=self.ai_shot_approval.isChecked(),
+                pace_profile=self.ai_pace_combo.currentData() or "balanced",
+            )
+        except Exception as exc:
+            self._ai_edit_draft = None
+            QMessageBox.warning(self, "ساخت پیش‌نویس تدوین", str(exc))
+            return
+        self._ai_execution_preview = None
+        self.ai_preview_plan_button.setEnabled(True)
+        self.ai_apply_plan_button.setEnabled(False)
+        plan = self._ai_edit_draft.edit_plan
+        operation_counts = {}
+        for operation in plan.operations:
+            operation_counts[operation.kind] = operation_counts.get(operation.kind, 0) + 1
+        lines = [
+            "\nپیش‌نویس تدوین ساخته شد — هنوز روی پروژه اصلی اعمال نشده است.",
+            plan.summary,
+            f"عملیات: {len(plan.operations)} | کلیپ‌ها: {operation_counts.get('add_clip', 0)} | انتقال‌ها: {operation_counts.get('set_transition', 0)}",
+            *[f"هشدار: {warning}" for warning in self._ai_edit_draft.warnings],
+        ]
+        self.ai_analysis_output.appendPlainText("\n".join(lines))
+        self.statusBar().showMessage("پیش‌نویس آماده پیش‌نمایش ایمن است؛ برای اعمال نهایی تأیید جداگانه لازم است.")
+
+    def preview_ai_edit_draft(self) -> None:
+        if not self._ai_context_is_current() or self._ai_edit_draft is None:
+            return
+        try:
+            assets = [item.asset for item in self._ai_project_context.assets if item.exists]
+            preview = preview_edit_plan(self.timeline_project, self._ai_edit_draft.edit_plan, assets)
+        except Exception as exc:
+            QMessageBox.warning(self, "پیش‌نمایش تدوین", str(exc))
+            return
+        self._ai_execution_preview = preview
+        self._ai_preview_base_project_data = self.timeline_project.to_dict()
+        self.ai_apply_plan_button.setEnabled(True)
+        self.ai_analysis_output.appendPlainText(
+            f"\nپیش‌نمایش ایمن موفق: {preview.operation_count} عملیات، {len(preview.created_clip_ids)} کلیپ جدید. "
+            f"مدت نسخه پیش‌نمایش: {preview.project.duration_frames / preview.project.fps:.2f}s. "
+            "این پیش‌نمایش روی نسخه جداگانه اجرا شد؛ پروژه اصلی هنوز تغییر نکرده است."
+        )
+        self.statusBar().showMessage("پیش‌نمایش روی نسخه جداگانه موفق شد؛ اعمال نهایی همچنان منتظر تأیید است.")
+
+    def apply_ai_edit_draft(self) -> None:
+        if self._ai_execution_preview is None or self._ai_edit_draft is None:
+            QMessageBox.information(self, "اعمال تدوین", "ابتدا پیش‌نمایش ایمن را با موفقیت اجرا کنید.")
+            return
+        if self.timeline_project.to_dict() != self._ai_preview_base_project_data:
+            QMessageBox.warning(self, "طرح قدیمی", "تایم‌لاین پس از پیش‌نمایش تغییر کرده است؛ پیش‌نمایش را دوباره اجرا کنید.")
+            self.ai_apply_plan_button.setEnabled(False)
+            return
+        answer = QMessageBox.question(
+            self, "تأیید نهایی تدوین",
+            "آیا می‌خواهید عملیات پیش‌نمایش‌شده به تایم‌لاین اصلی اعمال شود؟\nفایل‌های اصلی رسانه تغییر نمی‌کنند و عملیات با Undo قابل بازگشت است.",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+        )
+        if answer != QMessageBox.Yes:
+            return
+        try:
+            assets = [item.asset for item in self._ai_project_context.assets if item.exists]
+            self._push_undo()
+            apply_edit_plan(self.timeline_project, self._ai_edit_draft.edit_plan, assets, approved=True)
+        except Exception as exc:
+            QMessageBox.warning(self, "اعمال تدوین", str(exc))
+            return
+        self._refresh_timeline()
+        self._ai_execution_preview = None
+        self.ai_apply_plan_button.setEnabled(False)
+        self.ai_analysis_output.appendPlainText("\nطرح تأییدشده با موفقیت به تایم‌لاین اصلی اعمال شد. با Undo می‌توان آن را بازگرداند.")
+        self.statusBar().showMessage("تدوین هوشمند اعمال شد؛ فایل‌های منبع دست‌نخورده باقی ماندند.")
 
     def _preview_media_row(self, row: int) -> None:
         if row < 0 or row >= len(self.media_items):
