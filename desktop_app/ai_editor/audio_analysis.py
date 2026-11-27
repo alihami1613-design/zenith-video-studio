@@ -94,10 +94,10 @@ def analyze_audio(
 
     output = _decode_stderr(getattr(result, "stderr", ""))
     starts = [float(item) for item in re.findall(
-        r"silence_start:\\s*(-?\\d+(?:\\.\\d+)?)", output
+        r"silence_start:\s*(-?\d+(?:\.\d+)?)", output
     )]
     ends = [float(item) for item in re.findall(
-        r"silence_end:\\s*(-?\\d+(?:\\.\\d+)?)", output
+        r"silence_end:\s*(-?\d+(?:\.\d+)?)", output
     )]
     intervals: list[SilenceInterval] = []
     end_index = 0
@@ -113,6 +113,6 @@ def analyze_audio(
     return AudioAnalysis(
         asset_path=str(media_path),
         silence_intervals=tuple(intervals),
-        peak_db=_db_value(r"max_volume:\\s*([-+]?\\w+\\.?\\w*)\\s*dB", output),
-        mean_db=_db_value(r"mean_volume:\\s*([-+]?\\w+\\.?\\w*)\\s*dB", output),
+        peak_db=_db_value(r"max_volume:\s*([-+]?\w+\.?\w*)\s*dB", output),
+        mean_db=_db_value(r"mean_volume:\s*([-+]?\w+\.?\w*)\s*dB", output),
     )
