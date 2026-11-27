@@ -15,6 +15,7 @@ from ai_editor.quality_control import run_quality_checks
 from ai_editor.narrative import StoryBlueprint
 from ai_editor.shot_selection import ShotSelectionReport
 from ai_editor.audio_cues import AudioCueMap
+from ai_editor.contracts import EditPlan, EditOperation, ProjectBrief, MediaAsset
 
 
 PACE_LIMITS = {
@@ -199,3 +200,82 @@ def review_edit(
     return DirectorReviewReport(
         tuple(findings), errors, warnings, advisories, _fingerprint(project), True,
     )
+
+
+@dataclass(frozen=True)
+class DirectorFixDraft:
+    """A proposed, preview-only repair plan derived from selected review findings."""
+    edit_plan: EditPlan
+    finding_ids: tuple[str, ...]
+
+
+def build_gap_repair_plan(
+    report: DirectorReviewReport,
+    project: TimelineProject,
+    assets: Iterable[MediaAsset],
+    *,
+    selected_finding_ids: Iterable[str] | None = None,
+) -> DirectorFixDraft:
+    """Build conservative move-clip operations for measured primary-track gaps.
+
+    Only V1 gaps are eligible. No pacing, story, audio, or semantic issue is
+    auto-corrected. The resulting plan still requires preview and explicit approval.
+    """
+    if not isinstance(report, DirectorReviewReport) or not review_is_current(report, project):
+        raise ValueError("Director review is missing or stale; run the review again.")
+    asset_list = tuple(assets)
+    selected = set(selected_finding_ids) if selected_finding_ids is not None else {
+        item.finding_id for item in report.findings
+        if item.category == "continuity" and item.severity == "warning"
+        and item.finding_id.startswith("gap-V1-")
+    }
+    known = {item.finding_id: item for item in report.findings}
+    if not selected or any(item not in known for item in selected):
+        raise ValueError("Select at least one valid director finding.")
+    clips = {clip.clip_id: clip for clip in project.clips}
+    eligible = []
+    for finding_id in selected:
+        finding = known[finding_id]
+        if finding.category != "continuity" or finding.severity != "warning" or not finding_id.startswith("gap-V1-"):
+            raise ValueError("Only measured primary video-track gaps can be repaired automatically.")
+        parts = finding_id.split("-", 3)
+        if len(parts) != 4:
+            raise ValueError("Invalid gap finding identifier.")
+        previous_id, current_id = parts[2], parts[3]
+        if previous_id not in clips or current_id not in clips:
+            raise ValueError("A clip referenced by this finding no longer exists.")
+        previous, current = clips[previous_id], clips[current_id]
+        if previous.track != "V1" or current.track != "V1" or current.start_frame <= previous.end_frame:
+            raise ValueError("The selected gap is no longer present on V1.")
+        eligible.append((current.start_frame, previous.end_frame, current))
+    eligible.sort(key=lambda item: item[0])
+    operations = []
+    used_ids = set()
+    cursor_end = -1
+    for index, (_, target_start, clip) in enumerate(eligible):
+        if clip.clip_id in used_ids:
+            raise ValueError("A clip cannot receive multiple automatic position proposals.")
+        used_ids.add(clip.clip_id)
+        if target_start < cursor_end:
+            raise ValueError("Selected repairs would create an overlap; split the proposal into separate reviews.")
+        operations.append(EditOperation(
+            operation_id=f"director-gap-{index + 1}",
+            kind="move_clip",
+            parameters={"clip_id": clip.clip_id, "start_frame": target_start},
+            rationale="Close a measured empty gap on V1; review the isolated preview before applying.",
+        ))
+        cursor_end = target_start + clip.duration_frames
+    plan = EditPlan(
+        plan_id="director-gap-repair-v1",
+        brief=ProjectBrief(
+            prompt="Close only the selected, measured empty gaps on primary video track V1.",
+            style="conservative editorial repair",
+        ),
+        summary=f"Preview {len(operations)} proposed V1 gap repair(s). No source media is modified.",
+        operations=tuple(operations),
+        assumptions=("Only measured V1 gaps are addressed; artistic pacing and story choices remain unchanged.",),
+        warnings=("Review the isolated timeline preview. Every change requires separate user approval.",),
+        requires_user_approval=True,
+    )
+    plan.validate(asset_list, {clip.clip_id for clip in project.clips})
+    return DirectorFixDraft(plan, tuple(sorted(selected)))
