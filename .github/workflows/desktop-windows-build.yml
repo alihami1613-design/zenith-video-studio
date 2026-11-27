@@ -1,0 +1,47 @@
+name: Desktop Windows packaging
+
+on:
+  push:
+    branches:
+      - desktop-editor-foundation
+    paths:
+      - "desktop_app/**"
+      - "ZENITH_Desktop.spec"
+      - "build_windows.ps1"
+      - ".github/workflows/desktop-windows-build.yml"
+  workflow_dispatch:
+
+jobs:
+  windows-onedir:
+    runs-on: windows-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install desktop dependencies and PyInstaller
+        run: python -m pip install -r desktop_app/requirements.txt pyinstaller
+      - name: Build Windows application
+        run: pyinstaller --noconfirm --clean ZENITH_Desktop.spec
+      - name: Verify packaged executable and FFmpeg payload
+        shell: pwsh
+        run: |
+          $app = "dist/ZENITH Desktop"
+          if (-not (Test-Path "$app/ZENITH Desktop.exe")) {
+            throw "Packaged application executable is missing."
+          }
+          $ffmpeg = Get-ChildItem $app -Recurse -File |
+            Where-Object { $_.Name -match '^ffmpeg.*\.exe$' }
+          if (-not $ffmpeg) {
+            throw "Bundled FFmpeg executable is missing."
+          }
+          Write-Host "Executable and bundled FFmpeg found."
+      - name: Upload Windows build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: zenith-desktop-windows-unsigned
+          path: dist/ZENITH Desktop/
+          if-no-files-found: error
+          retention-days: 7
