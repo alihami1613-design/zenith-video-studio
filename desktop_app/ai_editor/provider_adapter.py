@@ -1,8 +1,9 @@
 """Secure OpenAI-compatible JSON provider adapter.
 
-The adapter is opt-in, remote by definition, reads credentials only from an
-environment variable, and accepts only bounded JSON requests/responses. It
-never reads project files or performs media uploads.
+The adapter is opt-in, remote by definition, reads credentials from the OS
+credential vault (with an environment-variable fallback for headless use), and
+accepts only bounded JSON requests/responses. It never reads project files or
+performs media uploads.
 """
 from __future__ import annotations
 
