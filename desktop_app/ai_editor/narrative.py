@@ -401,13 +401,15 @@ def request_story_blueprint(
     request = build_story_request(prompt, context, media_analysis)
     raw = provider.generate_story_blueprint(request)
     if isinstance(raw, str):
+        blueprint = parse_story_blueprint_json(raw, context)
+    elif isinstance(raw, Mapping):
         try:
-            raw = json.loads(raw.strip())
-        except json.JSONDecodeError as exc:
-            raise EditPlanError(f"Story provider returned invalid JSON: {exc.msg}") from exc
-    if not isinstance(raw, Mapping):
-        raise EditPlanError("Story provider must return a JSON object.")
-    blueprint = story_blueprint_from_dict(raw)
+            encoded = json.dumps(dict(raw), ensure_ascii=False, allow_nan=False)
+        except (TypeError, ValueError) as exc:
+            raise EditPlanError("Story provider returned non-JSON data.") from exc
+        blueprint = parse_story_blueprint_json(encoded, context)
+    else:
+        raise EditPlanError("Story provider must return a JSON object or JSON text.")
     if blueprint.original_prompt.strip() != prompt.strip():
         raise EditPlanError("Story provider changed the original user prompt.")
     blueprint.validate(context)
