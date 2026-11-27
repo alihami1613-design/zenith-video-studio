@@ -38,7 +38,7 @@ from polygon_mask_overlay import PolygonMaskOverlay
 from project_recovery import default_recovery_path, write_recovery, read_recovery, clear_recovery
 from ai_editor.project_context import build_project_context, media_inventory_fingerprint
 from ai_editor.media_analysis import analyze_project_media
-from ai_editor.narrative import story_blueprint_from_dict
+from ai_editor.narrative import build_story_request, story_blueprint_from_dict
 from ai_editor.shot_selection import select_shots_for_story
 from ai_editor.music_sync_workflow import build_music_aware_edit_draft
 from ai_editor.executor import preview_edit_plan, apply_edit_plan
@@ -417,6 +417,21 @@ class ZenithEditor(QMainWindow):
         story_heading = QLabel("STORY & EDIT PLAN  |  طرح داستان، انتخاب نما و تأیید انسانی")
         story_heading.setObjectName("panel_title")
         workflow_layout.addWidget(story_heading)
+        self.ai_story_prompt = QPlainTextEdit()
+        self.ai_story_prompt.setPlaceholderText(
+            "ایده فیلم را بنویسید: موضوع، هدف، مخاطب، لحن، زبان و مدت تقریبی… "
+            "مثلاً: یک مستند علمی ۵ دقیقه‌ای، دقیق و سینمایی درباره..."
+        )
+        self.ai_story_prompt.setMaximumHeight(72)
+        workflow_layout.addWidget(QLabel("۱) شرح پروژه و خواسته کارگردانی"))
+        workflow_layout.addWidget(self.ai_story_prompt)
+        self.ai_story_request_button = QPushButton("ساخت و ذخیره بسته درخواست داستان")
+        self.ai_story_request_button.setToolTip(
+            "یک درخواست ساختاریافته از شرح شما و فراداده پروژه می‌سازد؛ "
+            "هیچ مدل هوش مصنوعی فراخوانی نمی‌شود و هیچ رسانه‌ای آپلود نمی‌شود."
+        )
+        self.ai_story_request_button.clicked.connect(self.export_ai_story_request)
+        workflow_layout.addWidget(self.ai_story_request_button)
         self.ai_story_json = QPlainTextEdit()
         self.ai_story_json.setPlaceholderText("JSON طرح داستانِ تولیدشده توسط سرویس هوش مصنوعیِ مورداعتماد خودت را اینجا وارد یا بارگذاری کن…\nفعلاً هیچ ارائه‌دهنده ابری به برنامه متصل نیست.")
         self.ai_story_json.setMaximumHeight(96)
@@ -1152,6 +1167,44 @@ class ZenithEditor(QMainWindow):
             )
             return False
         return True
+
+    def export_ai_story_request(self) -> None:
+        """Export a privacy-safe story-generation request; no model is invoked."""
+        if not self._ai_context_is_current():
+            return
+        prompt = self.ai_story_prompt.toPlainText().strip()
+        if not prompt:
+            QMessageBox.information(
+                self, "شرح پروژه", "ابتدا موضوع و خواسته کارگردانی را بنویسید."
+            )
+            return
+        try:
+            request = build_story_request(
+                prompt, self._ai_project_context, self._ai_media_analysis
+            )
+        except Exception as exc:
+            QMessageBox.warning(self, "ساخت درخواست داستان", str(exc))
+            return
+        path, _ = QFileDialog.getSaveFileName(
+            self, "ذخیره بسته درخواست داستان", "zenith_story_request.json",
+            "JSON files (*.json)",
+        )
+        if not path:
+            return
+        try:
+            Path(path).write_text(
+                json.dumps(request, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        except (OSError, TypeError, ValueError) as exc:
+            QMessageBox.warning(self, "ذخیره درخواست داستان", str(exc))
+            return
+        self.ai_analysis_output.appendPlainText(
+            "\\nبسته درخواست داستان ذخیره شد. این فایل شامل شرح شما، شناسه‌های امن رسانه "
+            "و فراداده تحلیل است؛ مسیرهای محلی و بایت‌های فایل رسانه در آن قرار نمی‌گیرند. "
+            "هنوز هیچ سرویس هوش مصنوعی فراخوانی نشده است."
+        )
+        self.statusBar().showMessage("بسته درخواست داستان ذخیره شد؛ آماده ارسال به ارائه‌دهنده مورداعتماد شماست.")
 
     def load_ai_story_json(self) -> None:
         path, _ = QFileDialog.getOpenFileName(self, "بارگذاری طرح داستان", "", "JSON files (*.json);;All files (*.*)")
