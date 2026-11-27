@@ -46,6 +46,18 @@ class AudioRhythmSummary:
 
 
 @dataclass(frozen=True)
+class SpectralAudioSummary:
+    sample_rate: int
+    frame_size: int
+    hop_size: int
+    estimated_bpm: float | None
+    tempo_confidence: float
+    onset_candidates_seconds: tuple[float, ...]
+    pulse_candidates_seconds: tuple[float, ...]
+    warnings: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class AssetAnalysis:
     asset_id: str
     media_type: str
@@ -54,6 +66,7 @@ class AssetAnalysis:
     audio: AudioSummary | None = None
     audio_energy: AudioEnergySummary | None = None
     audio_rhythm: AudioRhythmSummary | None = None
+    spectral_audio: SpectralAudioSummary | None = None
     warnings: tuple[str, ...] = ()
 
 
@@ -77,6 +90,7 @@ def analyze_project_media(
     audio_analyzer: Callable | None = None,
     audio_energy_analyzer: Callable | None = None,
     rhythm_analyzer: Callable | None = None,
+    spectral_analyzer: Callable | None = None,
 ) -> MediaAnalysisReport:
     """Run local analysis per asset, isolating failures so one bad file won't abort all.
 
@@ -104,6 +118,9 @@ def analyze_project_media(
     if rhythm_analyzer is None:
         from ai_editor.rhythm_analysis import analyze_music_rhythm
         rhythm_analyzer = analyze_music_rhythm
+    if spectral_analyzer is None:
+        from ai_editor.spectral_flux import analyze_spectral_flux
+        spectral_analyzer = analyze_spectral_flux
 
     results: list[AssetAnalysis] = []
     report_warnings: list[str] = list(context.warnings)
@@ -115,6 +132,7 @@ def analyze_project_media(
         audio: AudioSummary | None = None
         audio_energy: AudioEnergySummary | None = None
         audio_rhythm: AudioRhythmSummary | None = None
+        spectral_audio: SpectralAudioSummary | None = None
 
         if not item.exists:
             continue
@@ -194,6 +212,27 @@ def analyze_project_media(
                         f"Music rhythm analysis failed ({type(exc).__name__}); "
                         "diagnostic details were withheld to protect local file paths."
                     )
+                try:
+                    spectral = spectral_analyzer(asset.path)
+                    spectral_audio = SpectralAudioSummary(
+                        sample_rate=int(spectral.sample_rate),
+                        frame_size=int(spectral.frame_size),
+                        hop_size=int(spectral.hop_size),
+                        estimated_bpm=spectral.estimated_bpm,
+                        tempo_confidence=float(spectral.tempo_confidence),
+                        onset_candidates_seconds=tuple(
+                            float(value) for value in spectral.onset_candidates_seconds
+                        ),
+                        pulse_candidates_seconds=tuple(
+                            float(value) for value in spectral.pulse_candidates_seconds
+                        ),
+                        warnings=tuple(str(value) for value in spectral.warnings),
+                    )
+                except Exception as exc:
+                    warnings.append(
+                        f"Spectral audio analysis failed ({type(exc).__name__}); "
+                        "diagnostic details were withheld to protect local file paths."
+                    )
             except Exception as exc:
                 warnings.append(
                     f"Audio energy analysis failed ({type(exc).__name__}); "
@@ -212,6 +251,7 @@ def analyze_project_media(
             audio=audio,
             audio_energy=audio_energy,
             audio_rhythm=audio_rhythm,
+            spectral_audio=spectral_audio,
             warnings=tuple(warnings),
         ))
 
