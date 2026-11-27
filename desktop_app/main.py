@@ -797,6 +797,14 @@ class ZenithEditor(QMainWindow):
         self.fade_out_slider.sliderPressed.connect(self._push_undo)
         self.fade_out_slider.valueChanged.connect(self._audio_controls_changed)
         inspector_layout.addWidget(self.fade_out_slider)
+        inspector_layout.addWidget(QLabel("Audio Fade Curve"))
+        self.audio_fade_curve_combo = QComboBox()
+        self.audio_fade_curve_combo.addItem("Equal-power / نرم (QSin)", "qsin")
+        self.audio_fade_curve_combo.addItem("Linear", "linear")
+        self.audio_fade_curve_combo.addItem("Half-sine", "hsin")
+        self.audio_fade_curve_combo.addItem("Exponential", "exp")
+        self.audio_fade_curve_combo.currentIndexChanged.connect(self._audio_controls_changed)
+        inspector_layout.addWidget(self.audio_fade_curve_combo)
 
         visual_heading = QLabel("Fade تصویری کلیپ")
         visual_heading.setObjectName("panel_title")
@@ -2196,8 +2204,12 @@ class ZenithEditor(QMainWindow):
             self.fade_out_label.setText("Fade Out: —")
             return
         blockers = [QSignalBlocker(control) for control in
-                    (self.volume_slider, self.fade_in_slider, self.fade_out_slider)]
+                    (self.volume_slider, self.fade_in_slider, self.fade_out_slider,
+                     self.audio_fade_curve_combo)]
         self.volume_slider.setValue(round(clip.volume * 100))
+        self.audio_fade_curve_combo.setCurrentIndex(
+            max(0, self.audio_fade_curve_combo.findData(clip.audio_fade_curve))
+        )
         max_fade = min(clip.duration_frames, self.timeline_project.fps * 10)
         self.fade_in_slider.setRange(0, max_fade)
         self.fade_out_slider.setRange(0, max_fade)
@@ -3096,6 +3108,7 @@ class ZenithEditor(QMainWindow):
                 volume=self.volume_slider.value() / 100.0,
                 fade_in_frames=self.fade_in_slider.value(),
                 fade_out_frames=self.fade_out_slider.value(),
+                audio_fade_curve=str(self.audio_fade_curve_combo.currentData() or "qsin"),
             )
         except (KeyError, ValueError) as exc:
             self.statusBar().showMessage(f"تنظیم صدای کلیپ اعمال نشد: {exc}")
