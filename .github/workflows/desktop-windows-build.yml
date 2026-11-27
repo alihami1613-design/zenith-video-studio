@@ -138,10 +138,16 @@ jobs:
           finally {
             if (-not $app.HasExited) { Stop-Process -Id $app.Id -Force }
           }
+          $userDataDir = Join-Path $env:LOCALAPPDATA "ZENITH/Recovery"
+          New-Item -ItemType Directory -Path $userDataDir -Force | Out-Null
+          $userDataSentinel = Join-Path $userDataDir "uninstall-preservation-test.txt"
+          Set-Content -Path $userDataSentinel -Value "Keep user recovery data" -NoNewline
           $uninstall = Start-Process -FilePath $uninstaller -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART" -Wait -PassThru
           if ($uninstall.ExitCode -ne 0) { throw "Silent uninstaller exited with code $($uninstall.ExitCode)." }
           if (Test-Path $installDir) { throw "Application install directory remains after uninstall." }
-          Write-Host "Windows installer Program Files install, launch and uninstall smoke test passed."
+          if (-not (Test-Path $userDataSentinel -PathType Leaf)) { throw "Uninstaller removed user recovery data from LocalAppData." }
+          if ((Get-Content $userDataSentinel -Raw) -ne "Keep user recovery data") { throw "User recovery data changed during uninstall." }
+          Write-Host "Windows installer Program Files install, launch, complete app removal and user-data preservation smoke test passed."
       - name: Upload Windows installer
         uses: actions/upload-artifact@v4
         with:
