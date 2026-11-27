@@ -3328,10 +3328,13 @@ class ZenithEditor(QMainWindow):
                 self._probe_pool.start(task)
         self._refresh_timeline()
 
+    def _append_history_snapshot(self, stack: list[dict[str, Any]], snapshot: dict[str, Any]) -> None:
+        stack.append(snapshot)
+        if len(stack) > self._history_limit:
+            del stack[:len(stack) - self._history_limit]
+
     def _push_undo(self) -> None:
-        self._undo_stack.append(self._history_snapshot())
-        if len(self._undo_stack) > self._history_limit:
-            self._undo_stack.pop(0)
+        self._append_history_snapshot(self._undo_stack, self._history_snapshot())
         self._redo_stack.clear()
         self._update_history_buttons()
 
@@ -3343,7 +3346,7 @@ class ZenithEditor(QMainWindow):
     def undo(self) -> None:
         if not self._undo_stack:
             return
-        self._redo_stack.append(self._history_snapshot())
+        self._append_history_snapshot(self._redo_stack, self._history_snapshot())
         self._restore_history_snapshot(self._undo_stack.pop())
         self._update_history_buttons()
         self.statusBar().showMessage("آخرین تغییر برگشت داده شد")
@@ -3351,7 +3354,7 @@ class ZenithEditor(QMainWindow):
     def redo(self) -> None:
         if not self._redo_stack:
             return
-        self._undo_stack.append(self._history_snapshot())
+        self._append_history_snapshot(self._undo_stack, self._history_snapshot())
         self._restore_history_snapshot(self._redo_stack.pop())
         self._update_history_buttons()
         self.statusBar().showMessage("تغییر دوباره اعمال شد")
