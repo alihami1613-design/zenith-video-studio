@@ -2179,7 +2179,7 @@ class ZenithEditor(QMainWindow):
             record = {
                 "path": path, "name": Path(path).name,
                 "metadata": None, "probe_state": "pending",
-                "proxy_path": None,
+                "missing_path": False, "proxy_path": None,
             }
             self.media_items.append(record)
             self.media_list.addItem(QListWidgetItem(record["name"] + "  •  در حال بررسی"))
@@ -2199,6 +2199,7 @@ class ZenithEditor(QMainWindow):
             if metadata is not None:
                 item["metadata"] = metadata
                 item["probe_state"] = "ready"
+                item["missing_path"] = False
                 details = []
                 seconds = metadata.get("duration_seconds")
                 if seconds:
@@ -2214,9 +2215,11 @@ class ZenithEditor(QMainWindow):
                 if metadata.get("has_audio"):
                     self._start_waveform(path)
             else:
-                item["probe_state"] = "failed"
+                item["probe_state"] = "missing" if not Path(path).is_file() else "failed"
+                item["missing_path"] = not Path(path).is_file()
                 item["probe_error"] = error
-                self.media_list.item(index).setText(item["name"] + "  •  خطا در خواندن مشخصات")
+                label = "فایل گمشده — اتصال مجدد لازم است" if item["missing_path"] else "خطا در خواندن مشخصات"
+                self.media_list.item(index).setText(item["name"] + "  •  " + label)
                 self.statusBar().showMessage(f"خواندن مشخصات {item['name']} ناموفق بود: {error}")
             break
 
@@ -2514,6 +2517,8 @@ class ZenithEditor(QMainWindow):
         self._redo_stack.clear()
         self._update_history_buttons()
         self.media_items = loaded_media
+        self.waveforms = {}
+        self.timeline_widget.set_waveforms(self.waveforms)
         self.project_path = project_path
         self.media_list.clear()
         for item in self.media_items:
@@ -2604,6 +2609,14 @@ class ZenithEditor(QMainWindow):
         if not replacement:
             return
         new_path = str(Path(replacement).resolve())
+        replacement_suffix = Path(new_path).suffix.lower()
+        linked_clips = [clip for clip in self.timeline_project.clips if clip.path == item["path"]]
+        if any(clip.media_type == "audio" for clip in linked_clips) and replacement_suffix not in AUDIO_EXTENSIONS:
+            QMessageBox.warning(self, "نوع رسانه ناسازگار", "برای این رسانه صوتی، یک فایل صوتی سازگار انتخاب کنید.")
+            return
+        if any(clip.media_type == "video" for clip in linked_clips) and replacement_suffix in AUDIO_EXTENSIONS:
+            QMessageBox.warning(self, "نوع رسانه ناسازگار", "برای این کلیپ تصویری، یک فایل تصویری یا ویدیویی انتخاب کنید.")
+            return
         if any(other is not item and other.get("path") == new_path for other in self.media_items):
             QMessageBox.warning(self, "اتصال مجدد", "این فایل از قبل در فهرست رسانه‌های پروژه وجود دارد.")
             return
