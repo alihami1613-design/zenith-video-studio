@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import Qt, QUrl, QSignalBlocker, QObject, Signal, QRunnable, QThreadPool, QEvent, QTimer
+from PySide6.QtCore import Qt, QUrl, QSignalBlocker, QObject, Signal, QRunnable, QThreadPool, QEvent, QTimer, QSettings
 from PySide6.QtGui import QAction, QFont
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtMultimediaWidgets import QVideoWidget
@@ -42,6 +42,7 @@ from ai_editor.narrative import build_story_request, parse_story_blueprint_json
 from ai_editor.shot_selection import select_shots_for_story
 from ai_editor.music_sync_workflow import build_music_aware_edit_draft
 from ai_editor.executor import preview_edit_plan, apply_edit_plan
+from ai_editor.credential_store import store_api_key, delete_api_key
 
 APP_NAME = "ZENITH Desktop"
 PROJECT_VERSION = 2
@@ -342,6 +343,7 @@ class ZenithEditor(QMainWindow):
         self.setMinimumSize(1100, 700)
         self._build_menu()
         self._build_ui()
+        self._load_ai_provider_settings()
         self._apply_theme()
         self._recovery_path = default_recovery_path()
         self._recovery_timer = QTimer(self)
@@ -414,6 +416,43 @@ class ZenithEditor(QMainWindow):
         self.ai_workflow_group.setChecked(False)
         workflow_layout = QVBoxLayout(self.ai_workflow_group)
         ai_layout.addWidget(self.ai_workflow_group)
+
+        self.ai_provider_group = QGroupBox("اتصال‌دهنده هوش مصنوعی ابری — تنظیمات و امنیت")
+        provider_layout = QVBoxLayout(self.ai_provider_group)
+        provider_row = QHBoxLayout()
+        self.ai_provider_endpoint = QLineEdit("https://api.openai.com/v1/chat/completions")
+        self.ai_provider_endpoint.setPlaceholderText("نشانی HTTPS ارائه‌دهنده سازگار با OpenAI")
+        self.ai_provider_model = QLineEdit()
+        self.ai_provider_model.setPlaceholderText("نام دقیق مدل")
+        provider_row.addWidget(QLabel("Endpoint:"))
+        provider_row.addWidget(self.ai_provider_endpoint, 3)
+        provider_row.addWidget(QLabel("Model:"))
+        provider_row.addWidget(self.ai_provider_model, 2)
+        provider_layout.addLayout(provider_row)
+        secret_row = QHBoxLayout()
+        self.ai_provider_key = QLineEdit()
+        self.ai_provider_key.setEchoMode(QLineEdit.Password)
+        self.ai_provider_key.setPlaceholderText("کلید API — فقط در خزانه امن سیستم ذخیره می‌شود")
+        self.ai_provider_account = QLineEdit("default")
+        self.ai_provider_account.setMaximumWidth(150)
+        self.ai_provider_save = QPushButton("ذخیره امن تنظیمات")
+        self.ai_provider_save.clicked.connect(self.save_ai_provider_settings)
+        self.ai_provider_delete = QPushButton("حذف کلید ذخیره‌شده")
+        self.ai_provider_delete.clicked.connect(self.delete_ai_provider_credential)
+        secret_row.addWidget(QLabel("API Key:"))
+        secret_row.addWidget(self.ai_provider_key, 3)
+        secret_row.addWidget(QLabel("حساب:"))
+        secret_row.addWidget(self.ai_provider_account)
+        secret_row.addWidget(self.ai_provider_save)
+        secret_row.addWidget(self.ai_provider_delete)
+        provider_layout.addLayout(secret_row)
+        provider_note = QLabel(
+            "کلید در فایل پروژه یا تنظیمات برنامه نوشته نمی‌شود؛ در خزانه اعتبارنامه سیستم‌عامل ذخیره می‌شود. "
+            "ذخیره تنظیمات به‌تنهایی هیچ درخواست اینترنتی ارسال نمی‌کند. ارسال اطلاعات پروژه فقط پس از رضایت جداگانه مجاز خواهد بود."
+        )
+        provider_note.setWordWrap(True)
+        provider_layout.addWidget(provider_note)
+        ai_layout.addWidget(self.ai_provider_group)
         story_heading = QLabel("STORY & EDIT PLAN  |  طرح داستان، انتخاب نما و تأیید انسانی")
         story_heading.setObjectName("panel_title")
         workflow_layout.addWidget(story_heading)
@@ -1083,6 +1122,64 @@ class ZenithEditor(QMainWindow):
             QSlider::handle:horizontal { background:#D6AE55; width:13px; margin:-5px 0; border-radius:6px; }
             QStatusBar { color:#B8B8B8; background:#191A1D; }
         """)
+
+    def _ai_provider_settings(self) -> QSettings:
+        return QSettings("ZENITH", "ZENITH Desktop")
+
+    def _load_ai_provider_settings(self) -> None:
+        settings = self._ai_provider_settings()
+        self.ai_provider_endpoint.setText(settings.value("ai/endpoint", "https://api.openai.com/v1/chat/completions"))
+        self.ai_provider_model.setText(settings.value("ai/model", ""))
+        self.ai_provider_account.setText(settings.value("ai/account", "default"))
+
+    def save_ai_provider_settings(self) -> None:
+        endpoint = self.ai_provider_endpoint.text().strip()
+        model = self.ai_provider_model.text().strip()
+        account = self.ai_provider_account.text().strip()
+        secret = self.ai_provider_key.text()
+        if not endpoint.startswith("https://") or not model or not account:
+            QMessageBox.warning(self, "تنظیمات ارائه‌دهنده", "نشانی HTTPS، نام مدل و شناسه حساب را کامل کنید.")
+            return
+        try:
+            from ai_editor.provider_adapter import OpenAICompatibleConfig
+            OpenAICompatibleConfig(endpoint=endpoint, model=model).validate()
+            if secret:
+                store_api_key("openai-compatible", account, secret)
+            settings = self._ai_provider_settings()
+            settings.setValue("ai/endpoint", endpoint)
+            settings.setValue("ai/model", model)
+            settings.setValue("ai/account", account)
+            settings.sync()
+            if settings.status() != QSettings.NoError:
+                raise OSError("Could not persist provider settings.")
+        except Exception as exc:
+            QMessageBox.warning(self, "ذخیره تنظیمات", str(exc))
+            return
+        self.ai_provider_key.clear()
+        self.ai_analysis_output.appendPlainText(
+            "\\nتنظیمات ارائه‌دهنده ذخیره شد. کلید، در صورت واردشدن، فقط در خزانه امن سیستم‌عامل نگه‌داری می‌شود؛ هیچ درخواست ابری ارسال نشده است."
+        )
+        self.statusBar().showMessage("تنظیمات ارائه‌دهنده ذخیره شد؛ هنوز اتصالی برقرار نشده است.")
+
+    def delete_ai_provider_credential(self) -> None:
+        account = self.ai_provider_account.text().strip()
+        if not account:
+            QMessageBox.warning(self, "حذف کلید", "شناسه حساب را وارد کنید.")
+            return
+        answer = QMessageBox.question(
+            self, "حذف کلید API",
+            "کلید این ارائه‌دهنده از خزانه امن سیستم‌عامل حذف شود؟",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+        )
+        if answer != QMessageBox.Yes:
+            return
+        try:
+            delete_api_key("openai-compatible", account)
+        except Exception as exc:
+            QMessageBox.warning(self, "حذف کلید", str(exc))
+            return
+        self.ai_provider_key.clear()
+        self.statusBar().showMessage("کلید ذخیره‌شده حذف شد.")
 
     def run_ai_media_analysis(self) -> None:
         if self._ai_analysis_task is not None or self._ai_analysis_pool.activeThreadCount():
