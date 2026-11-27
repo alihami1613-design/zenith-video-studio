@@ -269,5 +269,140 @@ class TransformRenderIntegrationTests(unittest.TestCase):
                 self.assertGreater(rms, 0.0178, f"Audio RMS too low at {start:.2f}s: {rms:.6f}")
 
 
+    def test_final_mp4_composites_video_layers_and_mixes_independent_audio_tracks(self):
+        from video_render import render_timeline_mp4
+
+        with tempfile.TemporaryDirectory(prefix="zenith_multilayer_final_test_") as folder:
+            root = Path(folder)
+            base = root / "base_red.mp4"
+            overlay = root / "overlay_green_blue.mp4"
+            narration = root / "narration_440.wav"
+            music = root / "music_880.wav"
+
+            base_result = subprocess.run(
+                [FFMPEG, "-y", "-hide_banner", "-loglevel", "error",
+                 "-f", "lavfi", "-i", "color=c=red:size=128x96:rate=25:duration=4",
+                 "-an", "-c:v", "libx264", "-preset", "ultrafast",
+                 "-threads", "1", "-pix_fmt", "yuv420p", str(base)],
+                capture_output=True, text=True, timeout=45,
+            )
+            self.assertEqual(base_result.returncode, 0, base_result.stderr[-2000:])
+
+            overlay_result = subprocess.run(
+                [FFMPEG, "-y", "-hide_banner", "-loglevel", "error",
+                 "-f", "lavfi", "-i",
+                 "color=c=green:size=128x96:rate=25:duration=4,drawbox=x=64:y=0:w=64:h=96:color=blue:t=fill",
+                 "-an", "-c:v", "libx264", "-preset", "ultrafast",
+                 "-threads", "1", "-pix_fmt", "yuv420p", str(overlay)],
+                capture_output=True, text=True, timeout=45,
+            )
+            self.assertEqual(overlay_result.returncode, 0, overlay_result.stderr[-2000:])
+
+            for target, frequency in ((narration, 440), (music, 880)):
+                audio_result = subprocess.run(
+                    [FFMPEG, "-y", "-hide_banner", "-loglevel", "error",
+                     "-f", "lavfi", "-i",
+                     f"sine=frequency={frequency}:sample_rate=48000:duration=4",
+                     "-c:a", "pcm_s16le", str(target)],
+                    capture_output=True, text=True, timeout=30,
+                )
+                self.assertEqual(audio_result.returncode, 0, audio_result.stderr[-1500:])
+
+            def clip(path_value, name, track, media_type, *, has_audio=False,
+                     audio_track=None, chroma=False):
+                return SimpleNamespace(
+                    path=str(path_value), name=name, track=track,
+                    clip_id=name, media_type=media_type,
+                    start_frame=0, source_in=0, duration_frames=100,
+                    end_frame=100, color_grade={}, has_audio=has_audio,
+                    audio_track=audio_track or track, volume=1.0,
+                    fade_in_frames=0, fade_out_frames=0,
+                    video_fade_in_frames=0, video_fade_out_frames=0,
+                    transition_in_frames=0, playback_rate=1.0,
+                    reverse_playback=False, speed_ramp=[],
+                    chroma_key_enabled=chroma,
+                    chroma_key_color="#00FF00",
+                    chroma_key_similarity=0.18,
+                    chroma_key_blend=0.02,
+                )
+
+            clips = [
+                clip(base, "base-picture", "V1", "video"),
+                clip(overlay, "top-overlay", "V2", "video", chroma=True),
+                clip(narration, "narration", "A1", "audio"),
+                clip(music, "music", "A2", "audio"),
+            ]
+            project = SimpleNamespace(
+                fps=25, width=128, height=96, duration_frames=100,
+                clips=clips,
+                audio_track_settings={
+                    "A1": {"volume": 1.0, "muted": False, "solo": False},
+                    "A2": {"volume": 0.5, "muted": False, "solo": False},
+                },
+                audio_ducking={},
+            )
+            output = root / "multilayer_final.mp4"
+            reports = []
+            rendered = render_timeline_mp4(
+                project, output, timeout_seconds=120,
+                validation_callback=reports.append,
+            )
+            self.assertEqual(rendered, output.resolve())
+            self.assertTrue(output.is_file())
+            self.assertEqual(len(reports), 1)
+            self.assertTrue(reports[0].valid)
+            self.assertTrue(reports[0].decode_succeeded)
+            self.assertTrue(reports[0].has_audio)
+            self.assertAlmostEqual(reports[0].duration_seconds, 4.0, delta=0.15)
+
+            # Decode one composited frame: left side must reveal V1 through
+            # the keyed green area; right side must show the blue V2 overlay.
+            frame = subprocess.run(
+                [FFMPEG, "-hide_banner", "-loglevel", "error", "-ss", "1.0",
+                 "-i", str(output), "-frames:v", "1", "-f", "rawvideo",
+                 "-pix_fmt", "rgb24", "pipe:1"],
+                capture_output=True, timeout=30,
+            )
+            self.assertEqual(frame.returncode, 0, frame.stderr[-1500:])
+            self.assertEqual(len(frame.stdout), 128 * 96 * 3)
+            left_index = (48 * 128 + 24) * 3
+            right_index = (48 * 128 + 96) * 3
+            left_rgb = tuple(frame.stdout[left_index:left_index + 3])
+            right_rgb = tuple(frame.stdout[right_index:right_index + 3])
+            self.assertGreater(left_rgb[0], left_rgb[1] * 1.5,
+                               f"V1 base should show through chroma key, got {left_rgb}")
+            self.assertGreater(right_rgb[2], right_rgb[0] * 1.5,
+                               f"V2 blue overlay should be on top, got {right_rgb}")
+
+            # Both independent audio tracks must survive the final mix.
+            import math
+            import struct
+            audio = subprocess.run(
+                [FFMPEG, "-hide_banner", "-loglevel", "error", "-i", str(output),
+                 "-ss", "1.0", "-t", "2.0", "-vn", "-ac", "1", "-ar", "8000",
+                 "-f", "s16le", "-acodec", "pcm_s16le", "pipe:1"],
+                capture_output=True, timeout=30,
+            )
+            self.assertEqual(audio.returncode, 0, audio.stderr[-1500:])
+            sample_bytes = len(audio.stdout) - (len(audio.stdout) % 2)
+            self.assertGreater(sample_bytes, 0)
+            samples = struct.unpack("<" + "h" * (sample_bytes // 2),
+                                     audio.stdout[:sample_bytes])
+            count = len(samples)
+            self.assertGreater(count, 8000)
+            def spectral_power(frequency):
+                real = 0.0
+                imag = 0.0
+                for index, sample in enumerate(samples):
+                    angle = 2.0 * math.pi * frequency * index / 8000.0
+                    real += sample * math.cos(angle)
+                    imag -= sample * math.sin(angle)
+                return real * real + imag * imag
+            self.assertGreater(spectral_power(440), 1.0e12,
+                               "Narration track tone missing from final mix")
+            self.assertGreater(spectral_power(880), 1.0e11,
+                               "Music track tone missing from final mix")
+
+
 if __name__ == "__main__":
     unittest.main()
