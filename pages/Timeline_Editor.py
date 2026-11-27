@@ -76,7 +76,7 @@ if st.session_state.timeline_video:
             st.error(f"خطا در پردازش: {e}")
 
 
-st.subheader("۵ — ترکیب کلیپ‌ها و ساخت ویدئوی واحد")
+st.subheader("۵ — تنظیم صدای خروجی")\nvideo_gain=st.slider("میزان صدای ویدئوهای اصلی",0.0,2.0,1.0,0.1,key="video_gain")\naudio_gain=st.slider("میزان صدای موسیقی/فایل A1",0.0,2.0,0.35,0.05,key="audio_gain")\nselected_audio_idx=None\nif st.session_state.timeline_audio:\n    selected_audio_idx=st.selectbox("انتخاب فایل صوتی برای خروجی",range(len(st.session_state.timeline_audio)),format_func=lambda n:st.session_state.timeline_audio[n]["name"],key="mix_audio_select")\n\nst.subheader("۶ — ترکیب کلیپ‌ها و ساخت ویدئوی واحد")
 st.caption("کلیپ‌ها بر اساس ترتیب زمان شروع پشت سر هم ترکیب می‌شوند. فاصله‌های خالی، لایه‌ها و صداهای مستقل هنوز در خروجی نهایی لحاظ نمی‌شوند. خروجی سبک 720p برای کاهش فشار روی سیستم ساخته می‌شود.")
 if len(st.session_state.timeline_video)>=2:
     if st.button("ساخت ویدئوی ترکیبی از کلیپ‌ها"):
@@ -120,7 +120,7 @@ if len(st.session_state.timeline_video)>=2:
 elif st.session_state.timeline_video:
     st.info("برای ترکیب، حداقل دو کلیپ به تایم‌لاین اضافه کنید.")
 
-st.subheader("۶ — نمای ترتیب زمانی")
+st.subheader("۷ — نمای ترتیب زمانی")
 clips=sorted(st.session_state.timeline_video,key=lambda x:x.get("start",0))
 if clips:
     total=max((c.get("start",0)+c.get("duration",0) for c in clips),default=0)
@@ -130,4 +130,4 @@ if clips:
 else:
     st.info("برای آغاز، ویدئو وارد کنید.")
 
-st.caption("استخراج کلیپ به MP4 با FFmpeg پیاده‌سازی شده؛ ترکیب پشت سر هم کلیپ‌ها در خروجی 720p اضافه شده است؛ همگام‌سازی چند ترک، فاصله زمانی دقیق، افکت‌ها و رندر حرفه‌ای هنوز در مراحل بعدی هستند.")
+st.caption("استخراج کلیپ به MP4 با FFmpeg پیاده‌سازی شده؛ ترکیب پشت سر هم کلیپ‌ها در خروجی 720p اضافه شده است؛ ترکیب صدای اصلی و یک فایل صوتی جدا با تنظیم میزان صدا اضافه شده؛ چند ترک صوتی هم‌زمان، زمان‌بندی مستقل صدا، افکت‌ها و رندر حرفه‌ای هنوز در مراحل بعدی هستند.")
