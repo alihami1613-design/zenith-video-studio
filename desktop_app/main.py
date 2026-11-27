@@ -241,6 +241,7 @@ class AudioRenderTask(QRunnable):
 
 class VideoRenderSignals(QObject):
     finished = Signal(str, str)
+    validation = Signal(object)
 
 
 class VideoRenderTask(QRunnable):
@@ -255,7 +256,10 @@ class VideoRenderTask(QRunnable):
     def run(self) -> None:
         try:
             project = TimelineProject.from_dict(self.project_data)
-            result = render_timeline_mp4(project, self.output_path)
+            result = render_timeline_mp4(
+                project, self.output_path,
+                validation_callback=lambda report: self.signals.validation.emit(report.to_dict()),
+            )
             self.signals.finished.emit(str(result), "")
         except Exception as exc:
             self.signals.finished.emit("", str(exc))
@@ -3534,13 +3538,18 @@ class ZenithEditor(QMainWindow):
         if output.suffix.lower() != ".mp4":
             output = output.with_suffix(".mp4")
         task = VideoRenderTask(self.timeline_project.to_dict(), str(output))
+        task.signals.validation.connect(self._video_render_validation_ready)
         task.signals.finished.connect(self._video_render_finished)
+        self._video_render_validation_report = None
         self._video_render_task = task
         self.video_render_button.setEnabled(False)
         self.statusBar().showMessage(
             "رندر MP4 در پس‌زمینه آغاز شد؛ رابط آزاد می‌ماند. لطفاً تا پایان رندر برنامه را نبندید."
         )
         self._video_render_pool.start(task)
+
+    def _video_render_validation_ready(self, report: dict) -> None:
+        self._video_render_validation_report = report
 
     def _video_render_finished(self, output_path: str, error: str) -> None:
         self._video_render_task = None
@@ -3550,9 +3559,22 @@ class ZenithEditor(QMainWindow):
             self.statusBar().showMessage("ساخت خروجی MP4 ناموفق بود")
             return
         self.statusBar().showMessage(f"ویدیوی نهایی آماده شد: {Path(output_path).name}")
+        report = self._video_render_validation_report or {}
+        visual = report.get("visual_quality") or {}
+        black_count = len(visual.get("black_intervals") or [])
+        freeze_count = len(visual.get("freeze_intervals") or [])
+        if report.get("visual_scan_error"):
+            quality_note = "\\n\\nاسکن بصری کامل نشد؛ لطفاً خروجی را چشمی بررسی کنید."
+        elif black_count or freeze_count:
+            quality_note = (
+                f"\\n\\nبازبینی بصری: {black_count} بازه سیاه و {freeze_count} بازه فریز شناسایی شد. "
+                "این موارد ممکن است عمدی باشند؛ پیش از انتشار آن‌ها را بررسی کنید."
+            )
+        else:
+            quality_note = "\\n\\nاسکن بصری مورد مشکوکِ ممتدِ سیاهی یا فریز ثبت نکرد."
         QMessageBox.information(
             self, "خروجی MP4 آماده شد",
-            f"ویدیوی H.264 با موفقیت ساخته شد.\n\n{output_path}"
+            f"ویدیوی H.264 ساخته و رمزگشایی کامل آن بررسی شد.\\n\\n{output_path}{quality_note}"
         )
 
     def _audio_mix_finished(self, output_path: str, error: str) -> None:
