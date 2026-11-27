@@ -100,7 +100,7 @@ class MusicSyncWorkflowTests(unittest.TestCase):
             )
 
     def test_video_without_audio_stream_is_rejected(self):
-        context = make_context()
+        context = context_with_music()
         with self.assertRaisesRegex(EditPlanError, "no audio stream"):
             build_music_aware_edit_draft(
                 make_story(), context, report_with_music(),
