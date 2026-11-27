@@ -250,19 +250,23 @@ class TransformRenderIntegrationTests(unittest.TestCase):
 
             # The final mux must retain audible program material throughout
             # the picture dissolve and after the incoming clip takes over.
+            import math
+            import struct
             for start, end in ((2.55, 2.75), (3.35, 3.55)):
                 measured = subprocess.run(
-                    [FFMPEG, "-hide_banner", "-loglevel", "info", "-i", str(output),
-                     "-vn", "-af", f"atrim=start={start}:end={end},astats=metadata=1:reset=0",
-                     "-f", "null", "-"],
-                    capture_output=True, text=True, timeout=30,
+                    [FFMPEG, "-hide_banner", "-loglevel", "error", "-i", str(output),
+                     "-ss", str(start), "-t", str(end - start), "-vn",
+                     "-ac", "1", "-ar", "8000", "-f", "s16le",
+                     "-acodec", "pcm_s16le", "pipe:1"],
+                    capture_output=True, timeout=30,
                 )
                 self.assertEqual(measured.returncode, 0, measured.stderr[-1500:])
-                import re
-                peaks = re.findall(r"RMS level dB:\s*(-?\d+(?:\.\d+)?)", measured.stderr)
-                self.assertTrue(peaks, measured.stderr[-2000:])
-                self.assertTrue(any(float(value) > -35.0 for value in peaks), measured.stderr[-2000:])
-
+                usable_bytes = len(measured.stdout) - (len(measured.stdout) % 2)
+                self.assertGreater(usable_bytes, 0)
+                samples = struct.unpack("<" + "h" * (usable_bytes // 2),
+                                        measured.stdout[:usable_bytes])
+                rms = math.sqrt(sum(sample * sample for sample in samples) / len(samples)) / 32768.0
+                self.assertGreater(rms, 0.0178, f"Audio RMS too low at {start:.2f}s: {rms:.6f}")
 
 
 if __name__ == "__main__":
