@@ -423,6 +423,7 @@ class ZenithEditor(QMainWindow):
             "مثلاً: یک مستند علمی ۵ دقیقه‌ای، دقیق و سینمایی درباره..."
         )
         self.ai_story_prompt.setMaximumHeight(72)
+        self.ai_story_prompt.textChanged.connect(self._invalidate_ai_story)
         workflow_layout.addWidget(QLabel("۱) شرح پروژه و خواسته کارگردانی"))
         workflow_layout.addWidget(self.ai_story_prompt)
         self.ai_story_request_button = QPushButton("ساخت و ذخیره بسته درخواست داستان")
