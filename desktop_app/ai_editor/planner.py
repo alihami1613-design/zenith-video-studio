@@ -11,6 +11,7 @@ from typing import Any, Mapping, Protocol
 
 from ai_editor.contracts import EditPlan, EditPlanError, MediaAsset, plan_from_dict
 from ai_editor.project_context import ProjectContext, build_project_context
+from ai_editor.media_analysis import MediaAnalysisReport
 from timeline_model import TimelineProject
 
 
@@ -67,6 +68,7 @@ PLAN_SCHEMA: dict[str, Any] = {
 def build_planning_request(
     brief: str,
     context: ProjectContext,
+    media_analysis: MediaAnalysisReport | None = None,
 ) -> dict[str, Any]:
     """Build a privacy-minimized provider request from a local project context."""
     if not isinstance(brief, str) or not brief.strip():
@@ -114,6 +116,7 @@ def build_planning_request(
         "assets": assets,
         "timeline_clips": clips,
         "context_warnings": list(context.warnings),
+        "media_analysis": media_analysis.to_dict() if media_analysis is not None else None,
         "privacy": {
             "media_bytes_included": False,
             "local_paths_included": False,
@@ -149,6 +152,9 @@ def request_edit_plan(
     project: TimelineProject,
     provider: EditPlanProvider,
     media_paths: tuple[str, ...] | list[str] = (),
+    *,
+    media_analysis: MediaAnalysisReport | None = None,
+    allow_cloud_planning: bool = False,
 ) -> EditPlan:
     """Ask an explicitly supplied provider for a plan, then validate it locally.
 
@@ -157,8 +163,13 @@ def request_edit_plan(
     """
     if provider is None or not callable(getattr(provider, "generate_edit_plan", None)):
         raise EditPlanError("A configured edit-plan provider is required.")
+    is_remote = getattr(provider, "is_remote", True)
+    if not isinstance(is_remote, bool):
+        raise EditPlanError("Provider is_remote must be an explicit boolean.")
+    if is_remote and allow_cloud_planning is not True:
+        raise EditPlanError("Cloud AI planning requires explicit user permission.")
     context = build_project_context(project, media_paths)
-    request = build_planning_request(brief, context)
+    request = build_planning_request(brief, context, media_analysis)
     raw = provider.generate_edit_plan(request)
     plan = plan_from_dict(_decode_provider_result(raw))
     assets = tuple(item.asset for item in context.assets if item.exists and item.warning is None)
