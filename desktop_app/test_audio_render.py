@@ -80,10 +80,10 @@ class AudioRenderCommandTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             source = Path(folder) / "voice.wav"
             source.touch()
-            command = build_audio_mix_command(
-                "ffmpeg", [self.make_clip(source, audio_muted=True)], 30, "mix.wav"
-            )
-        self.assertIn("هیچ کلیپ صوتی", " ".join(command)) if False else None
+            with self.assertRaises(ValueError):
+                build_audio_mix_command(
+                    "ffmpeg", [self.make_clip(source, audio_muted=True)], 30, "mix.wav"
+                )
 
     def test_clip_solo_excludes_other_clips_from_mix(self):
         with tempfile.TemporaryDirectory() as folder:
