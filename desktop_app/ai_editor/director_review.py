@@ -36,6 +36,7 @@ class DirectorFinding:
     recommendation: str
     clip_id: str | None = None
     beat_id: str | None = None
+    related_clip_id: str | None = None
     requires_user_approval: bool = True
 
 
@@ -93,7 +94,7 @@ def review_edit(
             clip_id: str | None = None, beat_id: str | None = None) -> None:
         findings.append(DirectorFinding(
             fid, category, severity, title, evidence, recommendation,
-            clip_id, beat_id, True,
+            clip_id, beat_id, None, True,
         ))
 
     # Structural and source-media findings are grounded in the existing QC engine.
@@ -124,6 +125,9 @@ def review_edit(
                     (f"{delta} empty frame(s) between {previous.name} and {current.name}.",),
                     "Check whether the gap is intentional; close it or add a deliberate hold/fade if needed.",
                     clip_id=current.clip_id,
+                )
+                findings[-1] = DirectorFinding(
+                    **{**asdict(findings[-1]), "related_clip_id": previous.clip_id}
                 )
             elif delta < 0:
                 add(
@@ -238,11 +242,8 @@ def build_gap_repair_plan(
         finding = known[finding_id]
         if finding.category != "continuity" or finding.severity != "warning" or not finding_id.startswith("gap-V1-"):
             raise ValueError("Only measured primary video-track gaps can be repaired automatically.")
-        parts = finding_id.split("-", 3)
-        if len(parts) != 4:
-            raise ValueError("Invalid gap finding identifier.")
-        previous_id, current_id = parts[2], parts[3]
-        if previous_id not in clips or current_id not in clips:
+        previous_id, current_id = finding.related_clip_id, finding.clip_id
+        if not previous_id or not current_id or previous_id not in clips or current_id not in clips:
             raise ValueError("A clip referenced by this finding no longer exists.")
         previous, current = clips[previous_id], clips[current_id]
         if previous.track != "V1" or current.track != "V1" or current.start_frame <= previous.end_frame:
