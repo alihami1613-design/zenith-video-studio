@@ -6,7 +6,7 @@ timeline, reads media bytes, uploads assets, or claims semantic understanding.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-import math
+from pathlib import Path
 from typing import Any, Iterable
 
 from timeline_model import TimelineProject
@@ -16,6 +16,7 @@ from ai_editor.narrative import StoryBlueprint
 from ai_editor.shot_selection import ShotSelectionReport
 from ai_editor.audio_cues import AudioCueMap
 from ai_editor.contracts import EditPlan, EditOperation, ProjectBrief, MediaAsset
+from ai_editor.media_analysis import MediaAnalysisReport
 
 
 PACE_LIMITS = {
@@ -75,6 +76,7 @@ def review_edit(
     story: StoryBlueprint | None = None,
     shot_selection: ShotSelectionReport | None = None,
     audio_cue_maps: Iterable[AudioCueMap] = (),
+    media_analysis: MediaAnalysisReport | None = None,
     pace_profile: str = "balanced",
 ) -> DirectorReviewReport:
     """Create a conservative director's review from measured project evidence."""
@@ -88,6 +90,8 @@ def review_edit(
         raise TypeError("story must be a StoryBlueprint")
     if shot_selection is not None and not isinstance(shot_selection, ShotSelectionReport):
         raise TypeError("shot_selection must be a ShotSelectionReport")
+    if media_analysis is not None and not isinstance(media_analysis, MediaAnalysisReport):
+        raise TypeError("media_analysis must be a MediaAnalysisReport")
 
     findings: list[DirectorFinding] = []
 
@@ -199,6 +203,101 @@ def review_edit(
                     (f"{cue.cue_type}: frames {cue.start_frame}-{cue.end_frame}.", cue.reason),
                     "Listen in context and decide whether to preserve the pause, tighten it, or use it as a deliberate beat.",
                 )
+
+    # Cross-check measured source-scene boundaries against the actual selected
+    # source ranges. This identifies possible hidden scene changes, not semantic
+    # content and not a recommendation to split automatically.
+    if media_analysis is not None and context is not None:
+        analysis_by_id = {item.asset_id: item for item in media_analysis.assets}
+        inventory_by_path = {
+            str(Path(item.asset.path).expanduser().resolve()).casefold(): item
+            for item in context.assets
+        }
+        for clip in project.clips:
+            if not (clip.track.startswith("V") and clip.media_type == "video"):
+                continue
+            inventory = inventory_by_path.get(
+                str(Path(clip.path).expanduser().resolve()).casefold()
+            )
+            if inventory is None:
+                continue
+            measured = analysis_by_id.get(inventory.asset.asset_id)
+            if measured is None or not measured.scene_boundaries_seconds:
+                continue
+            source_fps = inventory.source_fps or float(project.fps)
+            if not math.isfinite(source_fps) or source_fps <= 0:
+                continue
+            source_start = clip.source_in / source_fps
+            source_end = source_start + (
+                clip.duration_frames * clip.playback_rate / max(1, project.fps)
+            )
+            for boundary_index, boundary_seconds in enumerate(measured.scene_boundaries_seconds):
+                if not math.isfinite(boundary_seconds):
+                    continue
+                if source_start + (1.0 / source_fps) < boundary_seconds < source_end - (1.0 / source_fps):
+                    add(
+                        f"hidden-scene-boundary-{clip.clip_id}-{boundary_index + 1}",
+                        "visual_continuity", "advisory",
+                        "A detected source-scene change falls inside this selected clip",
+                        (
+                            f"Source boundary at {boundary_seconds:.3f}s.",
+                            f"Selected source range: {source_start:.3f}s–{source_end:.3f}s.",
+                        ),
+                        "Preview around this point. Consider a motivated split only if it improves the story; the detector measures visual change, not scene meaning.",
+                        clip_id=clip.clip_id,
+                    )
+
+        # Compare V1 edit boundaries with spectral pulse candidates from audio
+        # clips. Pulse candidates are estimates, never verified musical beats.
+        video_cuts = sorted({
+            clip.start_frame for clip in project.clips
+            if clip.track == "V1" and clip.media_type in {"video", "image"}
+            and clip.start_frame > 0
+        })
+        if video_cuts:
+            for audio_clip in (
+                clip for clip in project.clips
+                if clip.track.startswith("A") and clip.media_type == "audio"
+            ):
+                inventory = inventory_by_path.get(
+                    str(Path(audio_clip.path).expanduser().resolve()).casefold()
+                )
+                if inventory is None:
+                    continue
+                measured = analysis_by_id.get(inventory.asset.asset_id)
+                spectral = measured.spectral_audio if measured is not None else None
+                if spectral is None:
+                    continue
+                source_fps = inventory.source_fps or float(project.fps)
+                if not math.isfinite(source_fps) or source_fps <= 0:
+                    continue
+                for pulse_index, pulse_seconds in enumerate(spectral.pulse_candidates_seconds):
+                    if not math.isfinite(pulse_seconds):
+                        continue
+                    timeline_frame = audio_clip.start_frame + round(
+                        (pulse_seconds * source_fps - audio_clip.source_in)
+                        / max(0.000001, audio_clip.playback_rate)
+                        * project.fps / source_fps
+                    )
+                    nearest = min(video_cuts, key=lambda frame: abs(frame - timeline_frame))
+                    distance = abs(nearest - timeline_frame)
+                    if distance <= 2:
+                        add(
+                            f"possible-music-cut-alignment-{audio_clip.clip_id}-{pulse_index + 1}",
+                            "audio_visual_sync", "advisory",
+                            "A video cut is near an estimated music-pulse candidate",
+                            (
+                                f"Estimated pulse at timeline frame {timeline_frame}.",
+                                f"Nearest V1 cut at frame {nearest}; difference {distance} frame(s).",
+                                "Spectral pulse candidates are signal estimates, not verified musical beats.",
+                            ),
+                            "Listen and watch this transition in context before deciding whether the alignment feels intentional.",
+                            clip_id=next(
+                                clip.clip_id for clip in project.clips
+                                if clip.track == "V1" and clip.start_frame == nearest
+                                and clip.media_type in {"video", "image"}
+                            ),
+                        )
 
     errors = sum(item.severity == "error" for item in findings)
     warnings = sum(item.severity == "warning" for item in findings)
