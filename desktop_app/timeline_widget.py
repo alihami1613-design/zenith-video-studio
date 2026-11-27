@@ -553,6 +553,8 @@ class TimelineWidget(QWidget):
     speedRampChanged = Signal(str, list)
     transformKeyframeMoved = Signal(str, int, int)
     transformKeyframeSelected = Signal(str, int)
+    maskKeyframeMoved = Signal(str, int, int)
+    maskKeyframeSelected = Signal(str, int)
 
     def __init__(self, project, parent=None):
         super().__init__(parent)
