@@ -252,7 +252,7 @@ class TransformRenderIntegrationTests(unittest.TestCase):
             # the picture dissolve and after the incoming clip takes over.
             for start, end in ((2.55, 2.75), (3.35, 3.55)):
                 measured = subprocess.run(
-                    [FFMPEG, "-hide_banner", "-loglevel", "error", "-i", str(output),
+                    [FFMPEG, "-hide_banner", "-loglevel", "info", "-i", str(output),
                      "-vn", "-af", f"atrim=start={start}:end={end},astats=metadata=1:reset=0",
                      "-f", "null", "-"],
                     capture_output=True, text=True, timeout=30,
