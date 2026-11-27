@@ -95,6 +95,28 @@ class MainAIWorkflowWiringTests(unittest.TestCase):
         self.assertIn("self.ai_apply_plan_button.setEnabled(False)", method)
         self.assertNotIn("apply_edit_plan(", method)
 
+    def test_final_review_report_export_is_connected_and_manual_only(self):
+        self.assertIn("from final_review_report import build_final_review_report", self.source)
+        self.assertIn(
+            'self.ai_export_final_report_button.clicked.connect(self.export_final_review_report)',
+            self.source,
+        )
+        method = ast.get_source_segment(
+            self.source, self.methods["export_final_review_report"]
+        )
+        self.assertIn("build_final_review_report(", method)
+        self.assertIn('"Markdown (*.md);;JSON (*.json)"', method)
+        self.assertIn("report.to_json()", method)
+        self.assertIn("report.to_markdown()", method)
+        self.assertIn("تأیید انتشار محسوب نمی‌شود", method)
+
+    def test_final_review_report_is_not_automatically_approved(self):
+        method = ast.get_source_segment(
+            self.source, self.methods["export_final_review_report"]
+        )
+        self.assertNotIn("user_approved = True", method)
+        self.assertNotIn("apply_edit_plan(", method)
+
     def test_director_gap_fixes_use_existing_preview_and_approval_path(self):
         self.assertIn("build_gap_repair_plan", self.source)
         self.assertIn('self.ai_director_fix_button.clicked.connect(self.prepare_ai_director_fixes)', self.source)
