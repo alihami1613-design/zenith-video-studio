@@ -54,6 +54,29 @@ class PluginRegistryTests(unittest.TestCase):
             item = discover_plugins([root])[0]
             self.assertEqual(item["status"], "invalid")
 
+    def test_invalid_semver_and_missing_entrypoint_are_rejected(self):
+        with tempfile.TemporaryDirectory() as root:
+            folder = self.make_plugin(root)
+            manifest = json.loads((folder / "zenith-plugin.json").read_text(encoding="utf-8"))
+            manifest["version"] = "1.2"
+            (folder / "zenith-plugin.json").write_text(json.dumps(manifest), encoding="utf-8")
+            self.assertEqual(discover_plugins([root])[0]["status"], "invalid")
+
+    def test_duplicate_plugin_ids_are_flagged(self):
+        with tempfile.TemporaryDirectory() as root:
+            first = self.make_plugin(root, plugin_id="com.example.color")
+            second = Path(root) / "another"
+            second.mkdir()
+            (second / "plugin.py").write_text("# inert", encoding="utf-8")
+            (second / "zenith-plugin.json").write_text(json.dumps({
+                "id": "com.example.color", "version": "1.0.0", "api_version": 1,
+                "entrypoint": "plugin.py"
+            }), encoding="utf-8")
+            items = discover_plugins([root])
+            self.assertEqual(len(items), 1)
+            self.assertEqual(items[0]["status"], "invalid")
+            self.assertIn("Duplicate", items[0]["error"])
+
     def test_untrusted_cannot_be_enabled(self):
         with self.assertRaises(PluginRegistryError):
             set_plugin_enabled(empty_registry(), "com.example.color", True)
