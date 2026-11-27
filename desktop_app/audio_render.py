@@ -233,6 +233,7 @@ def render_audio_mix(
     partial = target.with_name(target.stem + ".partial" + target.suffix)
     partial.unlink(missing_ok=True)
     progress_path = target.with_name(target.stem + ".audio-progress.txt")
+    progress_path.unlink(missing_ok=True)
     duration = (timeline_duration_frames / fps) if timeline_duration_frames else max(
         (_seconds(clip.end_frame, fps) for clip in clips), default=0.0
     )
