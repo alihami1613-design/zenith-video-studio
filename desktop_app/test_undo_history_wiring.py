@@ -99,7 +99,7 @@ class UndoHistoryWiringTests(unittest.TestCase):
 
     def test_all_bound_main_window_callbacks_are_defined(self):
         connected = {
-            node.func.attr
+            node.args[0].attr
             for node in ast.walk(self.tree)
             if isinstance(node, ast.Call)
             and isinstance(node.func, ast.Attribute)
