@@ -285,7 +285,7 @@ def build_video_render_command(ffmpeg: str, project: object,
             key_blend = float(getattr(clip, "chroma_key_blend", 0.08))
             chain += f",colorkey=0x{key_color}:{similarity:.4f}:{key_blend:.4f}"
         if bool(getattr(clip, "mask_enabled", False)):
-            mask_invert = bool(getattr(clip, "mask_invert", False))
+            mask_invert = int(bool(getattr(clip, "mask_invert", False)))
             mask_x = float(getattr(clip, "mask_x", 0.0))
             mask_y = float(getattr(clip, "mask_y", 0.0))
             mask_w = float(getattr(clip, "mask_width", 1.0))
