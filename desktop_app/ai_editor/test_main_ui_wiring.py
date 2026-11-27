@@ -52,6 +52,13 @@ class MainAIWorkflowWiringTests(unittest.TestCase):
         self.assertIn("self._ai_plan_story_snapshot", method)
         self.assertIn("self._ai_plan_shot_snapshot", method)
 
+    def test_quality_control_blocks_final_apply_on_errors(self):
+        method = ast.get_source_segment(self.source, self.methods["preview_ai_edit_draft"])
+        self.assertIn("run_quality_checks(preview.project, self._ai_project_context)", method)
+        self.assertIn("qc_report.ready_for_export", method)
+        self.assertIn("not conflicts and qc_report.ready_for_export", method)
+        self.assertIn("qc_report.error_count", method)
+
 
 if __name__ == "__main__":
     unittest.main()
