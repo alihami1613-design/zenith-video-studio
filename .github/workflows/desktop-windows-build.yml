@@ -47,7 +47,16 @@ jobs:
           if ($LASTEXITCODE -ne 0) {
             throw "Bundled FFmpeg failed its lavfi frame-processing smoke test."
           }
-          Write-Host "Bundled FFmpeg version and frame-processing smoke tests passed."
+          $smokeMp4 = Join-Path $env:RUNNER_TEMP "zenith-ffmpeg-smoke.mp4"
+          & $ffmpegPath -y -hide_banner -loglevel error -f lavfi -i "testsrc2=size=96x64:rate=25:duration=1" -f lavfi -i "sine=frequency=440:sample_rate=48000:duration=1" -map 0:v:0 -map 1:a:0 -c:v libx264 -preset ultrafast -threads 1 -pix_fmt yuv420p -c:a aac -shortest $smokeMp4
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path $smokeMp4)) {
+            throw "Bundled FFmpeg failed to encode a test H.264/AAC MP4."
+          }
+          & $ffmpegPath -hide_banner -loglevel error -i $smokeMp4 -map 0:v:0 -map 0:a:0 -f null NUL
+          if ($LASTEXITCODE -ne 0) {
+            throw "Bundled FFmpeg failed to decode the test H.264/AAC MP4."
+          }
+          Write-Host "Bundled FFmpeg version, frame-processing, H.264/AAC encode and decode smoke tests passed."
       - name: Smoke-test packaged desktop startup
         shell: pwsh
         run: |
