@@ -2595,11 +2595,11 @@ class ZenithEditor(QMainWindow):
         clip_id = self.timeline_widget.canvas.selected_clip_id
         if not clip_id:
             return
+        history_before = self._history_snapshot()
         try:
             clip = self.timeline_project.get_clip(clip_id)
             frame = max(0, min(clip.duration_frames - 1,
                                self.timeline_project.playhead_frame - clip.start_frame))
-            self._push_undo()
             if clip.mask_keyframes:
                 values = mask_values_at(clip.mask_keyframes, frame, {
                     "x": clip.mask_x, "y": clip.mask_y,
@@ -2620,14 +2620,17 @@ class ZenithEditor(QMainWindow):
             else:
                 clip.mask_rotation = float(rotation)
             clip.validate()
-            self.timeline_widget.refresh()
-            self._sync_transform_controls()
-            self.statusBar().showMessage("چرخش ماسک ثبت شد؛ در رندر نهایی اعمال می‌شود.")
         except (KeyError, TypeError, ValueError) as exc:
-            if self._undo_stack:
-                self._undo_stack.pop()
-            self._update_history_buttons()
+            self._restore_history_snapshot(history_before)
             self.statusBar().showMessage(f"چرخش ماسک ثبت نشد: {exc}")
+            return
+        if self._history_snapshot() != history_before:
+            self._append_history_snapshot(self._undo_stack, history_before)
+            self._redo_stack.clear()
+            self._update_history_buttons()
+        self.timeline_widget.refresh()
+        self._sync_transform_controls()
+        self.statusBar().showMessage("چرخش ماسک ثبت شد؛ در رندر نهایی اعمال می‌شود.")
 
     def _mask_feather_changed(self, feather: float) -> None:
         clip_id = self.timeline_widget.canvas.selected_clip_id
