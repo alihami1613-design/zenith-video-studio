@@ -1366,7 +1366,7 @@ class ZenithEditor(QMainWindow):
             return
         self.ai_provider_key.clear()
         self.ai_analysis_output.appendPlainText(
-            "\\nتنظیمات ارائه‌دهنده ذخیره شد. کلید، در صورت واردشدن، فقط در خزانه امن سیستم‌عامل نگه‌داری می‌شود؛ هیچ درخواست ابری ارسال نشده است."
+            "\nتنظیمات ارائه‌دهنده ذخیره شد. کلید، در صورت واردشدن، فقط در خزانه امن سیستم‌عامل نگه‌داری می‌شود؛ هیچ درخواست ابری ارسال نشده است."
         )
         self.statusBar().showMessage("تنظیمات ارائه‌دهنده ذخیره شد؛ هنوز اتصالی برقرار نشده است.")
 
@@ -1520,7 +1520,7 @@ class ZenithEditor(QMainWindow):
         self.ai_generate_story_button.setEnabled(False)
         self.ai_generate_story_button.setText("در حال تولید داستان…")
         self.ai_analysis_output.appendPlainText(
-            "\\nدرخواست داستان با اجازه صریح شما ارسال شد؛ رسانه‌های اصلی و مسیرهای محلی ارسال نمی‌شوند."
+            "\nدرخواست داستان با اجازه صریح شما ارسال شد؛ رسانه‌های اصلی و مسیرهای محلی ارسال نمی‌شوند."
         )
         task.signals.finished.connect(self._ai_story_generation_finished)
         self._story_generation_pool.start(task)
@@ -1725,11 +1725,11 @@ class ZenithEditor(QMainWindow):
         shot_payload = asdict(self._ai_shot_selection_report)
         brief = (
             self.ai_story_prompt.toPlainText().strip()
-            + "\\n\\nAPPROVED STORY BLUEPRINT (authoritative narrative):\\n"
+            + "\n\nAPPROVED STORY BLUEPRINT (authoritative narrative):\n"
             + json.dumps(story_payload, ensure_ascii=False, allow_nan=False)
-            + "\\n\\nAPPROVED SHOT SELECTION (technical candidates; do not claim semantic verification):\\n"
+            + "\n\nAPPROVED SHOT SELECTION (technical candidates; do not claim semantic verification):\n"
             + json.dumps(shot_payload, ensure_ascii=False, allow_nan=False)
-            + "\\n\\nCreate a frame-accurate, non-destructive edit plan using only the supplied asset IDs. "
+            + "\n\nCreate a frame-accurate, non-destructive edit plan using only the supplied asset IDs. "
               "Preserve story order, avoid overlaps with existing timeline clips, use supported operations only, "
               "and include clear assumptions and warnings. Require human approval."
         )
@@ -1738,7 +1738,7 @@ class ZenithEditor(QMainWindow):
             return
         answer = QMessageBox.question(
             self, "اجازه تولید طرح تدوین ابری",
-            "شرح تدوین، داستان تأییدشده، پیشنهاد نماها و فراداده محدود پروژه به سرویس انتخاب‌شده ارسال شود؟\\n"
+            "شرح تدوین، داستان تأییدشده، پیشنهاد نماها و فراداده محدود پروژه به سرویس انتخاب‌شده ارسال شود؟\n"
             "هیچ فایل رسانه‌ای یا مسیر محلی ارسال نمی‌شود. هزینه احتمالی API بر عهده حساب ارائه‌دهنده است.",
             QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
         )
@@ -1756,7 +1756,7 @@ class ZenithEditor(QMainWindow):
         self.ai_model_plan_button.setText("مدل در حال طراحی تدوین…")
         self.ai_build_plan_button.setEnabled(False)
         self.ai_analysis_output.appendPlainText(
-            "\\nدرخواست طراحی تدوین با اجازه صریح شما ارسال شد؛ هنوز هیچ تغییری در تایم‌لاین اعمال نشده است."
+            "\nدرخواست طراحی تدوین با اجازه صریح شما ارسال شد؛ هنوز هیچ تغییری در تایم‌لاین اعمال نشده است."
         )
         task.signals.finished.connect(self._ai_edit_plan_finished)
         self._ai_edit_plan_pool.start(task)
@@ -1804,12 +1804,12 @@ class ZenithEditor(QMainWindow):
             for operation in plan.operations:
                 counts[operation.kind] = counts.get(operation.kind, 0) + 1
             self.ai_analysis_output.appendPlainText(
-                "\\nطرح تدوین مدل دریافت و در برنامه اعتبارسنجی شد؛ هنوز اجرا نشده است.\\n"
+                "\nطرح تدوین مدل دریافت و در برنامه اعتبارسنجی شد؛ هنوز اجرا نشده است.\n"
                 + plan.summary
-                + f"\\nعملیات: {len(plan.operations)} | افزودن کلیپ: {counts.get('add_clip', 0)}"
+                + f"\nعملیات: {len(plan.operations)} | افزودن کلیپ: {counts.get('add_clip', 0)}"
                 + f" | اصلاح رنگ: {counts.get('set_clip_grade', 0)} | انتقال: {counts.get('set_transition', 0)}"
-                + "".join(f"\\nهشدار/فرض: {item}" for item in self._ai_edit_draft.warnings)
-                + "\\nاکنون می‌توانی پیش‌نمایش ایمن را اجرا کنی؛ تأیید نهایی همچنان جداگانه است."
+                + "".join(f"\nهشدار/فرض: {item}" for item in self._ai_edit_draft.warnings)
+                + "\nاکنون می‌توانی پیش‌نمایش ایمن را اجرا کنی؛ تأیید نهایی همچنان جداگانه است."
             )
             self.statusBar().showMessage("طرح مدل اعتبارسنجی شد؛ منتظر پیش‌نمایش و تأیید نهایی است.")
         except Exception as exc:
@@ -1899,9 +1899,9 @@ class ZenithEditor(QMainWindow):
             f"\nپیش‌نمایش ایمن موفق: {preview.operation_count} عملیات، {len(preview.created_clip_ids)} کلیپ جدید. "
             f"مدت نسخه پیش‌نمایش: {preview.project.duration_frames / preview.project.fps:.2f}s. "
             "این پیش‌نمایش روی نسخه جداگانه اجرا شد؛ پروژه اصلی هنوز تغییر نکرده است."
-            + "\\n" + "\\n".join(qc_lines)
+            + "\n" + "\n".join(qc_lines)
             + conflict_note
-            + ("\\nاعمال نهایی به‌دلیل خطاهای QC مسدود است؛ ابتدا ایرادها را برطرف کنید."
+            + ("\nاعمال نهایی به‌دلیل خطاهای QC مسدود است؛ ابتدا ایرادها را برطرف کنید."
                if not qc_report.ready_for_export else "")
         )
         self.statusBar().showMessage(
@@ -1938,12 +1938,12 @@ class ZenithEditor(QMainWindow):
         ))
         if not report.findings:
             self.ai_analysis_output.appendPlainText(
-                "\\nبازبینی کارگردان: مورد قابل گزارش بر اساس شواهد فعلی پیدا نشد. "
+                "\nبازبینی کارگردان: مورد قابل گزارش بر اساس شواهد فعلی پیدا نشد. "
                 "این نتیجه به معنی تأیید هنری قطعی یا بررسی معنایی تصاویر نیست."
             )
         else:
             lines = [
-                f"\\nگزارش کارگردان | {len(report.findings)} مورد: "
+                f"\nگزارش کارگردان | {len(report.findings)} مورد: "
                 f"{report.error_count} خطا، {report.warning_count} هشدار، "
                 f"{report.advisory_count} پیشنهاد"
             ]
@@ -1958,7 +1958,7 @@ class ZenithEditor(QMainWindow):
             lines.append(
                 "این گزارش فقط پیشنهاد می‌دهد؛ هیچ برش، جابه‌جایی، افکت یا تغییر صوتی اعمال نشده است."
             )
-            self.ai_analysis_output.appendPlainText("\\n".join(lines))
+            self.ai_analysis_output.appendPlainText("\n".join(lines))
         self.statusBar().showMessage(
             "بازبینی کارگردان تمام شد؛ تایم‌لاین بدون تغییر باقی ماند."
         )
@@ -1983,7 +1983,7 @@ class ZenithEditor(QMainWindow):
         self.ai_preview_plan_button.setEnabled(True)
         self.ai_apply_plan_button.setEnabled(False)
         self.ai_analysis_output.appendPlainText(
-            f"\\nطرح اصلاح آماده شد: {len(draft.edit_plan.operations)} جابه‌جایی پیشنهادی برای بستن فاصله‌های V1. "
+            f"\nطرح اصلاح آماده شد: {len(draft.edit_plan.operations)} جابه‌جایی پیشنهادی برای بستن فاصله‌های V1. "
             "برای بررسی، پیش‌نمایش ایمن را اجرا کنید؛ هیچ تغییری هنوز اعمال نشده است."
         )
         self.statusBar().showMessage("طرح اصلاح کارگردان آماده پیش‌نمایش است؛ اعمال نهایی نیازمند تأیید جداگانه است.")
@@ -2008,7 +2008,7 @@ class ZenithEditor(QMainWindow):
         self.ai_preview_plan_button.setEnabled(True)
         self.ai_apply_plan_button.setEnabled(False)
         self.ai_analysis_output.appendPlainText(
-            f"\\nطرح تفکیک آماده شد: {len(draft.edit_plan.operations)} نقطه تغییر تصویری پیشنهادی. "
+            f"\nطرح تفکیک آماده شد: {len(draft.edit_plan.operations)} نقطه تغییر تصویری پیشنهادی. "
             "تشخیص تغییر تصویر به معنی تشخیص معنای صحنه نیست؛ نتیجه را در پیش‌نمایش بررسی کنید. "
             "هیچ تغییری هنوز اعمال نشده است."
         )
@@ -2036,7 +2036,7 @@ class ZenithEditor(QMainWindow):
         self.ai_preview_plan_button.setEnabled(True)
         self.ai_apply_plan_button.setEnabled(False)
         self.ai_analysis_output.appendPlainText(
-            f"\\nطرح هم‌ترازی آماده شد: {len(draft.edit_plan.operations) // 2} برش پیشنهادی. "
+            f"\nطرح هم‌ترازی آماده شد: {len(draft.edit_plan.operations) // 2} برش پیشنهادی. "
             "این‌ها ضرب‌های احتمالی‌اند، نه ضرب قطعی موسیقی. پیش‌نمایش و کنترل کیفیت را اجرا کنید؛ "
             "هیچ تغییری هنوز اعمال نشده است."
         )
@@ -3564,17 +3564,17 @@ class ZenithEditor(QMainWindow):
         black_count = len(visual.get("black_intervals") or [])
         freeze_count = len(visual.get("freeze_intervals") or [])
         if report.get("visual_scan_error"):
-            quality_note = "\\n\\nاسکن بصری کامل نشد؛ لطفاً خروجی را چشمی بررسی کنید."
+            quality_note = "\n\nاسکن بصری کامل نشد؛ لطفاً خروجی را چشمی بررسی کنید."
         elif black_count or freeze_count:
             quality_note = (
-                f"\\n\\nبازبینی بصری: {black_count} بازه سیاه و {freeze_count} بازه فریز شناسایی شد. "
+                f"\n\nبازبینی بصری: {black_count} بازه سیاه و {freeze_count} بازه فریز شناسایی شد. "
                 "این موارد ممکن است عمدی باشند؛ پیش از انتشار آن‌ها را بررسی کنید."
             )
         else:
-            quality_note = "\\n\\nاسکن بصری مورد مشکوکِ ممتدِ سیاهی یا فریز ثبت نکرد."
+            quality_note = "\n\nاسکن بصری مورد مشکوکِ ممتدِ سیاهی یا فریز ثبت نکرد."
         QMessageBox.information(
             self, "خروجی MP4 آماده شد",
-            f"ویدیوی H.264 ساخته و رمزگشایی کامل آن بررسی شد.\\n\\n{output_path}{quality_note}"
+            f"ویدیوی H.264 ساخته و رمزگشایی کامل آن بررسی شد.\n\n{output_path}{quality_note}"
         )
 
     def _audio_mix_finished(self, output_path: str, error: str) -> None:
