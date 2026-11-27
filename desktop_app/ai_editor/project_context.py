@@ -45,12 +45,12 @@ def _asset_id(path: Path) -> str:
 
 
 def _media_type(metadata: dict[str, Any], path: Path) -> str:
+    if path.suffix.lower() in {".png", ".jpg", ".jpeg", ".bmp", ".webp", ".tif", ".tiff"}:
+        return "image"
     if metadata.get("has_video"):
         return "video"
     if metadata.get("has_audio"):
         return "audio"
-    if path.suffix.lower() in {".png", ".jpg", ".jpeg", ".bmp", ".webp", ".tif", ".tiff"}:
-        return "image"
     raise ValueError("Media stream type could not be identified.")
 
 
