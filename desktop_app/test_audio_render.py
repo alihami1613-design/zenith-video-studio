@@ -351,11 +351,14 @@ class AudioRenderCommandTests(unittest.TestCase):
             overlap_middle = rms_at(2.5)
             overlap_end = rms_at(2.85)
             after = rms_at(3.5)
-            self.assertGreater(before, 5000)
-            self.assertGreater(after, 5000)
-            self.assertGreater(overlap_middle, 5000)
-            self.assertGreater(overlap_start, 2500)
-            self.assertGreater(overlap_end, 2500)
+            # FFmpeg's lavfi sine source defaults to a conservative 0.125
+            # peak amplitude, so validate against its measured baseline rather
+            # than an arbitrary high absolute RMS threshold.
+            self.assertGreater(before, 1500)
+            self.assertGreater(after, 1500)
+            self.assertGreater(overlap_middle, 1500)
+            self.assertGreater(overlap_start, before * 0.45)
+            self.assertGreater(overlap_end, after * 0.45)
             self.assertLess(abs(overlap_middle - before) / before, 0.35)
             self.assertLess(abs(overlap_middle - after) / after, 0.35)
 
