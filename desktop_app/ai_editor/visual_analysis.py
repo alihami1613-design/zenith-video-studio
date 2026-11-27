@@ -51,6 +51,41 @@ def _ffmpeg_path() -> str:
         raise RuntimeError("FFmpeg is required for visual frame sampling.") from exc
 
 
+def _jpeg_dimensions(data: bytes) -> tuple[int, int]:
+    """Read JPEG SOF dimensions without requiring an imaging dependency."""
+    if len(data) < 4 or data[:2] != b"\\xff\\xd8":
+        raise RuntimeError("FFmpeg output is not a valid JPEG image.")
+    index = 2
+    while index + 4 <= len(data):
+        if data[index] != 0xFF:
+            index += 1
+            continue
+        while index < len(data) and data[index] == 0xFF:
+            index += 1
+        if index >= len(data):
+            break
+        marker = data[index]
+        index += 1
+        if marker in (0xD8, 0xD9) or 0xD0 <= marker <= 0xD7:
+            continue
+        if index + 2 > len(data):
+            break
+        segment_length = int.from_bytes(data[index:index + 2], "big")
+        if segment_length < 2 or index + segment_length > len(data):
+            break
+        if marker in (0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7,
+                      0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF):
+            if segment_length < 7:
+                break
+            height = int.from_bytes(data[index + 3:index + 5], "big")
+            width = int.from_bytes(data[index + 5:index + 7], "big")
+            if width > 0 and height > 0:
+                return width, height
+            break
+        index += segment_length
+    raise RuntimeError("Could not read JPEG frame dimensions.")
+
+
 def sample_video_frames(
     path: str | Path,
     duration_seconds: float,
@@ -94,7 +129,8 @@ def sample_video_frames(
                 raise RuntimeError(f"Could not sample frame at {timestamp:.2f}s: {exc}") from exc
             if not data:
                 raise RuntimeError(f"FFmpeg produced an empty frame at {timestamp:.2f}s.")
-            frames.append(SampledFrame(timestamp, data, max_dimension, max_dimension))
+            width, height = _jpeg_dimensions(data)
+            frames.append(SampledFrame(timestamp, data, width, height))
     return tuple(frames)
 
 
