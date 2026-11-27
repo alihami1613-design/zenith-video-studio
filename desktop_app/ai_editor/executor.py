@@ -46,6 +46,8 @@ def _apply_operations(project: TimelineProject, plan: EditPlan,
                 audio_track=p.get("audio_track"),
             )
             clip.source_in = p.get("source_in", 0)
+            if "clip_id" in p:
+                clip.clip_id = p["clip_id"]
             clip.validate()
             created.append(clip.clip_id)
         elif kind == "move_clip":
