@@ -101,7 +101,7 @@ class MediaAnalysisTests(unittest.TestCase):
                                    mean_db=-12.0)
 
         def broken_energy(path):
-            raise RuntimeError("energy decoder unavailable")
+            raise RuntimeError(f"decoder failed for {path}")
 
         report = analyze_project_media(
             self.context, scene_detector=broken_scenes,
@@ -117,6 +117,9 @@ class MediaAnalysisTests(unittest.TestCase):
                             for warning in video.warnings))
         self.assertTrue(any("Audio energy analysis failed" in warning
                             for warning in video.warnings))
+        serialized = str(report.to_dict())
+        self.assertNotIn(str(self.video), serialized)
+        self.assertNotIn(str(self.audio), serialized)
 
     def test_visual_resource_limits_are_validated(self):
         with self.assertRaises(ValueError):
