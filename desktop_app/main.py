@@ -2158,13 +2158,17 @@ class ZenithEditor(QMainWindow):
         )
         if answer != QMessageBox.Yes:
             return
+        history_before = self._history_snapshot()
         try:
             assets = [item.asset for item in self._ai_project_context.assets if item.exists]
-            self._push_undo()
             apply_edit_plan(self.timeline_project, self._ai_edit_draft.edit_plan, assets, approved=True)
         except Exception as exc:
+            self._restore_history_snapshot(history_before)
             QMessageBox.warning(self, "اعمال تدوین", str(exc))
             return
+        self._append_history_snapshot(self._undo_stack, history_before)
+        self._redo_stack.clear()
+        self._update_history_buttons()
         self._refresh_timeline()
         self._ai_execution_preview = None
         self.ai_apply_plan_button.setEnabled(False)
