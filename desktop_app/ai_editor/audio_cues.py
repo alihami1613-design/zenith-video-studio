@@ -10,6 +10,7 @@ import math
 
 from ai_editor.contracts import EditPlanError
 from ai_editor.media_analysis import AudioSummary
+from ai_editor.audio_energy import AudioEnergyAnalysis
 
 
 @dataclass(frozen=True)
@@ -38,6 +39,7 @@ def build_audio_cue_map(
     fps: int,
     minimum_pause_seconds: float = 0.35,
     edge_window_seconds: float = 1.0,
+    energy_analysis: AudioEnergyAnalysis | None = None,
 ) -> AudioCueMap:
     """Convert measured silence intervals into timeline review markers."""
     if not isinstance(audio, AudioSummary):
@@ -54,6 +56,8 @@ def build_audio_cue_map(
     if minimum_pause_seconds > 10 or edge_window_seconds > 5:
         raise EditPlanError("Audio cue thresholds exceed safe limits.")
 
+    if energy_analysis is not None and not isinstance(energy_analysis, AudioEnergyAnalysis):
+        raise EditPlanError("Energy analysis must be a measured AudioEnergyAnalysis.")
     total_frames = round(media_duration_seconds * fps)
     cues: list[AudioCue] = []
     warnings: list[str] = []
@@ -97,6 +101,27 @@ def build_audio_cue_map(
             confidence="measured_silence",
             reason=reason,
         ))
+
+    if energy_analysis is not None:
+        for timestamp in energy_analysis.transient_candidates_seconds:
+            if (isinstance(timestamp, bool) or not isinstance(timestamp, (int, float))
+                    or not math.isfinite(timestamp) or timestamp < 0
+                    or timestamp > media_duration_seconds):
+                warnings.append("An invalid transient candidate was ignored.")
+                continue
+            frame = min(total_frames, max(0, round(timestamp * fps)))
+            cues.append(AudioCue(
+                start_frame=frame,
+                end_frame=min(total_frames, frame + 1),
+                duration_frames=1 if frame < total_frames else 0,
+                cue_type="transient_candidate",
+                confidence="energy_change_candidate",
+                reason="RMS energy change only; not a verified beat. Review against the soundtrack.",
+            ))
+        warnings.extend(energy_analysis.warnings)
+        warnings.append("Energy-change markers are review hints and are not beat-synchronized edits.")
+
+    cues.sort(key=lambda cue: (cue.start_frame, cue.end_frame, cue.cue_type))
 
     if audio.mean_db is None or audio.peak_db is None:
         warnings.append("Aggregate audio level is unavailable; loudness decisions were not inferred.")
