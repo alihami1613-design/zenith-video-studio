@@ -44,6 +44,7 @@ from ai_editor.shot_selection import select_shots_for_story
 from ai_editor.music_sync_workflow import build_music_aware_edit_draft
 from ai_editor.executor import preview_edit_plan, apply_edit_plan
 from ai_editor.quality_control import run_quality_checks
+from ai_editor.director_review import review_edit
 from ai_editor.credential_store import store_api_key, delete_api_key
 
 APP_NAME = "ZENITH Desktop"
@@ -656,6 +657,8 @@ class ZenithEditor(QMainWindow):
         self.ai_apply_plan_button = QPushButton("اعمال نهایی طرح تأییدشده")
         self.ai_apply_plan_button.setEnabled(False)
         self.ai_apply_plan_button.clicked.connect(self.apply_ai_edit_draft)
+        self.ai_director_review_button = QPushButton("بازبینی کارگردان هوشمند")
+        self.ai_director_review_button.clicked.connect(self.run_ai_director_review)
         self.ai_model_plan_button = QPushButton("تولید طرح تدوین با مدل هوش مصنوعی")
         self.ai_model_plan_button.setEnabled(False)
         self.ai_model_plan_button.clicked.connect(self.generate_ai_edit_plan)
@@ -663,6 +666,7 @@ class ZenithEditor(QMainWindow):
         plan_actions.addWidget(self.ai_model_plan_button)
         plan_actions.addWidget(self.ai_preview_plan_button)
         plan_actions.addWidget(self.ai_apply_plan_button)
+        plan_actions.addWidget(self.ai_director_review_button)
         workflow_layout.addLayout(plan_actions)
         outer.addWidget(ai_panel)
 
@@ -1886,6 +1890,48 @@ class ZenithEditor(QMainWindow):
                 if not qc_report.ready_for_export else
                 "برای اعمال نهایی هنوز تأیید جداگانه لازم است."
             )
+        )
+
+    def run_ai_director_review(self) -> None:
+        """Run evidence-backed editorial diagnostics without changing the timeline."""
+        if not self._ai_context_is_current():
+            return
+        try:
+            report = review_edit(
+                self.timeline_project,
+                self._ai_project_context,
+                story=self._ai_story_blueprint,
+                shot_selection=self._ai_shot_selection_report,
+                pace_profile=self.ai_pace_combo.currentData() or "balanced",
+            )
+        except Exception as exc:
+            QMessageBox.warning(self, "بازبینی کارگردان", str(exc))
+            return
+        if not report.findings:
+            self.ai_analysis_output.appendPlainText(
+                "\\nبازبینی کارگردان: مورد قابل گزارش بر اساس شواهد فعلی پیدا نشد. "
+                "این نتیجه به معنی تأیید هنری قطعی یا بررسی معنایی تصاویر نیست."
+            )
+        else:
+            lines = [
+                f"\\nگزارش کارگردان | {len(report.findings)} مورد: "
+                f"{report.error_count} خطا، {report.warning_count} هشدار، "
+                f"{report.advisory_count} پیشنهاد"
+            ]
+            for finding in report.findings:
+                lines.append(
+                    f"[{finding.severity.upper()}] {finding.title}"
+                    + (f" | کلیپ: {finding.clip_id}" if finding.clip_id else "")
+                    + (f" | ضرب: {finding.beat_id}" if finding.beat_id else "")
+                )
+                lines.extend(f"  شاهد: {item}" for item in finding.evidence)
+                lines.append(f"  پیشنهاد: {finding.recommendation}")
+            lines.append(
+                "این گزارش فقط پیشنهاد می‌دهد؛ هیچ برش، جابه‌جایی، افکت یا تغییر صوتی اعمال نشده است."
+            )
+            self.ai_analysis_output.appendPlainText("\\n".join(lines))
+        self.statusBar().showMessage(
+            "بازبینی کارگردان تمام شد؛ تایم‌لاین بدون تغییر باقی ماند."
         )
 
     def apply_ai_edit_draft(self) -> None:
