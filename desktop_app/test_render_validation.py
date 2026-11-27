@@ -2,12 +2,13 @@
 import shutil
 import subprocess
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 
 from render_validation import validate_rendered_mp4
 from timeline_model import TimelineProject
-from video_render import render_timeline_mp4
+from video_render import RenderCancelledError, render_timeline_mp4
 
 FFMPEG = shutil.which("ffmpeg")
 
@@ -85,10 +86,19 @@ class RenderValidationTests(unittest.TestCase):
             project = TimelineProject(fps=25, width=96, height=64)
             project.add_clip(str(source), "Test shot", duration_frames=25)
             reports = []
+            progress_events = []
             result = render_timeline_mp4(
-                project, output, timeout_seconds=90, validation_callback=reports.append
+                project, output, timeout_seconds=90, validation_callback=reports.append,
+                progress_callback=lambda percent, stage: progress_events.append((percent, stage)),
             )
             self.assertEqual(result, output.resolve())
+            self.assertTrue(any(stage == "رندر تصویر" for _, stage in progress_events))
+            self.assertTrue(any(stage == "اعتبارسنجی و کنترل کیفیت" for _, stage in progress_events))
+            self.assertEqual(progress_events[-1], (100, "پایان رندر"))
+            self.assertEqual(
+                [percent for percent, _ in progress_events],
+                sorted(percent for percent, _ in progress_events),
+            )
             self.assertEqual(len(reports), 1)
             self.assertTrue(reports[0].valid)
             self.assertTrue(reports[0].visual_quality.scanned)
@@ -101,6 +111,23 @@ class RenderValidationTests(unittest.TestCase):
             self.assertTrue(report.valid)
             self.assertTrue(report.decode_succeeded)
             self.assertTrue(report.visual_quality.scanned)
+
+    def test_pre_cancelled_render_preserves_existing_final_output(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            source = root / "source.mp4"
+            output = root / "final.mp4"
+            self._make_mp4(source)
+            original = b"previous-approved-export"
+            output.write_bytes(original)
+            project = TimelineProject(fps=25, width=96, height=64)
+            project.add_clip(str(source), "Test shot", duration_frames=25)
+            cancel = threading.Event()
+            cancel.set()
+            with self.assertRaises(RenderCancelledError):
+                render_timeline_mp4(project, output, cancel_event=cancel)
+            self.assertEqual(output.read_bytes(), original)
+            self.assertFalse((root / "final.partial.mp4").exists())
 
     def test_real_multitrack_render_places_upper_video_only_during_its_timeline_range(self):
         with tempfile.TemporaryDirectory() as folder:
