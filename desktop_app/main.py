@@ -2213,7 +2213,9 @@ class ZenithEditor(QMainWindow):
         blockers = [QSignalBlocker(control) for control in
                     (self.volume_slider, self.fade_in_slider, self.fade_out_slider,
                      self.audio_fade_curve_combo)]
-        self.volume_slider.setValue(round(clip.volume * 100))\n        self.audio_mute_checkbox.setChecked(bool(getattr(clip, "audio_muted", False)))\n        self.audio_solo_checkbox.setChecked(bool(getattr(clip, "audio_solo", False)))
+        self.volume_slider.setValue(round(clip.volume * 100))
+        self.audio_mute_checkbox.setChecked(bool(getattr(clip, "audio_muted", False)))
+        self.audio_solo_checkbox.setChecked(bool(getattr(clip, "audio_solo", False)))
         self.audio_fade_curve_combo.setCurrentIndex(
             max(0, self.audio_fade_curve_combo.findData(clip.audio_fade_curve))
         )
