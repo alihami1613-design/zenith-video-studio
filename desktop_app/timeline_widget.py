@@ -153,6 +153,29 @@ class TimelineCanvas(QWidget):
                 painter.setBrush(QBrush(fill))
                 painter.setPen(QPen(QColor("#F3D58F") if selected else fill.lighter(135), 1))
                 painter.drawRoundedRect(x1, rect_y, x2 - x1, rect_h, 4, 4)
+                # Keep clip-level audio state visible without opening Inspector.
+                audio_badges = []
+                if bool(getattr(clip, "audio_muted", False)):
+                    audio_badges.append(("MUTE", QColor("#7A3434")))
+                elif bool(getattr(clip, "audio_solo", False)):
+                    audio_badges.append(("SOLO", QColor("#28745E")))
+                if audio_badges and x2 - x1 >= 42:
+                    painter.save()
+                    painter.setFont(QFont("Segoe UI", 7, QFont.Bold))
+                    badge_x = x1 + 5
+                    for badge_text, badge_color in audio_badges:
+                        badge_width = painter.fontMetrics().horizontalAdvance(badge_text) + 8
+                        badge_rect = painter.boundingRect(
+                            badge_x, rect_y + 2, badge_width, 13,
+                            Qt.AlignCenter, badge_text,
+                        )
+                        painter.setPen(Qt.NoPen)
+                        painter.setBrush(QBrush(badge_color))
+                        painter.drawRoundedRect(badge_rect, 3, 3)
+                        painter.setPen(QColor("#FFFFFF"))
+                        painter.drawText(badge_rect, Qt.AlignCenter, badge_text)
+                        badge_x += badge_width + 3
+                    painter.restore()
                 waveform = self.waveforms.get(clip.path) if clip.media_type == "audio" else None
                 if waveform:
                     center_y = rect_y + rect_h // 2
