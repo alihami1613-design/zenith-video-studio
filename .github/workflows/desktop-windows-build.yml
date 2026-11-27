@@ -38,6 +38,23 @@ jobs:
             throw "Bundled FFmpeg executable is missing."
           }
           Write-Host "Executable and bundled FFmpeg found."
+      - name: Smoke-test packaged desktop startup
+        shell: pwsh
+        run: |
+          $exe = Resolve-Path "dist/ZENITH Desktop/ZENITH Desktop.exe"
+          $stdout = Join-Path $env:RUNNER_TEMP "zenith-smoke.stdout.log"
+          $stderr = Join-Path $env:RUNNER_TEMP "zenith-smoke.stderr.log"
+          $process = Start-Process -FilePath $exe -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+          Start-Sleep -Seconds 10
+          $process.Refresh()
+          if ($process.HasExited) {
+            Write-Host "Application exited during startup with code $($process.ExitCode)."
+            if (Test-Path $stdout) { Get-Content $stdout }
+            if (Test-Path $stderr) { Get-Content $stderr }
+            throw "Packaged desktop application failed its startup smoke test."
+          }
+          Stop-Process -Id $process.Id -Force
+          Write-Host "Packaged desktop application remained running for 10 seconds."
       - name: Upload Windows build artifact
         uses: actions/upload-artifact@v4
         with:
