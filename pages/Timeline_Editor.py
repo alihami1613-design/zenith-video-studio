@@ -118,7 +118,7 @@ if len(st.session_state.timeline_video)>=2 and st.button("رندر ویدئوی 
             if rr.returncode or not joined.exists(): raise RuntimeError("اتصال کلیپ‌ها ناموفق شد.")
             final=joined
             if selected_audio_idx is not None:
-                aud=td/"music"+Path(st.session_state.timeline_audio[selected_audio_idx]["name"]).suffix
+                aud=td/("music"+Path(st.session_state.timeline_audio[selected_audio_idx]["name"]).suffix)
                 aud.write_bytes(st.session_state.timeline_audio[selected_audio_idx]["source"].getvalue())
                 mixed=td/"ZENITH_mixed.mp4"
                 filt=f"[0:a]volume={video_gain}[va];[1:a]volume={audio_gain}[ma];[va][ma]amix=inputs=2:duration=first:dropout_transition=2[a]"
