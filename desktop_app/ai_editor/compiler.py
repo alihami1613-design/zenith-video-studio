@@ -36,6 +36,8 @@ def compile_story_to_edit_plan(
     operations: list[EditOperation] = []
     warnings = list(story.warnings)
     cursor_frame = 0
+    last_visual_clip: tuple[str, int, int, str, int] | None = None
+    story_digest = hashlib.sha256(story.story_id.encode("utf-8")).hexdigest()[:10]
 
     for beat in story.beats:
         target_frames = max(1, round(beat.target_duration_seconds * fps))
@@ -44,6 +46,7 @@ def compile_story_to_edit_plan(
                 f"{beat.beat_id}: no source asset selected; left as a timeline placeholder."
             )
             cursor_frame += target_frames
+            last_visual_clip = None
             continue
 
         item = assets[beat.asset_id]
@@ -52,6 +55,7 @@ def compile_story_to_edit_plan(
                 f"{beat.beat_id}: source metadata is unreliable; beat left as a placeholder."
             )
             cursor_frame += target_frames
+            last_visual_clip = None
             continue
         media_type = item.asset.media_type
         if media_type not in {"video", "image", "audio"}:
@@ -59,6 +63,8 @@ def compile_story_to_edit_plan(
                 f"{beat.beat_id}: unsupported source type {media_type}; skipped."
             )
             cursor_frame += target_frames
+            if media_type not in {"audio"}:
+                last_visual_clip = None
             continue
 
         if media_type == "image":
@@ -78,7 +84,9 @@ def compile_story_to_edit_plan(
                 )
             track = "A1" if media_type == "audio" else "V1"
 
+        planned_clip_id = f"ai-{story_digest}-{beat.sequence:04d}"
         params = {
+            "clip_id": planned_clip_id,
             "asset_id": beat.asset_id,
             "track": track,
             "start_frame": cursor_frame,
@@ -91,6 +99,35 @@ def compile_story_to_edit_plan(
             parameters=params,
             rationale=f"{beat.title}: {beat.purpose}",
         ))
+        if media_type in {"video", "image"}:
+            transition_frames = min(round(0.5 * fps), duration_frames)
+            if beat.transition_intent in {"dissolve", "fade", "motivated_transition"} and last_visual_clip is not None:
+                previous_id, previous_end, previous_duration, previous_type, _previous_source_in = last_visual_clip
+                transition_allowed = (
+                    previous_end == cursor_frame
+                    and transition_frames > 0
+                    and transition_frames <= previous_duration
+                    and (media_type == "image" or source_in >= transition_frames)
+                )
+                if transition_allowed:
+                    operations.append(EditOperation(
+                        operation_id=f"beat-{beat.sequence:04d}-transition",
+                        kind="set_transition",
+                        parameters={
+                            "clip_id": planned_clip_id,
+                            "duration_frames": transition_frames,
+                            "transition_type": "dissolve",
+                        },
+                        rationale=f"Apply approved {beat.transition_intent} intent at the incoming visual cut.",
+                    ))
+                else:
+                    warnings.append(
+                        f"{beat.beat_id}: dissolve not compiled because adjacent clips or source handles do not support it; hard cut retained."
+                    )
+            last_visual_clip = (planned_clip_id, cursor_frame + duration_frames,
+                                duration_frames, media_type, source_in)
+        else:
+            last_visual_clip = None
         cursor_frame += target_frames
 
     digest = hashlib.sha256(story.story_id.encode("utf-8")).hexdigest()[:12]
