@@ -8,6 +8,7 @@ on:
       - "desktop_app/**"
       - "ZENITH_Desktop.spec"
       - "build_windows.ps1"
+      - "ZENITH_Desktop.iss"
       - ".github/workflows/desktop-windows-build.yml"
   workflow_dispatch:
 
@@ -91,6 +92,24 @@ jobs:
               Stop-Process -Id $process.Id -Force
             }
           }
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress -y
+      - name: Build Windows installer
+        shell: pwsh
+        run: |
+          $compiler = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $compiler)) { throw "Inno Setup compiler was not found." }
+          & $compiler ZENITH_Desktop.iss
+          if ($LASTEXITCODE -ne 0) { throw "Windows installer compilation failed." }
+          if (-not (Test-Path "dist-installer/ ZENITH-Desktop-Setup.exe".Replace("/ ", "/"))) { throw "Installer output is missing." }
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: zenith-desktop-windows-installer
+          path: dist-installer/ZENITH-Desktop-Setup.exe
+          if-no-files-found: error
+          retention-days: 7
       - name: Upload Windows build artifact
         uses: actions/upload-artifact@v4
         with:
