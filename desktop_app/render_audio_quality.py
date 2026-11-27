@@ -52,8 +52,10 @@ def inspect_rendered_audio(
 ) -> AudioRenderQualityReport:
     """Decode bounded mono PCM and flag abrupt sample jumps/clipping for review."""
     path = Path(output_path).expanduser().resolve()
-    if not path.is_file() or path.stat().st_size <= 0:
-        raise ValueError("فایل خروجی صوتی برای بررسی وجود ندارد.")
+    if not path.is_file():
+        raise FileNotFoundError(str(path))
+    if path.stat().st_size <= 0:
+        raise ValueError("فایل خروجی صوتی خالی است.")
     if not math.isfinite(expected_video_duration_seconds) or expected_video_duration_seconds <= 0:
         raise ValueError("مدت مورد انتظار ویدیو معتبر نیست.")
     if isinstance(fps, bool) or not isinstance(fps, int) or not 1 <= fps <= 240:
