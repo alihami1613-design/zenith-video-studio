@@ -44,7 +44,7 @@ class RenderControlTests(unittest.TestCase):
             progress = Path(folder) / "progress.txt"
             script = (
                 "import pathlib,time,sys; p=pathlib.Path(sys.argv[1]); "
-                "p.write_text('out_time=00:00:01.000000\\\\n'); "
+                "p.write_text('out_time=00:00:01.000000' + chr(10)); "
                 "time.sleep(0.35)"
             )
             values = []
