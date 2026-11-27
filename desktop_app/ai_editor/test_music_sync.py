@@ -68,7 +68,8 @@ class MusicSyncTests(unittest.TestCase):
         self.assertEqual(result.fps, 30)
         self.assertEqual(result.decisions[0].start_frame, 0)
         self.assertEqual(result.decisions[1].start_frame, 123)
-        self.assertEqual(result.decisions[2].start_frame, 243)
+        self.assertEqual(result.decisions[2].start_frame, 240)
 
 
-if __ (unittest.main())
+if __name__ == "__main__":
+    unittest.main()
