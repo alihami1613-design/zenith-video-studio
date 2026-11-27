@@ -11,6 +11,7 @@ import math
 from ai_editor.contracts import EditPlanError
 from ai_editor.media_analysis import AudioSummary
 from ai_editor.audio_energy import AudioEnergyAnalysis
+from ai_editor.rhythm_analysis import RhythmAnalysis
 
 
 @dataclass(frozen=True)
@@ -40,6 +41,7 @@ def build_audio_cue_map(
     minimum_pause_seconds: float = 0.35,
     edge_window_seconds: float = 1.0,
     energy_analysis: AudioEnergyAnalysis | None = None,
+    rhythm_analysis: RhythmAnalysis | None = None,
 ) -> AudioCueMap:
     """Convert measured silence intervals into timeline review markers."""
     if not isinstance(audio, AudioSummary):
@@ -58,6 +60,8 @@ def build_audio_cue_map(
 
     if energy_analysis is not None and not isinstance(energy_analysis, AudioEnergyAnalysis):
         raise EditPlanError("Energy analysis must be a measured AudioEnergyAnalysis.")
+    if rhythm_analysis is not None and not isinstance(rhythm_analysis, RhythmAnalysis):
+        raise EditPlanError("Rhythm analysis must be a measured RhythmAnalysis.")
     total_frames = round(media_duration_seconds * fps)
     cues: list[AudioCue] = []
     warnings: list[str] = []
@@ -120,6 +124,26 @@ def build_audio_cue_map(
             ))
         warnings.extend(energy_analysis.warnings)
         warnings.append("Energy-change markers are review hints and are not beat-synchronized edits.")
+
+    if rhythm_analysis is not None:
+        for timestamp in rhythm_analysis.pulse_candidates_seconds:
+            if (isinstance(timestamp, bool) or not isinstance(timestamp, (int, float))
+                    or not math.isfinite(timestamp) or timestamp < 0
+                    or timestamp >= media_duration_seconds):
+                warnings.append("An invalid rhythm pulse candidate was ignored.")
+                continue
+            frame = min(total_frames - 1, max(0, round(timestamp * fps)))
+            cues.append(AudioCue(
+                start_frame=frame,
+                end_frame=frame + 1,
+                duration_frames=1,
+                cue_type="music_pulse_candidate",
+                confidence=f"estimated_periodicity_{rhythm_analysis.confidence:.2f}",
+                reason=(f"Estimated pulse near {rhythm_analysis.estimated_bpm} BPM; "
+                        "RMS periodicity only, verify against the actual soundtrack."),
+            ))
+        warnings.extend(rhythm_analysis.warnings)
+        warnings.append("Estimated pulse markers are not an automatic music synchronization instruction.")
 
     cues.sort(key=lambda cue: (cue.start_frame, cue.end_frame, cue.cue_type))
 
