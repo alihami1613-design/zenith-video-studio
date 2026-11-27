@@ -232,7 +232,7 @@ def review_edit(
             for boundary_index, boundary_seconds in enumerate(measured.scene_boundaries_seconds):
                 if not math.isfinite(boundary_seconds):
                     continue
-                if source_start + (1.0 / source_fps) < boundary_seconds < source_end - (1.0 / source_fps):
+                if source_start + (1.0 / max(1, project.fps)) < boundary_seconds < source_end - (1.0 / max(1, project.fps)):
                     add(
                         f"hidden-scene-boundary-{clip.clip_id}-{boundary_index + 1}",
                         "visual_continuity", "advisory",
