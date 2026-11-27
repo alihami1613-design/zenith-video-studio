@@ -297,5 +297,68 @@ class AudioRenderCommandTests(unittest.TestCase):
         self.assertNotIn("curve=iqsin", joined)
 
 
+    def test_ffmpeg_renders_real_crossfade_with_stable_overlap_level(self):
+        import math
+        import shutil
+        import subprocess
+        import wave
+
+        ffmpeg = shutil.which("ffmpeg")
+        if not ffmpeg:
+            self.skipTest("FFmpeg is not installed")
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            first = root / "first.wav"
+            second = root / "second.wav"
+            output = root / "crossfade.wav"
+            for path, frequency in ((first, 440), (second, 880)):
+                subprocess.run(
+                    [ffmpeg, "-y", "-v", "error", "-f", "lavfi", "-i",
+                     f"sine=frequency={frequency}:duration=3:sample_rate=48000",
+                     "-c:a", "pcm_s16le", str(path)],
+                    check=True, timeout=30,
+                )
+            outgoing = self.make_clip(
+                first, clip_id="outgoing", track="A1", audio_track="A1",
+                start_frame=0, source_in=0, duration_frames=90, end_frame=90,
+                volume=1.0, fade_in_frames=0, fade_out_frames=0,
+            )
+            incoming = self.make_clip(
+                second, clip_id="incoming", track="A1", audio_track="A1",
+                start_frame=60, source_in=0, duration_frames=90, end_frame=150,
+                volume=1.0, fade_in_frames=0, fade_out_frames=0,
+            )
+            command = build_audio_mix_command(
+                ffmpeg, [outgoing, incoming], 30, output, 150
+            )
+            subprocess.run(command, check=True, timeout=60)
+
+            with wave.open(str(output), "rb") as rendered:
+                self.assertEqual(rendered.getframerate(), 48000)
+                self.assertEqual(rendered.getnchannels(), 2)
+                frames = rendered.readframes(rendered.getnframes())
+
+            def rms_at(seconds, window=0.2):
+                start = int(seconds * 48000) * 2
+                count = int(window * 48000) * 2
+                samples = memoryview(frames)[start * 2:(start + count) * 2]
+                values = [int.from_bytes(samples[i:i + 2], "little", signed=True)
+                          for i in range(0, len(samples), 2)]
+                return math.sqrt(sum(value * value for value in values) / max(1, len(values)))
+
+            before = rms_at(1.5)
+            overlap_start = rms_at(2.05)
+            overlap_middle = rms_at(2.5)
+            overlap_end = rms_at(2.85)
+            after = rms_at(3.5)
+            self.assertGreater(before, 5000)
+            self.assertGreater(after, 5000)
+            self.assertGreater(overlap_middle, 5000)
+            self.assertGreater(overlap_start, 2500)
+            self.assertGreater(overlap_end, 2500)
+            self.assertLess(abs(overlap_middle - before) / before, 0.35)
+            self.assertLess(abs(overlap_middle - after) / after, 0.35)
+
+
 if __name__ == "__main__":
     unittest.main()
