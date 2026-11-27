@@ -59,6 +59,14 @@ class MainAIWorkflowWiringTests(unittest.TestCase):
         self.assertIn("not conflicts and qc_report.ready_for_export", method)
         self.assertIn("qc_report.error_count", method)
 
+    def test_director_review_is_available_and_review_only(self):
+        self.assertIn("from ai_editor.director_review import review_edit", self.source)
+        self.assertIn('self.ai_director_review_button.clicked.connect(self.run_ai_director_review)', self.source)
+        method = ast.get_source_segment(self.source, self.methods["run_ai_director_review"])
+        self.assertIn("review_edit(", method)
+        self.assertIn("self.timeline_project", method)
+        self.assertNotIn("apply_edit_plan(", method)
+
 
 if __name__ == "__main__":
     unittest.main()
