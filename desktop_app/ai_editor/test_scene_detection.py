@@ -1,4 +1,6 @@
 """Tests for bounded FFmpeg shot-boundary detection."""
+import shutil
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -65,6 +67,21 @@ class SceneDetectionTests(unittest.TestCase):
                     ffmpeg_executable="unused", run=lambda *a, **k: None,
                     **kwargs,
                 )
+
+
+    @unittest.skipUnless(shutil.which("ffmpeg"), "FFmpeg integration binary is unavailable")
+    def test_real_ffmpeg_detects_a_hard_cut(self):
+        media = self.media
+        subprocess.run([
+            shutil.which("ffmpeg"), "-hide_banner", "-loglevel", "error", "-y",
+            "-f", "lavfi", "-i", "color=c=red:s=160x90:r=10:d=1",
+            "-f", "lavfi", "-i", "color=c=blue:s=160x90:r=10:d=1",
+            "-filter_complex", "[0:v][1:v]concat=n=2:v=1:a=0",
+            "-c:v", "libx264", "-pix_fmt", "yuv420p", str(media),
+        ], capture_output=True, timeout=60, check=True)
+        result = detect_scene_changes(media, 2.0, threshold=0.20)
+        self.assertTrue(result.boundaries)
+        self.assertAlmostEqual(result.boundaries[0].timestamp_seconds, 1.0, delta=0.25)
 
     def test_missing_media_is_rejected(self):
         with self.assertRaises(FileNotFoundError):
