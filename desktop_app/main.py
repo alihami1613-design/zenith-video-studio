@@ -3366,32 +3366,33 @@ class ZenithEditor(QMainWindow):
         self.statusBar().showMessage("تغییر دوباره اعمال شد")
 
     def _clip_trimmed(self, clip_id: str, start_frame: int, end_frame: int) -> None:
-        history_before = self._history_snapshot()
+        # TimelineWidget emits editStarted on mouse press, before this release callback.
+        # That single snapshot already represents the pre-edit state.
         try:
             self.timeline_project.trim_clip(clip_id, new_start_frame=start_frame, new_end_frame=end_frame)
         except (KeyError, ValueError) as exc:
+            current = self._history_snapshot()
+            if self._undo_stack and self._undo_stack[-1] == current:
+                self._undo_stack.pop()
+                self._update_history_buttons()
             self.statusBar().showMessage(f"کوتاه‌کردن کلیپ انجام نشد: {exc}")
             self._refresh_timeline()
             return
-        if self._history_snapshot() != history_before:
-            self._append_history_snapshot(self._undo_stack, history_before)
-            self._redo_stack.clear()
-            self._update_history_buttons()
         self._refresh_timeline()
         self.statusBar().showMessage("لبه کلیپ تنظیم شد؛ فایل اصلی تغییری نکرد")
 
     def _clip_moved(self, clip_id: str, start_frame: int, track: str) -> None:
-        history_before = self._history_snapshot()
+        # TimelineWidget emits editStarted on mouse press, before this release callback.
         try:
             self.timeline_project.move_clip(clip_id, start_frame, track)
         except (KeyError, ValueError) as exc:
+            current = self._history_snapshot()
+            if self._undo_stack and self._undo_stack[-1] == current:
+                self._undo_stack.pop()
+                self._update_history_buttons()
             self.statusBar().showMessage(f"جابه‌جایی انجام نشد: {exc}")
             self.timeline_widget.refresh()
             return
-        if self._history_snapshot() != history_before:
-            self._append_history_snapshot(self._undo_stack, history_before)
-            self._redo_stack.clear()
-            self._update_history_buttons()
         self.timeline_widget.refresh()
 
     def _toggle_playback(self) -> None:
