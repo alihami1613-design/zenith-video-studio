@@ -3,7 +3,7 @@ import unittest
 
 from ai_editor.audio_cues import build_audio_cue_map
 from ai_editor.contracts import EditPlanError
-from ai_editor.media_analysis import AudioSummary
+from ai_editor.media_analysis import AudioSummary, SpectralAudioSummary
 from ai_editor.audio_energy import AudioEnergyAnalysis, AudioEnergyPoint
 from ai_editor.rhythm_analysis import RhythmAnalysis
 
@@ -105,6 +105,35 @@ class AudioCueTests(unittest.TestCase):
             build_audio_cue_map(
                 audio, media_duration_seconds=5.0, fps=30,
                 rhythm_analysis={"estimated_bpm": 120},
+            )
+
+
+    def test_maps_spectral_onsets_and_pulses_to_distinct_review_cues(self):
+        audio = AudioSummary((), peak_db=-1.0, mean_db=-18.0)
+        spectral = SpectralAudioSummary(
+            sample_rate=8000, frame_size=512, hop_size=128,
+            estimated_bpm=120.0, tempo_confidence=0.91,
+            onset_candidates_seconds=(0.25, 0.75, 5.0),
+            pulse_candidates_seconds=(0.0, 0.5, 5.0),
+            warnings=("Spectral flux is a candidate detector.",),
+        )
+        result = build_audio_cue_map(
+            audio, media_duration_seconds=5.0, fps=30,
+            spectral_audio=spectral,
+        )
+        onsets = [cue for cue in result.cues if cue.cue_type == "spectral_onset_candidate"]
+        pulses = [cue for cue in result.cues if cue.cue_type == "spectral_music_pulse_candidate"]
+        self.assertEqual([cue.start_frame for cue in onsets], [8, 23])
+        self.assertEqual([cue.start_frame for cue in pulses], [0, 15])
+        self.assertTrue(all(cue.duration_frames == 1 for cue in onsets + pulses))
+        self.assertTrue(any("review-only" in warning for warning in result.warnings))
+
+    def test_rejects_wrong_spectral_summary_type(self):
+        audio = AudioSummary((), peak_db=-1.0, mean_db=-18.0)
+        with self.assertRaises(EditPlanError):
+            build_audio_cue_map(
+                audio, media_duration_seconds=5.0, fps=30,
+                spectral_audio={"estimated_bpm": 120},
             )
 
     def test_rejects_wrong_audio_input_type(self):
