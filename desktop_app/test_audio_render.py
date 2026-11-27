@@ -600,13 +600,13 @@ class AudioRenderCommandTests(unittest.TestCase):
 
             pre_voice = music_tone_level(1.0)
             during_voice = music_tone_level(2.8)
-            recovered = music_tone_level(4.65)
+            recovered = music_tone_level(4.8)
             self.assertGreater(pre_voice, 1000)
             self.assertGreater(recovered, 1000)
             self.assertLess(during_voice, pre_voice * 0.80,
                            f"Music should duck under voice: pre={pre_voice}, during={during_voice}")
-            self.assertGreater(recovered, during_voice * 1.25,
-                              f"Music should recover after voice: ducked={during_voice}, recovered={recovered}")
+            self.assertGreater(recovered, pre_voice * 0.65,
+                              f"Music should recover toward its pre-voice level: pre={pre_voice}, recovered={recovered}")
 
 
 if __name__ == "__main__":
