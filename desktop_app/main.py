@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QFileDialog, QMessageBox,
     QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QListWidget,
     QListWidgetItem, QSplitter, QFrame, QStatusBar, QSlider, QCheckBox, QComboBox,
-    QProgressBar, QDoubleSpinBox, QLineEdit, QSpinBox, QPlainTextEdit,
+    QProgressBar, QDoubleSpinBox, QLineEdit, QSpinBox, QPlainTextEdit, QGroupBox,
 )
 
 from timeline_model import TimelineProject, mask_values_at, mask_points_at, transform_eased_progress
@@ -408,14 +408,19 @@ class ZenithEditor(QMainWindow):
         self.ai_analysis_output.setPlainText("هنوز تحلیلی انجام نشده است. تحلیل فقط روی همین رایانه اجرا می‌شود؛ هیچ فایل یا مسیر محلی به سرویس ابری ارسال نمی‌شود. انتخاب موسیقی و ریتم برای مرحله ساخت پیش‌نویس نگه‌داری می‌شود.")
         ai_layout.addWidget(self.ai_analysis_output)
 
+        self.ai_workflow_group = QGroupBox("مرحله دوم: داستان، انتخاب نما و اجرای تدوین تأییدشده")
+        self.ai_workflow_group.setCheckable(True)
+        self.ai_workflow_group.setChecked(False)
+        workflow_layout = QVBoxLayout(self.ai_workflow_group)
+        ai_layout.addWidget(self.ai_workflow_group)
         story_heading = QLabel("STORY & EDIT PLAN  |  طرح داستان، انتخاب نما و تأیید انسانی")
         story_heading.setObjectName("panel_title")
-        ai_layout.addWidget(story_heading)
+        workflow_layout.addWidget(story_heading)
         self.ai_story_json = QPlainTextEdit()
         self.ai_story_json.setPlaceholderText("JSON طرح داستانِ تولیدشده توسط سرویس هوش مصنوعیِ مورداعتماد خودت را اینجا وارد یا بارگذاری کن…\nفعلاً هیچ ارائه‌دهنده ابری به برنامه متصل نیست.")
         self.ai_story_json.setMaximumHeight(96)
         self.ai_story_json.textChanged.connect(self._invalidate_ai_story)
-        ai_layout.addWidget(self.ai_story_json)
+        workflow_layout.addWidget(self.ai_story_json)
         story_actions = QHBoxLayout()
         self.ai_load_story_button = QPushButton("بارگذاری طرح JSON")
         self.ai_load_story_button.clicked.connect(self.load_ai_story_json)
@@ -427,7 +432,7 @@ class ZenithEditor(QMainWindow):
         story_actions.addWidget(self.ai_load_story_button)
         story_actions.addWidget(self.ai_validate_story_button)
         story_actions.addWidget(self.ai_select_shots_button)
-        ai_layout.addLayout(story_actions)
+        workflow_layout.addLayout(story_actions)
         approvals = QHBoxLayout()
         self.ai_story_approval = QCheckBox("داستان را بررسی و تأیید کردم")
         self.ai_shot_approval = QCheckBox("انتخاب نماها را بررسی و تأیید کردم")
@@ -437,7 +442,7 @@ class ZenithEditor(QMainWindow):
         self.ai_shot_approval.toggled.connect(self._ai_approval_changed)
         approvals.addWidget(self.ai_story_approval)
         approvals.addWidget(self.ai_shot_approval)
-        ai_layout.addLayout(approvals)
+        workflow_layout.addLayout(approvals)
         plan_actions = QHBoxLayout()
         self.ai_build_plan_button = QPushButton("ساخت پیش‌نویس تدوین موسیقی‌محور")
         self.ai_build_plan_button.setEnabled(False)
@@ -451,7 +456,7 @@ class ZenithEditor(QMainWindow):
         plan_actions.addWidget(self.ai_build_plan_button)
         plan_actions.addWidget(self.ai_preview_plan_button)
         plan_actions.addWidget(self.ai_apply_plan_button)
-        ai_layout.addLayout(plan_actions)
+        workflow_layout.addLayout(plan_actions)
         outer.addWidget(ai_panel)
 
         top_split = QSplitter(Qt.Horizontal)
