@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from ai_editor.project_context import build_project_context, media_inventory_fingerprint
+from ai_editor.project_context import build_project_context, media_inventory_fingerprint, media_inventory_fingerprint
 from timeline_model import TimelineProject
 
 
@@ -61,6 +61,28 @@ class ProjectContextTests(unittest.TestCase):
             self.assertIn("probe failed", context.assets[0].warning)
             self.assertTrue(context.warnings)
 
+
+    def test_media_fingerprint_changes_when_imported_inventory_or_file_changes(self):
+        with tempfile.TemporaryDirectory() as folder:
+            first = Path(folder) / "first.mp4"
+            second = Path(folder) / "second.mp4"
+            first.write_bytes(b"first")
+            project = TimelineProject()
+            before = media_inventory_fingerprint(project, [first])
+            second.write_bytes(b"second")
+            after_import = media_inventory_fingerprint(project, [first, second])
+            self.assertNotEqual(before, after_import)
+            first.write_bytes(b"first-file-was-replaced")
+            after_replace = media_inventory_fingerprint(project, [first, second])
+            self.assertNotEqual(after_import, after_replace)
+
+    def test_missing_media_is_part_of_fingerprint(self):
+        project = TimelineProject()
+        missing = Path("/definitely/missing/zenith-media.mp4")
+        self.assertEqual(
+            media_inventory_fingerprint(project, [missing])[0][1:],
+            (None, None),
+        )
 
 if __name__ == "__main__":
     unittest.main()
