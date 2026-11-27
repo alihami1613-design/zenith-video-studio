@@ -9,6 +9,8 @@ from timeline_model import TimelineProject
 
 
 class FakeProvider:
+    is_remote = False
+
     def __init__(self, result):
         self.result = result
         self.request = None
@@ -67,6 +69,19 @@ class AIPlannerTests(unittest.TestCase):
         provider = FakeProvider("not valid JSON")
         with self.assertRaises(EditPlanError):
             request_edit_plan("Make a film", TimelineProject(), provider)
+
+    def test_remote_provider_requires_explicit_cloud_permission(self):
+        class RemoteProvider(FakeProvider):
+            is_remote = True
+
+        provider = RemoteProvider(empty_plan("Make a film"))
+        with self.assertRaisesRegex(EditPlanError, "explicit user permission"):
+            request_edit_plan("Make a film", TimelineProject(), provider)
+        plan = request_edit_plan(
+            "Make a film", TimelineProject(), provider,
+            allow_cloud_planning=True,
+        )
+        self.assertTrue(plan.requires_user_approval)
 
     def test_provider_is_required(self):
         with self.assertRaises(EditPlanError):
