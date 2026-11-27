@@ -248,16 +248,18 @@ def build_gap_repair_plan(
         previous, current = clips[previous_id], clips[current_id]
         if previous.track != "V1" or current.track != "V1" or current.start_frame <= previous.end_frame:
             raise ValueError("The selected gap is no longer present on V1.")
-        eligible.append((current.start_frame, previous.end_frame, current))
+        eligible.append((current.start_frame, previous, current))
     eligible.sort(key=lambda item: item[0])
     operations = []
     used_ids = set()
-    cursor_end = -1
-    for index, (_, target_start, clip) in enumerate(eligible):
+    projected_ends = {clip.clip_id: clip.end_frame for clip in project.clips}
+    previous_target_end = -1
+    for index, (_, previous, clip) in enumerate(eligible):
         if clip.clip_id in used_ids:
             raise ValueError("A clip cannot receive multiple automatic position proposals.")
         used_ids.add(clip.clip_id)
-        if target_start < cursor_end:
+        target_start = projected_ends.get(previous.clip_id, previous.end_frame)
+        if target_start < previous_target_end or target_start > clip.start_frame:
             raise ValueError("Selected repairs would create an overlap; split the proposal into separate reviews.")
         operations.append(EditOperation(
             operation_id=f"director-gap-{index + 1}",
@@ -265,7 +267,8 @@ def build_gap_repair_plan(
             parameters={"clip_id": clip.clip_id, "start_frame": target_start},
             rationale="Close a measured empty gap on V1; review the isolated preview before applying.",
         ))
-        cursor_end = target_start + clip.duration_frames
+        projected_ends[clip.clip_id] = target_start + clip.duration_frames
+        previous_target_end = target_start + clip.duration_frames
     plan = EditPlan(
         plan_id="director-gap-repair-v1",
         brief=ProjectBrief(
