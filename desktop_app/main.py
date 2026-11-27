@@ -777,6 +777,14 @@ class ZenithEditor(QMainWindow):
         self.volume_slider.sliderPressed.connect(self._push_undo)
         self.volume_slider.valueChanged.connect(self._audio_controls_changed)
         inspector_layout.addWidget(self.volume_slider)
+        self.audio_keyframe_status_label = QLabel("نقاط کلیدی ولوم: 0")
+        inspector_layout.addWidget(self.audio_keyframe_status_label)
+        self.audio_keyframe_add_button = QPushButton("ثبت نقطه کلیدی در مکان‌نما")
+        self.audio_keyframe_add_button.clicked.connect(self._add_audio_volume_keyframe)
+        inspector_layout.addWidget(self.audio_keyframe_add_button)
+        self.audio_keyframe_clear_button = QPushButton("حذف همه نقاط کلیدی ولوم")
+        self.audio_keyframe_clear_button.clicked.connect(self._clear_audio_volume_keyframes)
+        inspector_layout.addWidget(self.audio_keyframe_clear_button)
 
         self.audio_pan_label = QLabel("Stereo Pan: Center")
         inspector_layout.addWidget(self.audio_pan_label)
@@ -2213,7 +2221,7 @@ class ZenithEditor(QMainWindow):
             except KeyError:
                 clip = None
         enabled = bool(clip and (clip.media_type == "audio" or (clip.media_type == "video" and clip.has_audio)))
-        for control in (self.volume_slider, self.audio_pan_slider, self.fade_in_slider, self.fade_out_slider, self.audio_mute_checkbox, self.audio_solo_checkbox):
+        for control in (self.volume_slider, self.audio_pan_slider, self.fade_in_slider, self.fade_out_slider, self.audio_mute_checkbox, self.audio_solo_checkbox, self.audio_keyframe_add_button, self.audio_keyframe_clear_button):
             control.setEnabled(enabled)
         if not enabled:
             self.volume_value_label.setText("حجم صدا: —")
@@ -2240,6 +2248,9 @@ class ZenithEditor(QMainWindow):
         pan = round(float(getattr(clip, "audio_pan", 0.0)) * 100)
         self.audio_pan_label.setText("Stereo Pan: " + ("Left " + str(abs(pan)) + "%" if pan < 0 else "Right " + str(pan) + "%" if pan > 0 else "Center"))
         self.volume_value_label.setText(f"حجم صدا: {round(clip.volume * 100)}٪")
+        self.audio_keyframe_status_label.setText(
+            f"نقاط کلیدی ولوم: {len(getattr(clip, 'audio_volume_keyframes', []))}"
+        )
         fps = max(1, self.timeline_project.fps)
         self.fade_in_label.setText(f"Fade In: {clip.fade_in_frames / fps:.1f} ثانیه")
         self.fade_out_label.setText(f"Fade Out: {clip.fade_out_frames / fps:.1f} ثانیه")
@@ -3147,6 +3158,59 @@ class ZenithEditor(QMainWindow):
         self.fade_in_label.setText(f"Fade In: {clip.fade_in_frames / fps:.1f} ثانیه")
         self.fade_out_label.setText(f"Fade Out: {clip.fade_out_frames / fps:.1f} ثانیه")
         self.timeline_widget.refresh()
+
+    def _add_audio_volume_keyframe(self) -> None:
+        clip_id = self.timeline_widget.canvas.selected_clip_id
+        if not clip_id:
+            return
+        try:
+            clip = self.timeline_project.get_clip(clip_id)
+            if not (clip.media_type == "audio" or (clip.media_type == "video" and clip.has_audio)):
+                return
+            local_frame = max(0, min(
+                clip.duration_frames - 1,
+                self.timeline_project.playhead_frame - clip.start_frame,
+            ))
+            points = [dict(point) for point in clip.audio_volume_keyframes]
+            gain = self.volume_slider.value() / 100.0
+            replacement = {"frame": local_frame, "volume": gain}
+            for index, point in enumerate(points):
+                if int(point["frame"]) == local_frame:
+                    points[index] = replacement
+                    break
+            else:
+                points.append(replacement)
+            points.sort(key=lambda point: int(point["frame"]))
+            self._push_undo()
+            self.timeline_project.set_clip_audio(
+                clip_id, audio_volume_keyframes=points
+            )
+        except (KeyError, ValueError) as exc:
+            self.statusBar().showMessage(f"ثبت نقطه کلیدی ولوم انجام نشد: {exc}")
+            return
+        self.audio_keyframe_status_label.setText(f"نقاط کلیدی ولوم: {len(points)}")
+        self.timeline_widget.refresh()
+        self.statusBar().showMessage(
+            f"نقطه کلیدی ولوم در فریم {local_frame} با مقدار {gain * 100:.0f}٪ ثبت شد."
+        )
+
+    def _clear_audio_volume_keyframes(self) -> None:
+        clip_id = self.timeline_widget.canvas.selected_clip_id
+        if not clip_id:
+            return
+        try:
+            clip = self.timeline_project.get_clip(clip_id)
+            if not clip.audio_volume_keyframes:
+                self.statusBar().showMessage("این کلیپ نقطه کلیدی ولوم ندارد.")
+                return
+            self._push_undo()
+            self.timeline_project.set_clip_audio(clip_id, audio_volume_keyframes=[])
+        except (KeyError, ValueError) as exc:
+            self.statusBar().showMessage(f"حذف نقاط کلیدی ولوم انجام نشد: {exc}")
+            return
+        self.audio_keyframe_status_label.setText("نقاط کلیدی ولوم: 0")
+        self.timeline_widget.refresh()
+        self.statusBar().showMessage("تمام نقاط کلیدی ولوم این کلیپ حذف شدند.")
 
     def create_proxy_for_selected_media(self) -> None:
         row = self.media_list.currentRow()
