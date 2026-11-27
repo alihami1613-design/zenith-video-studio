@@ -330,7 +330,7 @@ def build_video_render_command(ffmpeg: str, project: object,
                     f",geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':"
                     f"a='if({mask_invert}\\,if({mask_expr}\\,0\\,alpha(X,Y))\\,if({mask_expr}\\,alpha(X,Y)\\,0))'"
                 )
-            elif mask_shape == "rectangle":
+            elif mask_shape == "rectangle" and not mask_invert:
                 chain += (
                     f",crop=w='max(2\\,trunc(iw*{mask_w:.6f}))':"
                     f"h='max(2\\,trunc(ih*{mask_h:.6f}))':"
@@ -338,9 +338,16 @@ def build_video_render_command(ffmpeg: str, project: object,
                     f"pad={width}:{height}:x='trunc({width}*{mask_x:.6f})':y='trunc({height}*{mask_y:.6f})':color=black@0"
                 )
             else:
-                mask_expr = build_mask_shape_expression(
-                    mask_shape, mask_x, mask_y, mask_w, mask_h, mask_points, width, height,
-                )
+                if mask_shape == "rectangle":
+                    mask_expr = build_animated_mask_shape_expression(
+                        "rectangle", f"{mask_x:.9f}", f"{mask_y:.9f}",
+                        f"{mask_w:.9f}", f"{mask_h:.9f}", [],
+                        (mask_x, mask_y, mask_w, mask_h), None, "0",
+                    )
+                else:
+                    mask_expr = build_mask_shape_expression(
+                        mask_shape, mask_x, mask_y, mask_w, mask_h, mask_points, width, height,
+                    )
                 chain += (
                     f",geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':"
                     f"a='if({mask_invert}\\,if({mask_expr}\\,0\\,alpha(X,Y))\\,if({mask_expr}\\,alpha(X,Y)\\,0))'"
