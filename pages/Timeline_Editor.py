@@ -75,7 +75,52 @@ if st.session_state.timeline_video:
         except Exception as e:
             st.error(f"خطا در پردازش: {e}")
 
-st.subheader("۵ — نمای ترتیب زمانی")
+
+st.subheader("۵ — ترکیب کلیپ‌ها و ساخت ویدئوی واحد")
+st.caption("کلیپ‌ها بر اساس ترتیب زمان شروع پشت سر هم ترکیب می‌شوند. فاصله‌های خالی، لایه‌ها و صداهای مستقل هنوز در خروجی نهایی لحاظ نمی‌شوند. خروجی سبک 720p برای کاهش فشار روی سیستم ساخته می‌شود.")
+if len(st.session_state.timeline_video)>=2:
+    if st.button("ساخت ویدئوی ترکیبی از کلیپ‌ها"):
+        try:
+            import imageio_ffmpeg
+            ffmpeg=imageio_ffmpeg.get_ffmpeg_exe()
+            ordered=sorted(st.session_state.timeline_video,key=lambda x:x.get("start",0))
+            with tempfile.TemporaryDirectory() as td:
+                td=Path(td)
+                segment_paths=[]
+                progress=st.progress(0)
+                status=st.empty()
+                for i,clip in enumerate(ordered):
+                    if clip.get("trim_out",5)<=clip.get("trim_in",0):
+                        raise ValueError("یکی از کلیپ‌ها نقطه برش نامعتبر دارد.")
+                    ext=Path(clip["name"]).suffix or ".mp4"
+                    src=td/f"source_{i}{ext}"
+                    seg=td/f"segment_{i}.mp4"
+                    src.write_bytes(clip["source"].getvalue())
+                    length=float(clip["trim_out"])-float(clip["trim_in"])
+                    status.write(f"در حال پردازش کلیپ {i+1} از {len(ordered)}")
+                    cmd=[ffmpeg,"-y","-ss",str(clip["trim_in"]),"-i",str(src),"-t",str(length),"-vf","scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,fps=30","-c:v","libx264","-preset","ultrafast","-crf","24","-pix_fmt","yuv420p","-c:a","aac","-b:a","128k","-ar","44100","-ac","2","-movflags","+faststart",str(seg)]
+                    result=subprocess.run(cmd,capture_output=True,text=True,timeout=300)
+                    if result.returncode!=0 or not seg.exists():
+                        raise RuntimeError(f"پردازش کلیپ {i+1} شکست خورد.")
+                    segment_paths.append(seg)
+                    progress.progress((i+1)/len(ordered))
+                concat_file=td/"concat.txt"
+                concat_file.write_text("\n".join("file '"+p.as_posix()+"'" for p in segment_paths),encoding="utf-8")
+                output=td/"ZENITH_combined.mp4"
+                cmd=[ffmpeg,"-y","-f","concat","-safe","0","-i",str(concat_file),"-c","copy","-movflags","+faststart",str(output)]
+                result=subprocess.run(cmd,capture_output=True,text=True,timeout=300)
+                if result.returncode!=0 or not output.exists():
+                    raise RuntimeError("مرحله ترکیب کلیپ‌ها ناموفق بود.")
+                data=output.read_bytes()
+                status.success("ویدئوی ترکیبی آماده شد.")
+                st.video(data)
+                st.download_button("دانلود ویدئوی ترکیبی",data=data,file_name="ZENITH_combined.mp4",mime="video/mp4")
+        except Exception as e:
+            st.error(f"خطا: {e}")
+elif st.session_state.timeline_video:
+    st.info("برای ترکیب، حداقل دو کلیپ به تایم‌لاین اضافه کنید.")
+
+st.subheader("۶ — نمای ترتیب زمانی")
 clips=sorted(st.session_state.timeline_video,key=lambda x:x.get("start",0))
 if clips:
     total=max((c.get("start",0)+c.get("duration",0) for c in clips),default=0)
@@ -85,4 +130,4 @@ if clips:
 else:
     st.info("برای آغاز، ویدئو وارد کنید.")
 
-st.caption("استخراج کلیپ به MP4 با FFmpeg پیاده‌سازی شده؛ رندر کل تایم‌لاین، همگام‌سازی چند ترک و افکت‌ها هنوز در مراحل بعدی هستند.")
+st.caption("استخراج کلیپ به MP4 با FFmpeg پیاده‌سازی شده؛ ترکیب پشت سر هم کلیپ‌ها در خروجی 720p اضافه شده است؛ همگام‌سازی چند ترک، فاصله زمانی دقیق، افکت‌ها و رندر حرفه‌ای هنوز در مراحل بعدی هستند.")
