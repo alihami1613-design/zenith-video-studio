@@ -4,6 +4,8 @@ from __future__ import annotations
 import os
 import subprocess
 import tempfile
+import threading
+import time
 from pathlib import Path
 from typing import Callable, Iterable
 
@@ -202,7 +204,8 @@ def build_animated_mask_shape_expression(shape: str, x_expr: str, y_expr: str,
 
 
 def build_video_render_command(ffmpeg: str, project: object,
-                               output_path: str | Path) -> list[str]:
+                               output_path: str | Path,
+                               progress_path: str | Path | None = None) -> list[str]:
     """Composite V1-V4 bottom-to-top; still images loop for their clip duration."""
     clips = validate_render_project(project)
     fps, width, height = int(project.fps), int(project.width), int(project.height)
@@ -475,20 +478,72 @@ def build_video_render_command(ffmpeg: str, project: object,
         "-an", "-t", f"{duration:.6f}",
         "-r", str(fps), "-c:v", "libx264", "-preset", "ultrafast",
         "-crf", "22", "-threads", "2", "-pix_fmt", "yuv420p",
-        "-movflags", "+faststart", "-sn", str(Path(output_path)),
+        "-movflags", "+faststart", "-sn",
     ])
+    if progress_path is not None:
+        command.extend(["-progress", str(progress_path), "-nostats"])
+    command.append(str(Path(output_path)))
     return command
 
 
-def _run(command: list[str], timeout_seconds: int, description: str) -> None:
+class RenderCancelledError(RuntimeError):
+    """Raised when a user requests a safe render cancellation."""
+
+
+def _progress_seconds(progress_path: Path | None) -> float | None:
+    if progress_path is None or not progress_path.is_file():
+        return None
     try:
-        subprocess.run(command, capture_output=True, text=True,
-                       timeout=timeout_seconds, check=True)
-    except subprocess.TimeoutExpired as exc:
-        raise RuntimeError(f"{description}: زمان مجاز رندر تمام شد.") from exc
-    except subprocess.CalledProcessError as exc:
-        detail = (exc.stderr or exc.stdout or "").strip()
-        raise RuntimeError(f"{description}: {(detail[-1400:] or 'خطای ناشناخته FFmpeg')}") from exc
+        values = {}
+        for line in progress_path.read_text(encoding="utf-8", errors="ignore").splitlines()[-30:]:
+            if "=" in line:
+                key, value = line.split("=", 1)
+                values[key] = value
+        raw = values.get("out_time")
+        if raw and raw != "N/A":
+            hours, minutes, seconds = raw.split(":")
+            return int(hours) * 3600 + int(minutes) * 60 + float(seconds)
+        raw_us = values.get("out_time_us") or values.get("out_time_ms")
+        if raw_us and raw_us.isdigit():
+            return int(raw_us) / 1_000_000
+    except (OSError, ValueError):
+        return None
+    return None
+
+
+def _run(command: list[str], timeout_seconds: int, description: str,
+         cancel_event: threading.Event | None = None,
+         progress_path: Path | None = None,
+         expected_duration: float | None = None,
+         progress_callback: Callable[[float], None] | None = None) -> None:
+    started = time.monotonic()
+    with tempfile.TemporaryFile(mode="w+b") as stderr_file:
+        process = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=stderr_file)
+        while process.poll() is None:
+            if cancel_event is not None and cancel_event.is_set():
+                process.terminate()
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait()
+                raise RenderCancelledError("رندر به درخواست کاربر لغو شد؛ فایل اصلی خروجی حفظ شد.")
+            if time.monotonic() - started > timeout_seconds:
+                process.kill()
+                process.wait()
+                raise RuntimeError(f"{description}: زمان مجاز رندر تمام شد.")
+            elapsed = _progress_seconds(progress_path)
+            if elapsed is not None and expected_duration and progress_callback is not None:
+                progress_callback(min(1.0, max(0.0, elapsed / expected_duration)))
+            time.sleep(0.2)
+        if process.returncode:
+            stderr_file.seek(0, os.SEEK_END)
+            size = stderr_file.tell()
+            stderr_file.seek(max(0, size - 6000))
+            detail = stderr_file.read().decode("utf-8", errors="replace").strip()
+            raise RuntimeError(f"{description}: {(detail[-1400:] or 'خطای ناشناخته FFmpeg')}")
+    if progress_callback is not None:
+        progress_callback(1.0)
 
 
 def render_timeline_mp4(
@@ -496,6 +551,8 @@ def render_timeline_mp4(
     output_path: str | Path,
     timeout_seconds: int = 14400,
     validation_callback: Callable[[RenderValidationReport], None] | None = None,
+    cancel_event: threading.Event | None = None,
+    progress_callback: Callable[[int, str], None] | None = None,
 ) -> Path:
     """Render multi-layer picture timeline and optional mixed audio atomically."""
     validate_render_project(project)
@@ -514,8 +571,16 @@ def render_timeline_mp4(
     with tempfile.TemporaryDirectory(prefix="zenith_render_", dir=str(target.parent)) as work:
         work_dir = Path(work)
         silent_video = work_dir / "picture.mp4"
-        _run(build_video_render_command(ffmpeg, project, silent_video),
-             timeout_seconds, "رندر تصویر ناموفق بود")
+        picture_progress = work_dir / "picture.progress"
+        duration_seconds = _seconds(project.duration_frames, project.fps)
+        if cancel_event is not None and cancel_event.is_set():
+            raise RenderCancelledError("رندر به درخواست کاربر لغو شد.")
+        _run(
+            build_video_render_command(ffmpeg, project, silent_video, picture_progress),
+            timeout_seconds, "رندر تصویر ناموفق بود", cancel_event,
+            picture_progress, duration_seconds,
+            (lambda value: progress_callback(int(value * 68), "رندر تصویر") if progress_callback else None),
+        )
         if not silent_video.is_file() or silent_video.stat().st_size <= 0:
             raise RuntimeError("FFmpeg فایل ویدیویی معتبر تولید نکرد.")
 
@@ -524,12 +589,16 @@ def render_timeline_mp4(
         try:
             if has_audio:
                 mixed_audio = work_dir / "mix.wav"
+                if cancel_event is not None and cancel_event.is_set():
+                    raise RenderCancelledError("رندر به درخواست کاربر لغو شد.")
                 render_audio_mix(
                     project.clips, project.fps, mixed_audio,
                     timeline_duration_frames=project.duration_frames,
                     audio_track_settings=project.audio_track_settings,
                     audio_ducking=project.audio_ducking,
                     timeout_seconds=timeout_seconds,
+                    cancel_event=cancel_event,
+                    progress_callback=(lambda value: progress_callback(68 + int(value * 17), "میکس صدا") if progress_callback else None),
                 )
                 mux = [
                     ffmpeg, "-y", "-hide_banner", "-loglevel", "error",
@@ -539,11 +608,19 @@ def render_timeline_mp4(
                     "-t", f"{_seconds(project.duration_frames, project.fps):.6f}",
                     "-movflags", "+faststart", str(partial),
                 ]
-                _run(mux, timeout_seconds, "ترکیب تصویر و صدا ناموفق بود")
+                mux_progress = work_dir / "mux.progress"
+                mux.extend(["-progress", str(mux_progress), "-nostats"])
+                _run(mux, timeout_seconds, "ترکیب تصویر و صدا ناموفق بود",
+                     cancel_event, mux_progress, duration_seconds,
+                     (lambda value: progress_callback(85 + int(value * 5), "ترکیب تصویر و صدا") if progress_callback else None))
             else:
                 os.replace(silent_video, partial)
             if not partial.is_file() or partial.stat().st_size <= 0:
                 raise RuntimeError("فایل MP4 خروجی معتبر ساخته نشد.")
+            if cancel_event is not None and cancel_event.is_set():
+                raise RenderCancelledError("رندر پیش از اعتبارسنجی به درخواست کاربر لغو شد.")
+            if progress_callback is not None:
+                progress_callback(90, "اعتبارسنجی و کنترل کیفیت")
             validation_report = validate_rendered_mp4(
                 partial, ffmpeg,
                 expected_width=int(project.width),
@@ -555,7 +632,11 @@ def render_timeline_mp4(
             )
             if validation_callback is not None:
                 validation_callback(validation_report)
+            if cancel_event is not None and cancel_event.is_set():
+                raise RenderCancelledError("رندر پیش از نهایی‌سازی به درخواست کاربر لغو شد.")
             os.replace(partial, target)
+            if progress_callback is not None:
+                progress_callback(100, "پایان رندر")
         finally:
             partial.unlink(missing_ok=True)
     return target
