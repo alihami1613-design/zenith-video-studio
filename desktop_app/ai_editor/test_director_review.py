@@ -50,6 +50,22 @@ class DirectorReviewTests(unittest.TestCase):
             self.assertEqual(target_clip.start_frame, 45)
             self.assertTrue(draft.edit_plan.requires_user_approval)
 
+    def test_chained_gap_repairs_keep_the_track_contiguous(self):
+        with tempfile.TemporaryDirectory() as folder:
+            project = self._project(folder)
+            third = Path(folder) / "c.mp4"
+            third.write_bytes(b"c")
+            project.add_clip(str(third), "Third", start_frame=500, duration_frames=60)
+            report = review_edit(project)
+            draft = build_gap_repair_plan(report, project, [])
+            preview = preview_edit_plan(project, draft.edit_plan, [])
+            ordered = sorted(
+                (clip for clip in preview.project.clips if clip.track == "V1"),
+                key=lambda clip: clip.start_frame,
+            )
+            self.assertEqual(ordered[1].start_frame, ordered[0].end_frame)
+            self.assertEqual(ordered[2].start_frame, ordered[1].end_frame)
+
     def test_gap_repair_rejects_stale_review_and_non_gap_findings(self):
         with tempfile.TemporaryDirectory() as folder:
             project = self._project(folder)
