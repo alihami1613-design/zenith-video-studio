@@ -256,6 +256,39 @@ class VideoRenderTask(QRunnable):
             self.signals.finished.emit("", str(exc))
 
 
+class ProviderTestSignals(QObject):
+    finished = Signal(bool, str)
+
+
+class ProviderTestTask(QRunnable):
+    """Send a tiny explicit connection probe; never includes project/media data."""
+
+    def __init__(self, endpoint: str, model: str, account: str) -> None:
+        super().__init__()
+        self.endpoint = endpoint
+        self.model = model
+        self.account = account
+        self.signals = ProviderTestSignals()
+
+    def run(self) -> None:
+        try:
+            from ai_editor.provider_adapter import OpenAICompatibleConfig, OpenAICompatibleJSONProvider
+            provider = OpenAICompatibleJSONProvider(OpenAICompatibleConfig(
+                endpoint=self.endpoint, model=self.model, credential_account=self.account,
+            ))
+            raw = provider.generate_story_blueprint({
+                "system_instructions": "You are performing a connectivity test. Return only a JSON object: {\"ok\": true}. Do not include any other content.",
+                "connection_test": "Return the JSON object {\\\"ok\\\":true}. This is a connectivity test only.",
+            })
+            import json
+            result = json.loads(raw)
+            if not isinstance(result, dict) or result.get("ok") is not True:
+                raise ValueError("Provider response did not match the connection-test contract.")
+            self.signals.finished.emit(True, "اتصال موفق بود؛ سرویس پاسخ معتبر JSON برگرداند.")
+        except Exception as exc:
+            self.signals.finished.emit(False, str(exc))
+
+
 class LocalMediaAnalysisSignals(QObject):
     finished = Signal(object, object, str)
 
@@ -307,6 +340,9 @@ class ZenithEditor(QMainWindow):
         self._scope_tasks: list[RGBHistogramTask] = []
         self._scope_clip_id: str | None = None
         self._ai_analysis_pool = QThreadPool(self)
+        self._provider_test_pool = QThreadPool(self)
+        self._provider_test_pool.setMaxThreadCount(1)
+        self._provider_test_task: ProviderTestTask | None = None
         self._ai_analysis_pool.setMaxThreadCount(1)
         self._ai_analysis_task: LocalMediaAnalysisTask | None = None
         self._ai_project_context = None
@@ -452,6 +488,15 @@ class ZenithEditor(QMainWindow):
         )
         provider_note.setWordWrap(True)
         provider_layout.addWidget(provider_note)
+        consent_row = QHBoxLayout()
+        self.ai_cloud_test_consent = QCheckBox("اجازه می‌دهم فقط یک پیام آزمایشی کوتاه به ارائه‌دهنده ارسال شود (بدون فایل یا اطلاعات پروژه)")
+        self.ai_provider_test = QPushButton("آزمایش اتصال")
+        self.ai_provider_test.setEnabled(False)
+        self.ai_cloud_test_consent.toggled.connect(self.ai_provider_test.setEnabled)
+        self.ai_provider_test.clicked.connect(self.test_ai_provider_connection)
+        consent_row.addWidget(self.ai_cloud_test_consent, 1)
+        consent_row.addWidget(self.ai_provider_test)
+        provider_layout.addLayout(consent_row)
         ai_layout.addWidget(self.ai_provider_group)
         story_heading = QLabel("STORY & EDIT PLAN  |  طرح داستان، انتخاب نما و تأیید انسانی")
         story_heading.setObjectName("panel_title")
@@ -1122,6 +1167,40 @@ class ZenithEditor(QMainWindow):
             QSlider::handle:horizontal { background:#D6AE55; width:13px; margin:-5px 0; border-radius:6px; }
             QStatusBar { color:#B8B8B8; background:#191A1D; }
         """)
+
+    def test_ai_provider_connection(self) -> None:
+        if not self.ai_cloud_test_consent.isChecked():
+            QMessageBox.information(self, "آزمایش اتصال", "ابتدا اجازه ارسال پیام آزمایشی را فعال کنید.")
+            return
+        endpoint = self.ai_provider_endpoint.text().strip()
+        model = self.ai_provider_model.text().strip()
+        account = self.ai_provider_account.text().strip()
+        try:
+            from ai_editor.provider_adapter import OpenAICompatibleConfig
+            OpenAICompatibleConfig(
+                endpoint=endpoint, model=model, credential_account=account
+            ).validate()
+        except Exception as exc:
+            QMessageBox.warning(self, "تنظیمات ارائه‌دهنده", str(exc))
+            return
+        if self._provider_test_task is not None:
+            return
+        self.ai_provider_test.setEnabled(False)
+        self.ai_provider_test.setText("در حال آزمایش…")
+        task = ProviderTestTask(endpoint, model, account)
+        self._provider_test_task = task
+        task.signals.finished.connect(self._ai_provider_test_finished)
+        self._provider_test_pool.start(task)
+
+    def _ai_provider_test_finished(self, success: bool, message: str) -> None:
+        self._provider_test_task = None
+        self.ai_provider_test.setText("آزمایش اتصال")
+        self.ai_provider_test.setEnabled(self.ai_cloud_test_consent.isChecked())
+        if success:
+            QMessageBox.information(self, "آزمایش اتصال", message)
+            self.statusBar().showMessage("اتصال ارائه‌دهنده تأیید شد؛ هیچ رسانه یا اطلاعات پروژه ارسال نشد.")
+        else:
+            QMessageBox.warning(self, "آزمایش اتصال", f"اتصال موفق نبود: {message}")
 
     def _ai_provider_settings(self) -> QSettings:
         return QSettings("ZENITH", "ZENITH Desktop")
