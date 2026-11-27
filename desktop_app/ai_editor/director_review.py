@@ -237,6 +237,11 @@ def review_edit(
                 if not math.isfinite(boundary_seconds):
                     continue
                 if source_start + (1.0 / max(1, project.fps)) < boundary_seconds < source_end - (1.0 / max(1, project.fps)):
+                    target_frame = None
+                    if not clip.reverse_playback and not clip.speed_ramp and clip.playback_rate > 0:
+                        target_frame = clip.start_frame + round(
+                            (boundary_seconds - source_start) * project.fps / clip.playback_rate
+                        )
                     add(
                         f"hidden-scene-boundary-{clip.clip_id}-{boundary_index + 1}",
                         "visual_continuity", "advisory",
@@ -247,6 +252,7 @@ def review_edit(
                         ),
                         "Preview around this point. Consider a motivated split only if it improves the story; the detector measures visual change, not scene meaning.",
                         clip_id=clip.clip_id,
+                        target_frame=target_frame,
                     )
 
         # Compare V1 edit boundaries with spectral pulse candidates from audio
@@ -414,6 +420,73 @@ class DirectorFixDraft:
     """A proposed, preview-only repair plan derived from selected review findings."""
     edit_plan: EditPlan
     finding_ids: tuple[str, ...]
+
+
+def build_scene_split_plan(
+    report: DirectorReviewReport,
+    project: TimelineProject,
+    assets: Iterable[MediaAsset],
+    *,
+    selected_finding_ids: Iterable[str] | None = None,
+) -> DirectorFixDraft:
+    """Build preview-only split operations at measured source-scene boundaries.
+
+    Only forward, constant-speed video clips are eligible because their source-to-
+    timeline frame mapping is deterministic. The detector measures visual change,
+    not scene meaning; every split still requires preview and explicit approval.
+    """
+    if not isinstance(report, DirectorReviewReport) or not review_is_current(report, project):
+        raise ValueError("Director review is missing or stale; run the review again.")
+    asset_list = tuple(assets)
+    known = {item.finding_id: item for item in report.findings}
+    eligible = {
+        item.finding_id for item in report.findings
+        if item.category == "visual_continuity"
+        and item.finding_id.startswith("hidden-scene-boundary-")
+        and item.target_frame is not None
+        and item.clip_id
+    }
+    selected = set(selected_finding_ids) if selected_finding_ids is not None else eligible
+    if not selected or not selected.issubset(eligible):
+        raise ValueError("No eligible measured scene boundary was selected for splitting.")
+    clips = {clip.clip_id: clip for clip in project.clips}
+    operations = []
+    for index, finding_id in enumerate(sorted(selected)):
+        finding = known[finding_id]
+        clip = clips.get(finding.clip_id)
+        target = finding.target_frame
+        if (
+            clip is None or target is None or clip.media_type != "video"
+            or not clip.track.startswith("V") or clip.reverse_playback
+            or clip.speed_ramp or not clip.start_frame < target < clip.end_frame
+        ):
+            raise ValueError("The selected scene boundary is no longer safe to split; run director review again.")
+        operations.append(EditOperation(
+            operation_id=f"scene-split-{index + 1}",
+            kind="split_clip",
+            parameters={"clip_id": clip.clip_id, "at_frame": target},
+            rationale="Split at a measured visual-change boundary; inspect both resulting shots for narrative continuity.",
+        ))
+    plan = EditPlan(
+        plan_id="director-scene-split-v1",
+        brief=ProjectBrief(
+            prompt="Split selected video clips at measured source-scene change boundaries.",
+            style="evidence-based editorial repair",
+        ),
+        summary=f"Preview {len(operations)} proposed scene-boundary split(s).",
+        operations=tuple(operations),
+        assumptions=(
+            "Scene detection measures visual change only; it does not identify semantic scenes or story relevance.",
+            "Only forward, constant-speed video clips with deterministic frame mapping are eligible.",
+        ),
+        warnings=(
+            "Review each split in playback; adjacent visual changes may not justify an editorial cut.",
+            "No timeline change is applied until the isolated preview passes QC and the user explicitly approves.",
+        ),
+        requires_user_approval=True,
+    )
+    plan.validate(asset_list, {clip.clip_id for clip in project.clips})
+    return DirectorFixDraft(plan, tuple(sorted(selected)))
 
 
 def build_gap_repair_plan(
