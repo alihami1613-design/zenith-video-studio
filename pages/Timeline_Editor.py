@@ -2,7 +2,7 @@ import streamlit as st
 
 st.set_page_config(page_title="ZENITH Timeline", page_icon="🎞️", layout="wide")
 st.title("🎞️ ZENITH — Multi-track Timeline")
-st.caption("مرحله دوم: تعیین نقاط برش (Trim) و مدت استفاده از هر کلیپ.")
+st.caption("مرحله سوم: پیش‌نمایش ویدئو و صدا در صفحه تایم‌لاین.")
 st.warning("این صفحه آزمایشی و مستقل است و به Documentary_Editor یا Auto_Studio دست نمی‌زند.")
 
 if "timeline_video" not in st.session_state:
@@ -67,4 +67,4 @@ if clips:
 else:
     st.caption("با افزودن کلیپ‌ها، ترتیب و مدت آن‌ها نمایش داده می‌شود.")
 
-st.caption("در این مرحله، نقاط برش و مدت انتخابی ثبت و در محاسبات تایم‌لاین لحاظ می‌شوند. برش فیزیکی فایل، پیش‌نمایش و رندر نهایی هنوز در مراحل بعد اضافه می‌شوند.")
+st.caption("پیش‌نمایش ساده رسانه و شروع از نقطه Trim فراهم شده است. پخش دقیق محدوده انتخاب‌شده، همگام‌سازی ترک‌ها و رندر هنوز در مراحل بعد اضافه می‌شوند.")
