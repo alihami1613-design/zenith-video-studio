@@ -5,6 +5,8 @@ from ai_editor.compiler import compile_story_to_edit_plan
 from ai_editor.contracts import EditPlanError, MediaAsset
 from ai_editor.narrative import StoryAct, StoryBeat, StoryBlueprint
 from ai_editor.project_context import MediaInventoryItem, ProjectContext
+from ai_editor.executor import preview_edit_plan
+from timeline_model import TimelineProject
 
 
 def make_context():
@@ -46,8 +48,11 @@ class StoryCompilerTests(unittest.TestCase):
         self.assertEqual(plan.operations[2].kind, "set_transition")
         self.assertEqual(plan.operations[2].parameters["duration_frames"], 15)
         self.assertEqual(plan.operations[2].kind, "set_transition")
-        self.assertEqual(plan.operations[2].parameters["clip_id"], "ai-8e8c4b3e2b-0001")
+        self.assertEqual(plan.operations[2].parameters["clip_id"], "ai-b7458f4735-0001")
         self.assertTrue(plan.requires_user_approval)
+        preview = preview_edit_plan(TimelineProject(), plan, [item.asset for item in make_context().assets])
+        self.assertEqual(len(preview.project.clips), 2)
+        self.assertEqual(preview.project.clips[1].transition_in_frames, 15)
 
     def test_unassigned_beats_become_explicit_placeholders(self):
         story = make_story()
