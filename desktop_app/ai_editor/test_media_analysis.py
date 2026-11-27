@@ -68,10 +68,18 @@ class MediaAnalysisTests(unittest.TestCase):
                 warnings=("Transient candidates are not verified beats.",),
             )
 
+        def rhythm(measured):
+            return SimpleNamespace(
+                estimated_bpm=120.0, confidence=0.8,
+                pulse_period_seconds=0.5,
+                pulse_candidates_seconds=(0.0, 0.5),
+                warnings=("RMS periodicity only.",),
+            )
+
         report = analyze_project_media(
             self.context, scene_detector=scenes,
             visual_sampler=samples, audio_analyzer=audio,
-            audio_energy_analyzer=energy,
+            audio_energy_analyzer=energy, rhythm_analyzer=rhythm,
         )
         self.assertEqual([item.asset_id for item in report.assets],
                          ["asset-video", "asset-audio", "asset-image"])
@@ -80,6 +88,8 @@ class MediaAnalysisTests(unittest.TestCase):
         self.assertEqual(video.visual_samples[0].width, 640)
         self.assertEqual(video.audio.peak_db, -2.0)
         self.assertEqual(video.audio_energy.transient_candidates_seconds, (0.1,))
+        self.assertEqual(video.audio_rhythm.estimated_bpm, 120.0)
+        self.assertEqual(video.audio_rhythm.pulse_candidates_seconds, (0.0, 0.5))
         self.assertEqual(len(video.audio_energy.energy_dbfs), 2)
         self.assertEqual(report.assets[1].audio.mean_db, -18.0)
         self.assertIsNotNone(report.assets[1].audio_energy)
