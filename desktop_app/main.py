@@ -2583,7 +2583,9 @@ class ZenithEditor(QMainWindow):
             project_path_value = payload.get("project_path")
             original_path = Path(project_path_value) if project_path_value else None
             self._apply_project_data(project_data, original_path, recovered=True)
-            clear_recovery(self._recovery_path)
+            # A recovery snapshot is not the same as a saved project file.
+            # Keep it available until the user explicitly saves or discards it.
+            self._saved_project_snapshot = ""
         except (OSError, ValueError, TypeError, KeyError) as exc:
             QMessageBox.warning(self, "بازیابی ناموفق بود", f"نسخه بازیابی بارگذاری نشد؛ فایل بازیابی حفظ شد.\n{exc}")
 
