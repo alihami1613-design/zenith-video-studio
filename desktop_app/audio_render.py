@@ -191,13 +191,21 @@ def build_audio_mix_command(
         fade_out_frames = max(int(clip.fade_out_frames), automatic_fade_out)
         if fade_in_frames:
             fade_in = _seconds(fade_in_frames, fps)
-            manual_curve = {"linear": "lnr", "qsin": "qsin", "hsin": "hsin", "exp": "exp"}[str(getattr(clip, "audio_fade_curve", "qsin"))]
+            curve_map = {"linear": "lnr", "qsin": "qsin", "hsin": "hsin", "exp": "exp"}
+            selected_curve = str(getattr(clip, "audio_fade_curve", "qsin"))
+            if selected_curve not in curve_map:
+                raise ValueError(f"Unsupported audio fade curve: {selected_curve}")
+            manual_curve = curve_map[selected_curve]
             curve = ":curve=qsin" if automatic_fade_in else ":curve=" + manual_curve
             chain.append(f"afade=t=in:st=0:d={fade_in:.6f}{curve}")
         if fade_out_frames:
             fade_out = _seconds(fade_out_frames, fps)
             fade_start = max(0.0, duration - fade_out)
-            manual_curve = {"linear": "lnr", "qsin": "qsin", "hsin": "hsin", "exp": "exp"}[str(getattr(clip, "audio_fade_curve", "qsin"))]
+            curve_map = {"linear": "lnr", "qsin": "qsin", "hsin": "hsin", "exp": "exp"}
+            selected_curve = str(getattr(clip, "audio_fade_curve", "qsin"))
+            if selected_curve not in curve_map:
+                raise ValueError(f"Unsupported audio fade curve: {selected_curve}")
+            manual_curve = curve_map[selected_curve]
             curve = ":curve=iqsin" if automatic_fade_out else ":curve=" + manual_curve
             chain.append(f"afade=t=out:st={fade_start:.6f}:d={fade_out:.6f}{curve}")
         delay_ms = round(_seconds(effective_start_frame, fps) * 1000)
