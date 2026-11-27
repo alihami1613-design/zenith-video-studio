@@ -66,6 +66,7 @@ on:
       - "desktop_app/test_video_render_integration.py"
       - "desktop_app/test_render_control.py"
       - "desktop_app/test_undo_history_wiring.py"
+      - "desktop_app/test_desktop_render_ui_wiring.py"
       - "desktop_app/audio_render.py"
       - ".github/workflows/desktop-model-tests.yml"
   pull_request:
