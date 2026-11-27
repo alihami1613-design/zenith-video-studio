@@ -2216,6 +2216,8 @@ class ZenithEditor(QMainWindow):
         self.fade_in_slider.setValue(min(clip.fade_in_frames, max_fade))
         self.fade_out_slider.setValue(min(clip.fade_out_frames, max_fade))
         del blockers
+        pan = self.audio_pan_slider.value()
+        self.audio_pan_label.setText("Stereo Pan: " + ("Left " + str(abs(pan)) + "%" if pan < 0 else "Right " + str(pan) + "%" if pan > 0 else "Center"))
         self.volume_value_label.setText(f"حجم صدا: {round(clip.volume * 100)}٪")
         fps = max(1, self.timeline_project.fps)
         self.fade_in_label.setText(f"Fade In: {clip.fade_in_frames / fps:.1f} ثانیه")
