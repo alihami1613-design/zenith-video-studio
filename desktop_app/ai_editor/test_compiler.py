@@ -25,7 +25,7 @@ def make_story():
                   4.0, "video-1", 0.0, 4.0,
                   "Strong first image", "Ask a question", "Impact", "hard_cut"),
         StoryBeat("beat-002", 1, "resolution", "Ending", "Resolve the idea",
-                  3.0, "image-1", None, None,
+                  3.0, "video-1", 4.0, 7.0,
                   "Quiet final frame", "Close the story", "Music resolves", "fade"),
     )
     return StoryBlueprint(
@@ -46,7 +46,7 @@ class StoryCompilerTests(unittest.TestCase):
         self.assertEqual(plan.operations[2].kind, "set_transition")
         self.assertEqual(plan.operations[2].parameters["duration_frames"], 15)
         self.assertEqual(plan.operations[2].kind, "set_transition")
-        self.assertEqual(plan.operations[2].parameters["clip_id"], "ai-");
+        self.assertEqual(plan.operations[2].parameters["clip_id"], "ai-8e8c4b3e2b-0001")
         self.assertTrue(plan.requires_user_approval)
 
     def test_unassigned_beats_become_explicit_placeholders(self):
