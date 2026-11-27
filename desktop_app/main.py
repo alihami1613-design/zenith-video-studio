@@ -2399,8 +2399,8 @@ class ZenithEditor(QMainWindow):
         clip_id = self.timeline_widget.canvas.selected_clip_id
         if not clip_id:
             return
+        history_before = self._history_snapshot()
         try:
-            self._push_undo()
             clip = self.timeline_project.get_clip(clip_id)
             clip.chroma_key_enabled = self.chroma_key_checkbox.isChecked()
             clip.chroma_key_color = self.chroma_key_color_edit.text().strip()
@@ -2430,11 +2430,13 @@ class ZenithEditor(QMainWindow):
             clip.mask_points = points
             clip.validate()
         except (KeyError, ValueError) as exc:
-            if self._undo_stack:
-                self._undo_stack.pop()
-            self._update_history_buttons()
+            self._restore_history_snapshot(history_before)
             self.statusBar().showMessage(str(exc))
             return
+        if self._history_snapshot() != history_before:
+            self._append_history_snapshot(self._undo_stack, history_before)
+            self._redo_stack.clear()
+            self._update_history_buttons()
         self.timeline_widget.refresh()
         self._sync_transform_controls()
         self.statusBar().showMessage(
