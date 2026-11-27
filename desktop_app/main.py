@@ -43,6 +43,7 @@ from ai_editor.narrative import build_story_request, parse_story_blueprint_json,
 from ai_editor.shot_selection import select_shots_for_story
 from ai_editor.music_sync_workflow import build_music_aware_edit_draft
 from ai_editor.executor import preview_edit_plan, apply_edit_plan
+from ai_editor.quality_control import run_quality_checks
 from ai_editor.credential_store import store_api_key, delete_api_key
 
 APP_NAME = "ZENITH Desktop"
@@ -1841,6 +1842,7 @@ class ZenithEditor(QMainWindow):
             return
         self._ai_execution_preview = preview
         self._ai_preview_base_project_data = self.timeline_project.to_dict()
+        qc_report = run_quality_checks(preview.project, self._ai_project_context)
         created_ids = set(preview.created_clip_ids)
         existing_clips = list(self.timeline_project.clips)
         conflicts = []
@@ -1854,7 +1856,16 @@ class ZenithEditor(QMainWindow):
                     conflicts.append(
                         f"{created.name} با کلیپ {existing.name} در ترک {created.track} هم‌پوشانی دارد"
                     )
-        self.ai_apply_plan_button.setEnabled(not conflicts)
+        self.ai_apply_plan_button.setEnabled(
+            not conflicts and qc_report.ready_for_export
+        )
+        qc_lines = [
+            f"QC: {qc_report.error_count} خطا و {qc_report.warning_count} هشدار"
+        ]
+        qc_lines.extend(
+            f"  [{issue.severity.upper()}] {issue.message}"
+            for issue in qc_report.issues
+        )
         conflict_note = (
             "\n" + "\n".join(f"تداخل تایم‌لاین: {item}" for item in conflicts)
             + "\nبرای جلوگیری از روی‌هم‌افتادن ناخواسته، اعمال نهایی غیرفعال شد؛ ابتدا باید تخصیص ترک‌ها طراحی شود."
@@ -1864,9 +1875,18 @@ class ZenithEditor(QMainWindow):
             f"\nپیش‌نمایش ایمن موفق: {preview.operation_count} عملیات، {len(preview.created_clip_ids)} کلیپ جدید. "
             f"مدت نسخه پیش‌نمایش: {preview.project.duration_frames / preview.project.fps:.2f}s. "
             "این پیش‌نمایش روی نسخه جداگانه اجرا شد؛ پروژه اصلی هنوز تغییر نکرده است."
+            + "\\n" + "\\n".join(qc_lines)
             + conflict_note
+            + ("\\nاعمال نهایی به‌دلیل خطاهای QC مسدود است؛ ابتدا ایرادها را برطرف کنید."
+               if not qc_report.ready_for_export else "")
         )
-        self.statusBar().showMessage("پیش‌نمایش روی نسخه جداگانه موفق شد؛ اعمال نهایی همچنان منتظر تأیید است.")
+        self.statusBar().showMessage(
+            "پیش‌نمایش کامل شد؛ " + (
+                "خطاهای QC مانع اعمال هستند."
+                if not qc_report.ready_for_export else
+                "برای اعمال نهایی هنوز تأیید جداگانه لازم است."
+            )
+        )
 
     def apply_ai_edit_draft(self) -> None:
         if self._ai_execution_preview is None or self._ai_edit_draft is None:
