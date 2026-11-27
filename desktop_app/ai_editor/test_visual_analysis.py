@@ -12,7 +12,7 @@ from ai_editor.visual_analysis import (
 def minimal_jpeg(width=100, height=72):
     # SOF0 segment with one component; sufficient for dimension parsing.
     payload = bytes([8, height >> 8, height & 255, width >> 8, width & 255, 1, 1, 0x11, 0])
-    return b"\\xff\\xd8\\xff\\xc0" + (len(payload) + 2).to_bytes(2, "big") + payload + b"\\xff\\xd9"
+    return b"\xff\xd8\xff\xc0" + (len(payload) + 2).to_bytes(2, "big") + payload + b"\xff\xd9"
 
 
 class RemoteAnalyzer:
