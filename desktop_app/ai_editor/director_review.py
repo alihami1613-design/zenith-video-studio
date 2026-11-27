@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 import math
+import re
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -39,6 +40,7 @@ class DirectorFinding:
     clip_id: str | None = None
     beat_id: str | None = None
     related_clip_id: str | None = None
+    target_frame: int | None = None
     requires_user_approval: bool = True
 
 
@@ -98,10 +100,12 @@ def review_edit(
 
     def add(fid: str, category: str, severity: str, title: str,
             evidence: tuple[str, ...], recommendation: str,
-            clip_id: str | None = None, beat_id: str | None = None) -> None:
+            clip_id: str | None = None, beat_id: str | None = None,
+            related_clip_id: str | None = None,
+            target_frame: int | None = None) -> None:
         findings.append(DirectorFinding(
             fid, category, severity, title, evidence, recommendation,
-            clip_id, beat_id, None, True,
+            clip_id, beat_id, related_clip_id, target_frame, True,
         ))
 
     # Structural and source-media findings are grounded in the existing QC engine.
@@ -276,22 +280,38 @@ def review_edit(
                     nearest = min(video_cuts, key=lambda frame: abs(frame - timeline_frame))
                     distance = abs(nearest - timeline_frame)
                     if distance <= 2:
-                        add(
-                            f"possible-music-cut-alignment-{audio_clip.clip_id}-{pulse_index + 1}",
-                            "audio_visual_sync", "advisory",
-                            "A video cut is near an estimated music-pulse candidate",
-                            (
-                                f"Estimated pulse at timeline frame {timeline_frame}.",
-                                f"Nearest V1 cut at frame {nearest}; difference {distance} frame(s).",
-                                "Spectral pulse candidates are signal estimates, not verified musical beats.",
-                            ),
-                            "Listen and watch this transition in context before deciding whether the alignment feels intentional.",
-                            clip_id=next(
-                                clip.clip_id for clip in project.clips
-                                if clip.track == "V1" and clip.start_frame == nearest
-                                and clip.media_type in {"video", "image"}
-                            ),
-                        )
+                        next_clip = next(
+                        clip for clip in project.clips
+                        if clip.track == "V1" and clip.start_frame == nearest
+                        and clip.media_type in {"video", "image"}
+                    )
+                    previous_clip = max(
+                        (
+                            clip for clip in project.clips
+                            if clip.track == "V1" and clip.media_type in {"video", "image"}
+                            and clip.end_frame <= nearest
+                        ),
+                        key=lambda clip: clip.end_frame,
+                        default=None,
+                    )
+                    add(
+                        f"possible-music-cut-alignment-{audio_clip.clip_id}-{pulse_index + 1}",
+                        "audio_visual_sync", "advisory",
+                        "A video cut is near an estimated music-pulse candidate",
+                        (
+                            f"Estimated pulse at timeline frame {timeline_frame}.",
+                            f"Nearest V1 cut at frame {nearest}; difference {distance} frame(s).",
+                            "Spectral pulse candidates are signal estimates, not verified musical beats.",
+                        ),
+                        "Listen and watch this transition in context before deciding whether the alignment feels intentional.",
+                        clip_id=next_clip.clip_id,
+                        related_clip_id=(
+                            previous_clip.clip_id
+                            if previous_clip is not None and previous_clip.end_frame == nearest
+                            else None
+                        ),
+                        target_frame=timeline_frame,
+                    )
 
     errors = sum(item.severity == "error" for item in findings)
     warnings = sum(item.severity == "warning" for item in findings)
@@ -299,6 +319,92 @@ def review_edit(
     return DirectorReviewReport(
         tuple(findings), errors, warnings, advisories, _fingerprint(project), True,
     )
+
+
+def build_music_alignment_plan(
+    report: DirectorReviewReport,
+    project: TimelineProject,
+    assets: Iterable[MediaAsset],
+    *,
+    selected_finding_ids: Iterable[str] | None = None,
+) -> DirectorFixDraft:
+    """Propose tiny, earlier-only V1 cut adjustments toward estimated music pulses.
+
+    The proposal shortens the outgoing clip and moves the incoming clip together.
+    It never extends source media, changes audio, or treats a pulse estimate as truth.
+    """
+    if not isinstance(report, DirectorReviewReport) or not review_is_current(report, project):
+        raise ValueError("Director review is missing or stale; run the review again.")
+    asset_list = tuple(assets)
+    known = {item.finding_id: item for item in report.findings}
+    eligible_ids = {
+        item.finding_id for item in report.findings
+        if item.category == "audio_visual_sync"
+        and item.target_frame is not None
+        and item.clip_id and item.related_clip_id
+        and item.target_frame < next(
+            (clip.start_frame for clip in project.clips if clip.clip_id == item.clip_id),
+            0,
+        )
+    }
+    selected = set(selected_finding_ids) if selected_finding_ids is not None else eligible_ids
+    if not selected or not selected.issubset(eligible_ids):
+        raise ValueError(
+            "No safe earlier-only music alignment proposal is available. "
+            "Only contiguous V1 cuts with a pulse estimate just before the cut can be adjusted."
+        )
+    clips = {clip.clip_id: clip for clip in project.clips}
+    operations = []
+    used_cuts = set()
+    for index, finding_id in enumerate(sorted(selected)):
+        finding = known[finding_id]
+        previous = clips.get(finding.related_clip_id)
+        current = clips.get(finding.clip_id)
+        target = finding.target_frame
+        if (
+            previous is None or current is None or target is None
+            or previous.track != "V1" or current.track != "V1"
+            or previous.end_frame != current.start_frame
+            or target <= previous.start_frame
+            or target >= current.start_frame
+            or current.clip_id in used_cuts
+        ):
+            raise ValueError("The selected cut is no longer safe to adjust; run director review again.")
+        used_cuts.add(current.clip_id)
+        operations.extend((
+            EditOperation(
+                operation_id=f"music-align-out-{index + 1}",
+                kind="trim_clip",
+                parameters={"clip_id": previous.clip_id, "new_end_frame": target},
+                rationale="Shorten the outgoing shot to an earlier estimated pulse; review the preview.",
+            ),
+            EditOperation(
+                operation_id=f"music-align-in-{index + 1}",
+                kind="move_clip",
+                parameters={"clip_id": current.clip_id, "start_frame": target},
+                rationale="Move the incoming shot to the same proposed cut frame; preserve its source in-point.",
+            ),
+        ))
+    plan = EditPlan(
+        plan_id="director-music-align-v1",
+        brief=ProjectBrief(
+            prompt="Propose conservative earlier-only V1 cut alignment near estimated music pulse candidates.",
+            style="review-only music-aware editorial adjustment",
+        ),
+        summary=f"Preview {len(operations) // 2} small V1 cut adjustment(s) near estimated music pulses.",
+        operations=tuple(operations),
+        assumptions=(
+            "Spectral pulse candidates are estimates, not verified musical beats.",
+            "Only cuts that can move earlier without extending source media are eligible.",
+        ),
+        warnings=(
+            "Listen and watch each transition. This proposal does not establish musical or narrative correctness.",
+            "No changes are applied until the isolated preview passes QC and the user approves.",
+        ),
+        requires_user_approval=True,
+    )
+    plan.validate(asset_list, {clip.clip_id for clip in project.clips})
+    return DirectorFixDraft(plan, tuple(sorted(selected)))
 
 
 @dataclass(frozen=True)
