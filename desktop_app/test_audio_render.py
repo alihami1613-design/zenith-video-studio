@@ -38,6 +38,21 @@ class AudioRenderCommandTests(unittest.TestCase):
         self.assertIn("atrim=duration=15.000000", joined)
         self.assertIn("pcm_s16le", joined)
 
+    def test_audio_volume_keyframes_generate_frame_evaluated_gain_curve(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / "voice.wav"
+            source.touch()
+            clip = self.make_clip(source, audio_volume_keyframes=[
+                {"frame": 30, "volume": 1.0},
+                {"frame": 60, "volume": 0.5},
+                {"frame": 120, "volume": 0.25},
+            ])
+            command = build_audio_mix_command("ffmpeg", [clip], 30, "mix.wav")
+        joined = " ".join(command)
+        self.assertIn("eval=frame", joined)
+        self.assertIn("if(lt(t,1.000000),1.000000", joined)
+        self.assertIn("0.500000+(-0.250000)*(t-2.000000)/2.000000", joined)
+
     def test_manual_fades_use_selected_curve(self):
         with tempfile.TemporaryDirectory() as folder:
             source = Path(folder) / "voice.wav"
