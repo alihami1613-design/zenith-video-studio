@@ -38,7 +38,7 @@ from polygon_mask_overlay import PolygonMaskOverlay
 from project_recovery import default_recovery_path, write_recovery, read_recovery, clear_recovery
 from ai_editor.project_context import build_project_context, media_inventory_fingerprint
 from ai_editor.media_analysis import analyze_project_media
-from ai_editor.narrative import build_story_request, story_blueprint_from_dict
+from ai_editor.narrative import build_story_request, parse_story_blueprint_json
 from ai_editor.shot_selection import select_shots_for_story
 from ai_editor.music_sync_workflow import build_music_aware_edit_draft
 from ai_editor.executor import preview_edit_plan, apply_edit_plan
@@ -1212,10 +1212,13 @@ class ZenithEditor(QMainWindow):
         if not path:
             return
         try:
-            content = Path(path).read_text(encoding="utf-8")
+            source = Path(path)
+            if source.stat().st_size > 1_000_000:
+                raise ValueError("حجم فایل طرح داستان نباید بیشتر از ۱ مگابایت باشد.")
+            content = source.read_text(encoding="utf-8")
             self.ai_story_json.setPlainText(content)
-            self.statusBar().showMessage("طرح داستان بارگذاری شد؛ برای بررسی ساختار، اعتبارسنجی را اجرا کنید.")
-        except (OSError, UnicodeError) as exc:
+            self.statusBar().showMessage("فایل بارگذاری شد؛ هنوز معتبر یا تأییدشده نیست. مرحله اعتبارسنجی را اجرا کنید.")
+        except (OSError, UnicodeError, ValueError) as exc:
             QMessageBox.warning(self, "بارگذاری طرح", f"خواندن فایل ناموفق بود: {exc}")
 
     def _invalidate_ai_story(self) -> None:
@@ -1236,9 +1239,9 @@ class ZenithEditor(QMainWindow):
         if not self._ai_context_is_current():
             return
         try:
-            raw = json.loads(self.ai_story_json.toPlainText())
-            story = story_blueprint_from_dict(raw)
-            story.validate(self._ai_project_context)
+            story = parse_story_blueprint_json(
+                self.ai_story_json.toPlainText(), self._ai_project_context
+            )
         except Exception as exc:
             self._ai_story_blueprint = None
             self._ai_shot_selection_report = None
