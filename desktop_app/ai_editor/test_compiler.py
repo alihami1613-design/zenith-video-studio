@@ -38,11 +38,15 @@ def make_story():
 class StoryCompilerTests(unittest.TestCase):
     def test_compiles_source_backed_beats_to_non_mutating_operations(self):
         plan = compile_story_to_edit_plan(make_story(), make_context())
-        self.assertEqual(len(plan.operations), 2)
+        self.assertEqual(len(plan.operations), 3)
         self.assertEqual(plan.operations[0].parameters["start_frame"], 0)
         self.assertEqual(plan.operations[0].parameters["duration_frames"], 120)
         self.assertEqual(plan.operations[1].parameters["start_frame"], 120)
         self.assertEqual(plan.operations[1].parameters["track"], "V1")
+        self.assertEqual(plan.operations[2].kind, "set_transition")
+        self.assertEqual(plan.operations[2].parameters["duration_frames"], 15)
+        self.assertEqual(plan.operations[2].kind, "set_transition")
+        self.assertEqual(plan.operations[2].parameters["clip_id"], "ai-");
         self.assertTrue(plan.requires_user_approval)
 
     def test_unassigned_beats_become_explicit_placeholders(self):
