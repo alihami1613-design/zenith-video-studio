@@ -171,6 +171,99 @@ class TransformRenderIntegrationTests(unittest.TestCase):
                     capture_output=True, text=True, timeout=30)
                 self.assertEqual(decoded.returncode, 0, decoded.stderr[-2500:])
 
+    def test_final_mp4_renders_picture_transition_and_embedded_audio_together(self):
+        from video_render import render_timeline_mp4
+
+        with tempfile.TemporaryDirectory(prefix="zenith_final_mp4_test_") as folder:
+            root = Path(folder)
+            sources = []
+            for name, color, frequency in (
+                ("outgoing", "red", 440),
+                ("incoming", "blue", 880),
+            ):
+                source = root / f"{name}.mp4"
+                generated = subprocess.run(
+                    [FFMPEG, "-y", "-hide_banner", "-loglevel", "error",
+                     "-f", "lavfi", "-i",
+                     f"color=c={color}:size=96x64:rate=25:duration=4",
+                     "-f", "lavfi", "-i",
+                     f"sine=frequency={frequency}:sample_rate=48000:duration=4",
+                     "-map", "0:v:0", "-map", "1:a:0",
+                     "-c:v", "libx264", "-preset", "ultrafast", "-threads", "1",
+                     "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest",
+                     str(source)],
+                    capture_output=True, text=True, timeout=45,
+                )
+                self.assertEqual(generated.returncode, 0, generated.stderr[-2500:])
+                sources.append(source)
+
+            outgoing = SimpleNamespace(
+                path=str(sources[0]), name="outgoing", track="V1",
+                clip_id="outgoing", media_type="video", start_frame=0,
+                source_in=0, duration_frames=75, end_frame=75,
+                color_grade={}, has_audio=True, audio_track="A1",
+                volume=1.0, fade_in_frames=0, fade_out_frames=0,
+                playback_rate=1.0, reverse_playback=False, speed_ramp=[],
+                transition_in_frames=0, video_fade_in_frames=0,
+                video_fade_out_frames=0,
+            )
+            incoming = SimpleNamespace(
+                path=str(sources[1]), name="incoming", track="V1",
+                clip_id="incoming", media_type="video", start_frame=75,
+                source_in=15, duration_frames=75, end_frame=150,
+                color_grade={}, has_audio=True, audio_track="A1",
+                volume=1.0, fade_in_frames=0, fade_out_frames=0,
+                playback_rate=1.0, reverse_playback=False, speed_ramp=[],
+                transition_in_frames=15, transition_in_type="dissolve",
+                video_fade_in_frames=0, video_fade_out_frames=0,
+            )
+            project = SimpleNamespace(
+                fps=25, width=96, height=64, duration_frames=150,
+                clips=[outgoing, incoming],
+                audio_track_settings={}, audio_ducking={},
+            )
+            output = root / "final.mp4"
+            reports = []
+            rendered = render_timeline_mp4(
+                project, output, timeout_seconds=120,
+                validation_callback=reports.append,
+            )
+            self.assertEqual(rendered, output.resolve())
+            self.assertTrue(output.is_file())
+            self.assertGreater(output.stat().st_size, 0)
+            self.assertEqual(len(reports), 1)
+            report = reports[0]
+            self.assertTrue(report.valid)
+            self.assertTrue(report.decode_succeeded)
+            self.assertTrue(report.has_video)
+            self.assertTrue(report.has_audio)
+            self.assertEqual((report.width, report.height), (96, 64))
+            self.assertAlmostEqual(report.fps, 25.0, delta=0.05)
+            self.assertAlmostEqual(report.duration_seconds, 6.0, delta=0.15)
+
+            decoded = subprocess.run(
+                [FFMPEG, "-hide_banner", "-loglevel", "error", "-i", str(output),
+                 "-map", "0:v:0", "-map", "0:a:0", "-f", "null", "-"],
+                capture_output=True, text=True, timeout=45,
+            )
+            self.assertEqual(decoded.returncode, 0, decoded.stderr[-2500:])
+
+            # The final mux must retain audible program material throughout
+            # the picture dissolve and after the incoming clip takes over.
+            for start, end in ((2.55, 2.75), (3.35, 3.55)):
+                measured = subprocess.run(
+                    [FFMPEG, "-hide_banner", "-loglevel", "error", "-i", str(output),
+                     "-vn", "-af", f"atrim=start={start}:end={end},astats=metadata=1:reset=0",
+                     "-f", "null", "-"],
+                    capture_output=True, text=True, timeout=30,
+                )
+                self.assertEqual(measured.returncode, 0, measured.stderr[-1500:])
+                import re
+                peaks = re.findall(r"RMS level dB:\s*(-?\d+(?:\.\d+)?)", measured.stderr)
+                self.assertTrue(peaks, measured.stderr[-2000:])
+                self.assertTrue(any(float(value) > -35.0 for value in peaks), measured.stderr[-2000:])
+
+
 
 if __name__ == "__main__":
     unittest.main()
