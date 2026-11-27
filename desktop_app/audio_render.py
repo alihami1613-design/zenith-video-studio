@@ -58,6 +58,16 @@ def build_audio_mix_command(
     if not audio_clips:
         raise ValueError("هیچ کلیپ صوتی روی تایم‌لاین وجود ندارد.")
 
+    # Clip-level solo has priority over all non-solo clips; muted clips
+    # are always excluded. Track-level mute/solo is then applied as before.
+    solo_clip_ids = {clip.clip_id for clip in audio_clips
+                     if bool(getattr(clip, "audio_solo", False))}
+    audio_clips = [clip for clip in audio_clips
+                   if not bool(getattr(clip, "audio_muted", False))
+                   and (not solo_clip_ids or clip.clip_id in solo_clip_ids)]
+    if not audio_clips:
+        raise ValueError("همه کلیپ‌های صوتی Mute هستند یا کلیپ Solo معتبری وجود ندارد.")
+
     settings = audio_track_settings or {}
     solo_tracks = {track for track, value in settings.items() if value.get("solo", False)}
     active_tracks = []
