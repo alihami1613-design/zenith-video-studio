@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-PROJECT_SCHEMA_VERSION = 25
+PROJECT_SCHEMA_VERSION = 26
 DEFAULT_FPS = 30
 DEFAULT_VIDEO_TRACKS = ("V1", "V2", "V3", "V4")
 DEFAULT_AUDIO_TRACKS = ("A1", "A2", "A3", "A4")
@@ -94,6 +94,22 @@ def mask_values_at(keyframes: list[dict[str, float]], frame: int, defaults: dict
     return dict(defaults)
 
 
+def _audio_volume_at(points: list[dict[str, float]], frame: int, default: float = 1.0) -> float:
+    """Evaluate a linear clip-local audio gain curve."""
+    if not points:
+        return float(default)
+    if frame <= int(points[0]["frame"]):
+        return float(points[0]["volume"])
+    if frame >= int(points[-1]["frame"]):
+        return float(points[-1]["volume"])
+    for left, right in zip(points, points[1:]):
+        lf, rf = int(left["frame"]), int(right["frame"])
+        if lf <= frame <= rf:
+            ratio = (frame - lf) / (rf - lf)
+            return float(left["volume"]) + (float(right["volume"]) - float(left["volume"])) * ratio
+    return float(default)
+
+
 def _speed_rate_at(points: list[dict[str, float]], frame: int) -> float:
     """Evaluate a linear speed curve at a clip-local frame."""
     if not points:
@@ -128,6 +144,7 @@ class Clip:
     audio_pan: float = 0.0
     audio_muted: bool = False
     audio_solo: bool = False
+    audio_volume_keyframes: list[dict[str, float]] = field(default_factory=list)
     fade_in_frames: int = 0
     fade_out_frames: int = 0
     audio_fade_curve: str = "qsin"
@@ -206,6 +223,18 @@ class Clip:
             normalized_ramp.append({"frame": frame, "rate": ramp_rate})
             previous_ramp_frame = frame
         self.speed_ramp = normalized_ramp
+        normalized_audio_keys = []
+        previous_audio_frame = -1
+        for raw_point in self.audio_volume_keyframes or []:
+            frame = int(raw_point.get("frame", 0))
+            gain = float(raw_point.get("volume", 1.0))
+            if frame < 0 or frame >= self.duration_frames or frame <= previous_audio_frame:
+                raise ValueError("Audio volume keyframes must be ordered inside clip duration")
+            if not math.isfinite(gain) or not 0.0 <= gain <= 2.0:
+                raise ValueError("Audio keyframe volume must be between 0 and 2")
+            normalized_audio_keys.append({"frame": frame, "volume": gain})
+            previous_audio_frame = frame
+        self.audio_volume_keyframes = normalized_audio_keys
         for axis in ('anchor_x', 'anchor_y'):
             value = float(getattr(self, axis))
             if not math.isfinite(value) or not 0.0 <= value <= 1.0:
@@ -561,6 +590,16 @@ class TimelineProject:
             ],
             reverse_playback=original.reverse_playback,
             volume=original.volume,
+            audio_volume_keyframes=(
+                [{"frame": 0, "volume": _audio_volume_at(
+                    original.audio_volume_keyframes, split_local_frame, original.volume
+                )}]
+                + [
+                    dict(point, frame=int(point["frame"]) - split_local_frame)
+                    for point in original.audio_volume_keyframes
+                    if int(point["frame"]) > split_local_frame
+                ]
+            ) if original.audio_volume_keyframes else [],
             fade_out_frames=original.fade_out_frames,
             video_fade_out_frames=original.video_fade_out_frames,
             transition_in_frames=0,
@@ -595,6 +634,10 @@ class TimelineProject:
         original.transform_keyframes = [dict(k) for k in original.transform_keyframes if k["frame"] < original.duration_frames]
         original.mask_keyframes = [dict(k) for k in original.mask_keyframes if k["frame"] < original.duration_frames]
         original.speed_ramp = [dict(point) for point in original.speed_ramp if point["frame"] < original.duration_frames]
+        original.audio_volume_keyframes = [
+            dict(point) for point in original.audio_volume_keyframes
+            if point["frame"] < original.duration_frames
+        ]
         original.fade_in_frames = min(original.fade_in_frames, original.duration_frames)
         self.clips.append(right)
         return original, right
@@ -630,7 +673,8 @@ class TimelineProject:
                         audio_fade_curve: str | None = None,
                         audio_pan: float | None = None,
                         audio_muted: bool | None = None,
-                        audio_solo: bool | None = None) -> Clip:
+                        audio_solo: bool | None = None,
+                        audio_volume_keyframes: list[dict[str, float]] | None = None) -> Clip:
         """Set non-destructive clip gain and frame-accurate audio fades."""
         clip = self.get_clip(clip_id)
         if volume is not None:
@@ -647,6 +691,8 @@ class TimelineProject:
             clip.audio_muted = bool(audio_muted)
         if audio_solo is not None:
             clip.audio_solo = bool(audio_solo)
+        if audio_volume_keyframes is not None:
+            clip.audio_volume_keyframes = [dict(point) for point in audio_volume_keyframes]
         clip.validate()
         return clip
 
@@ -861,6 +907,7 @@ class TimelineProject:
                 audio_pan=float(raw.get("audio_pan", 0.0)),
                 audio_muted=bool(raw.get("audio_muted", False)),
                 audio_solo=bool(raw.get("audio_solo", False)),
+                audio_volume_keyframes=[dict(point) for point in raw.get("audio_volume_keyframes", [])],
                 fade_in_frames=max(0, int(raw.get("fade_in_frames", 0) or 0)),
                 fade_out_frames=max(0, int(raw.get("fade_out_frames", 0) or 0)),
                 video_fade_in_frames=max(0, int(raw.get("video_fade_in_frames", 0) or 0)),
