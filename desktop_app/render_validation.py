@@ -64,10 +64,10 @@ def validate_rendered_mp4(
     )
     metadata = probe.stderr or probe.stdout or ""
     duration_match = re.search(
-        r"Duration:\\s*(\\d{2}):(\\d{2}):(\\d{2}(?:\\.\\d+)?)", metadata
+        r"Duration:\s*(\d{2}):(\d{2}):(\d{2}(?:\.\d+)?)", metadata
     )
-    video_match = re.search(r"Video:\\s*([^,\\s]+).*?(\\d{2,5})x(\\d{2,5})", metadata)
-    fps_match = re.search(r"(\\d+(?:\\.\\d+)?)\\s*fps", metadata)
+    video_match = re.search(r"Video:\s*([^,\s]+).*?(\d{2,5})x(\d{2,5})", metadata)
+    fps_match = re.search(r"(\d+(?:\.\d+)?)\s*fps", metadata)
     has_audio = re.search(r"Audio:", metadata) is not None
     if duration_match is None or video_match is None or fps_match is None:
         raise ValueError("ساختار MP4 یا اطلاعات جریان ویدیویی خروجی قابل تشخیص نیست.")
