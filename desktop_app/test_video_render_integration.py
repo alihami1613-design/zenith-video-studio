@@ -322,7 +322,7 @@ class TransformRenderIntegrationTests(unittest.TestCase):
                     reverse_playback=False, speed_ramp=[],
                     chroma_key_enabled=chroma,
                     chroma_key_color="#00FF00",
-                    chroma_key_similarity=0.18,
+                    chroma_key_similarity=0.45,
                     chroma_key_blend=0.02,
                 )
 
