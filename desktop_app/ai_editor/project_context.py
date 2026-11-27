@@ -147,3 +147,29 @@ def build_project_context(
         timeline_clips=timeline,
         warnings=tuple(warnings),
     )
+
+
+def media_inventory_fingerprint(
+    project: TimelineProject,
+    media_paths: Iterable[str | Path] = (),
+) -> tuple[tuple[str, int | None, int | None], ...]:
+    """Return a cheap fingerprint to invalidate analysis after media changes.
+
+    The fingerprint contains normalized local paths and file size/mtime only;
+    it never reads media bytes. Missing files remain represented explicitly.
+    """
+    paths: dict[str, Path] = {}
+    for raw_path in media_paths:
+        path = Path(raw_path).expanduser().resolve()
+        paths[str(path).casefold()] = path
+    for clip in project.clips:
+        path = Path(clip.path).expanduser().resolve()
+        paths[str(path).casefold()] = path
+    result = []
+    for key, path in sorted(paths.items()):
+        try:
+            stat = path.stat()
+            result.append((key, stat.st_size, stat.st_mtime_ns))
+        except OSError:
+            result.append((key, None, None))
+    return tuple(result)
