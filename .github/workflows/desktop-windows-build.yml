@@ -102,7 +102,7 @@ jobs:
           if (-not (Test-Path $compiler)) { throw "Inno Setup compiler was not found." }
           & $compiler ZENITH_Desktop.iss
           if ($LASTEXITCODE -ne 0) { throw "Windows installer compilation failed." }
-          if (-not (Test-Path "dist-installer/ ZENITH-Desktop-Setup.exe".Replace("/ ", "/"))) { throw "Installer output is missing." }
+          if (-not (Test-Path "dist-installer/ZENITH-Desktop-Setup.exe")) { throw "Installer output is missing." }
       - name: Upload Windows installer
         uses: actions/upload-artifact@v4
         with:
