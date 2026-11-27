@@ -69,6 +69,34 @@ class UndoHistoryWiringTests(unittest.TestCase):
         method = self.method_source("_blend_mode_changed")
         self.assertNotIn("self._undo_stack.pop()", method)
 
+    def test_mask_keyframe_signals_are_forwarded_by_timeline_widget(self):
+        timeline_source = (Path(__file__).resolve().parent / "timeline_widget.py").read_text(encoding="utf-8")
+        timeline_tree = ast.parse(timeline_source)
+        widget = next(
+            node for node in timeline_tree.body
+            if isinstance(node, ast.ClassDef) and node.name == "TimelineWidget"
+        )
+        declarations = {
+            node.targets[0].id
+            for node in widget.body
+            if isinstance(node, ast.Assign)
+            and node.targets and isinstance(node.targets[0], ast.Name)
+        }
+        self.assertIn("maskKeyframeMoved", declarations)
+        self.assertIn("maskKeyframeSelected", declarations)
+        self.assertIn("self.canvas.maskKeyframeMoved.connect(self.maskKeyframeMoved)", timeline_source)
+        self.assertIn("self.canvas.maskKeyframeSelected.connect(self.maskKeyframeSelected)", timeline_source)
+
+    def test_keyframe_drag_branches_capture_undo_before_edit(self):
+        timeline_source = (Path(__file__).resolve().parent / "timeline_widget.py").read_text(encoding="utf-8")
+        press = timeline_source.split("    def mousePressEvent(self, event):", 1)[1].split(
+            "    def mouseMoveEvent(self, event):", 1
+        )[0]
+        for mode in ('"transform_keyframe"', '"mask_keyframe"', '"ramp"'):
+            branch = press.split(f'self._drag_mode = {mode}', 1)
+            self.assertEqual(len(branch), 2, f"missing drag mode {mode}")
+            self.assertIn("self.editStarted.emit()", branch[1].split("return", 1)[0] if mode != '"ramp"' else press)
+
 
 if __name__ == "__main__":
     unittest.main()
