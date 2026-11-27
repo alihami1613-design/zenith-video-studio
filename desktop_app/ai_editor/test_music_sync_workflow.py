@@ -56,6 +56,15 @@ class MusicSyncWorkflowTests(unittest.TestCase):
                 audio_asset_id="music-1",
             )
 
+    def test_story_approval_alone_does_not_bypass_shot_approval(self):
+        with self.assertRaisesRegex(EditPlanError, "approvals are required"):
+            build_music_aware_edit_draft(
+                make_story(), context_with_music(), report_with_music(),
+                audio_asset_id="music-1",
+                story_approved=True,
+                shot_selection_approved=False,
+            )
+
     def test_builds_compilable_plan_after_both_approvals(self):
         context = context_with_music()
         result = build_music_aware_edit_draft(
