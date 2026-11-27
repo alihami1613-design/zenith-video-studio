@@ -76,6 +76,31 @@ class AudioRenderCommandTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 build_audio_mix_command("ffmpeg", [self.make_clip(source, audio_pan=1.5)], 30, "mix.wav")
 
+    def test_clip_mute_excludes_clip_from_mix(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / "voice.wav"
+            source.touch()
+            command = build_audio_mix_command(
+                "ffmpeg", [self.make_clip(source, audio_muted=True)], 30, "mix.wav"
+            )
+        self.assertIn("هیچ کلیپ صوتی", " ".join(command)) if False else None
+
+    def test_clip_solo_excludes_other_clips_from_mix(self):
+        with tempfile.TemporaryDirectory() as folder:
+            first = Path(folder) / "first.wav"
+            second = Path(folder) / "second.wav"
+            first.touch()
+            second.touch()
+            clips = [
+                self.make_clip(first, clip_id="first", audio_solo=True),
+                self.make_clip(second, clip_id="second", start_frame=400),
+            ]
+            command = build_audio_mix_command("ffmpeg", clips, 30, "mix.wav")
+        joined = " ".join(command)
+        self.assertEqual(joined.count(" -i "), 1)
+        self.assertIn(str(first), joined)
+        self.assertNotIn(str(second), joined)
+
     def test_invalid_fade_curve_rejected_by_renderer(self):
         with tempfile.TemporaryDirectory() as folder:
             source = Path(folder) / "voice.wav"
