@@ -128,14 +128,23 @@ class StoryBlueprint:
                     item = known_assets.get(beat.asset_id)
                     if item is None:
                         raise EditPlanError(f"Beat references unknown media asset: {beat.asset_id}")
-                    if beat.source_in_seconds is None or beat.source_out_seconds is None:
-                        raise EditPlanError("Asset-backed beats require a complete source range.")
-                    start = _nonnegative_finite(beat.source_in_seconds, "source_in_seconds")
-                    end = _positive_finite(beat.source_out_seconds, "source_out_seconds")
-                    if end <= start:
-                        raise EditPlanError("Beat source out must be after source in.")
-                    if item.duration_seconds is not None and end > item.duration_seconds + 0.05:
-                        raise EditPlanError("Beat source range exceeds the media duration.")
+                    if item.asset.media_type == "image":
+                        if (beat.source_in_seconds is None) != (beat.source_out_seconds is None):
+                            raise EditPlanError("Image source ranges must be either fully omitted or complete.")
+                        if beat.source_in_seconds is not None:
+                            start = _nonnegative_finite(beat.source_in_seconds, "source_in_seconds")
+                            end = _positive_finite(beat.source_out_seconds, "source_out_seconds")
+                            if end <= start:
+                                raise EditPlanError("Beat source out must be after source in.")
+                    else:
+                        if beat.source_in_seconds is None or beat.source_out_seconds is None:
+                            raise EditPlanError("Video/audio beats require a complete source range.")
+                        start = _nonnegative_finite(beat.source_in_seconds, "source_in_seconds")
+                        end = _positive_finite(beat.source_out_seconds, "source_out_seconds")
+                        if end <= start:
+                            raise EditPlanError("Beat source out must be after source in.")
+                        if item.duration_seconds is not None and end > item.duration_seconds + 0.05:
+                            raise EditPlanError("Beat source range exceeds the media duration.")
         if sorted(sequences) != list(range(len(sequences))):
             raise EditPlanError("Beat sequence values must be unique and contiguous from zero.")
         if not math.isclose(total_duration, self.estimated_duration_seconds, rel_tol=0.03, abs_tol=1.0):
