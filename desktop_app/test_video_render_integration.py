@@ -291,7 +291,7 @@ class TransformRenderIntegrationTests(unittest.TestCase):
             overlay_result = subprocess.run(
                 [FFMPEG, "-y", "-hide_banner", "-loglevel", "error",
                  "-f", "lavfi", "-i",
-                 "color=c=green:size=128x96:rate=25:duration=4,drawbox=x=64:y=0:w=64:h=96:color=blue:t=fill",
+                 "color=c=blue:size=128x96:rate=25:duration=4,drawbox=x=0:y=0:w=64:h=96:color=green:t=fill",
                  "-an", "-c:v", "libx264", "-preset", "ultrafast",
                  "-threads", "1", "-pix_fmt", "yuv420p", str(overlay)],
                 capture_output=True, text=True, timeout=45,
