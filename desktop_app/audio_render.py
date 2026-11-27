@@ -179,6 +179,13 @@ def build_audio_mix_command(
                 *(["areverse"] if bool(getattr(clip, "reverse_playback", False)) and is_embedded_video_audio else []),
                 f"volume={clip.volume:.4f}",
             ]
+        pan = float(getattr(clip, "audio_pan", 0.0))
+        if not math.isfinite(pan) or not -1.0 <= pan <= 1.0:
+            raise ValueError(f"Audio pan must be between -1 and 1: {clip.name}")
+        if abs(pan) > 1e-9:
+            left_gain = 1.0 if pan <= 0.0 else 1.0 - pan
+            right_gain = 1.0 if pan >= 0.0 else 1.0 + pan
+            chain.append(f"pan=stereo|c0={left_gain:.6f}*c0|c1={right_gain:.6f}*c1")
         automatic_fade_in = max(
             crossfade_in.get(clip.clip_id, 0),
             visual_fade_in.get(clip.clip_id, 0),
