@@ -47,6 +47,12 @@ def compile_story_to_edit_plan(
             continue
 
         item = assets[beat.asset_id]
+        if item.warning is not None:
+            warnings.append(
+                f"{beat.beat_id}: source metadata is unreliable; beat left as a placeholder."
+            )
+            cursor_frame += target_frames
+            continue
         media_type = item.asset.media_type
         if media_type not in {"video", "image", "audio"}:
             warnings.append(
@@ -109,7 +115,7 @@ def compile_story_to_edit_plan(
     )
     valid_assets = tuple(
         item.asset for item in context.assets
-        if item.exists and item.warning is None
+        if item.exists
     )
     plan.validate(valid_assets, set())
     return plan
