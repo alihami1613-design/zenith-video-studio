@@ -125,6 +125,7 @@ class Clip:
     has_audio: bool = False
     audio_track: str = "A1"
     volume: float = 1.0
+    audio_pan: float = 0.0
     fade_in_frames: int = 0
     fade_out_frames: int = 0
     audio_fade_curve: str = "qsin"
@@ -179,6 +180,10 @@ class Clip:
             raise ValueError("Clip audio route must be A1-A4")
         if not math.isfinite(float(self.volume)) or not 0.0 <= float(self.volume) <= 2.0:
             raise ValueError("Clip volume must be between 0.0 and 2.0")
+        pan = float(self.audio_pan)
+        if not math.isfinite(pan) or not -1.0 <= pan <= 1.0:
+            raise ValueError("Audio pan must be between -1.0 and 1.0")
+        self.audio_pan = pan
         if self.audio_fade_curve not in {"linear", "qsin", "hsin", "exp"}:
             raise ValueError("Unsupported audio fade curve")
         if min(self.fade_in_frames, self.fade_out_frames, self.video_fade_in_frames, self.video_fade_out_frames, self.transition_in_frames) < 0:
@@ -620,7 +625,8 @@ class TimelineProject:
     def set_clip_audio(self, clip_id: str, *, volume: float | None = None,
                         fade_in_frames: int | None = None,
                         fade_out_frames: int | None = None,
-                        audio_fade_curve: str | None = None) -> Clip:
+                        audio_fade_curve: str | None = None,
+                        audio_pan: float | None = None) -> Clip:
         """Set non-destructive clip gain and frame-accurate audio fades."""
         clip = self.get_clip(clip_id)
         if volume is not None:
@@ -631,6 +637,8 @@ class TimelineProject:
             clip.fade_out_frames = int(fade_out_frames)
         if audio_fade_curve is not None:
             clip.audio_fade_curve = str(audio_fade_curve)
+        if audio_pan is not None:
+            clip.audio_pan = float(audio_pan)
         clip.validate()
         return clip
 
