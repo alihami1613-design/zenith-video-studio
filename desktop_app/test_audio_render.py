@@ -583,17 +583,24 @@ class AudioRenderCommandTests(unittest.TestCase):
                 self.assertEqual(rendered.getframerate(), 48000)
                 frames = rendered.readframes(rendered.getnframes())
 
-            def rms_at(seconds, window=0.35):
+            import numpy as np
+
+            def music_tone_level(seconds, window=0.25):
+                # Measure the music-only 440 Hz component, excluding the 880 Hz
+                # voice tone so recovery comparisons are not contaminated by speech.
                 start = int(seconds * 48000) * 2
                 count = int(window * 48000) * 2
                 chunk = frames[start * 2:(start + count) * 2]
-                values = [int.from_bytes(chunk[i:i + 2], "little", signed=True)
-                          for i in range(0, len(chunk), 2)]
-                return math.sqrt(sum(value * value for value in values) / max(1, len(values)))
+                samples = np.frombuffer(chunk, dtype="<i2").astype(np.float64)
+                samples = samples.reshape(-1, 2).mean(axis=1)
+                samples -= samples.mean()
+                spectrum = np.abs(np.fft.rfft(samples))
+                frequencies = np.fft.rfftfreq(len(samples), d=1/48000)
+                return float(spectrum[np.argmin(np.abs(frequencies - 440))])
 
-            pre_voice = rms_at(1.0)
-            during_voice = rms_at(2.8)
-            recovered = rms_at(4.65)
+            pre_voice = music_tone_level(1.0)
+            during_voice = music_tone_level(2.8)
+            recovered = music_tone_level(4.65)
             self.assertGreater(pre_voice, 1000)
             self.assertGreater(recovered, 1000)
             self.assertLess(during_voice, pre_voice * 0.80,
