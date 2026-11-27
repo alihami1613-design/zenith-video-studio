@@ -428,6 +428,8 @@ class ZenithEditor(QMainWindow):
         self._ai_edit_plan_pool = QThreadPool(self)
         self._ai_edit_plan_pool.setMaxThreadCount(1)
         self._ai_edit_plan_task: AIEditPlanTask | None = None
+        self._ai_plan_story_snapshot: str | None = None
+        self._ai_plan_shot_snapshot: str | None = None
         self._ai_analysis_pool.setMaxThreadCount(1)
         self._ai_analysis_task: LocalMediaAnalysisTask | None = None
         self._ai_project_context = None
@@ -1718,6 +1720,8 @@ class ZenithEditor(QMainWindow):
         if answer != QMessageBox.Yes:
             return
         paths = [str(item.get("path", "")) for item in self.media_items if item.get("path")]
+        self._ai_plan_story_snapshot = json.dumps(story_payload, ensure_ascii=False, sort_keys=True)
+        self._ai_plan_shot_snapshot = json.dumps(shot_payload, ensure_ascii=False, sort_keys=True)
         task = AIEditPlanTask(
             brief, self.timeline_project.to_dict(), paths, self._ai_media_analysis,
             endpoint, model, account,
@@ -1735,7 +1739,22 @@ class ZenithEditor(QMainWindow):
     def _ai_edit_plan_finished(self, plan: object, error: str) -> None:
         self._ai_edit_plan_task = None
         self.ai_model_plan_button.setText("تولید طرح تدوین با مدل هوش مصنوعی")
+        approvals_still_valid = bool(
+            self.ai_story_approval.isChecked()
+            and self.ai_shot_approval.isChecked()
+            and self._ai_story_blueprint is not None
+            and self._ai_shot_selection_report is not None
+            and json.dumps(asdict(self._ai_story_blueprint), ensure_ascii=False, sort_keys=True)
+                == self._ai_plan_story_snapshot
+            and json.dumps(asdict(self._ai_shot_selection_report), ensure_ascii=False, sort_keys=True)
+                == self._ai_plan_shot_snapshot
+        )
+        self._ai_plan_story_snapshot = None
+        self._ai_plan_shot_snapshot = None
         self._ai_approval_changed()
+        if not approvals_still_valid:
+            self.ai_analysis_output.appendPlainText("نتیجه مدل کنار گذاشته شد؛ تأیید داستان یا انتخاب نماها هنگام درخواست تغییر کرده بود.")
+            return
         if error:
             QMessageBox.warning(self, "تولید طرح تدوین", error)
             self.ai_analysis_output.appendPlainText("مدل نتوانست طرح معتبر تولید کند؛ تایم‌لاین بدون تغییر باقی ماند.")
