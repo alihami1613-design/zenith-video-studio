@@ -11,6 +11,7 @@ from audio_render import render_audio_mix
 from proxy_manager import find_ffmpeg
 from video_color import build_color_filter
 from speed_ramp import build_speed_segments
+from render_validation import validate_rendered_mp4
 
 RENDER_VERSION = "timeline-h264-v17-mask-invert"
 STILL_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".webp", ".tif", ".tiff"}
@@ -539,6 +540,15 @@ def render_timeline_mp4(project: object, output_path: str | Path,
                 os.replace(silent_video, partial)
             if not partial.is_file() or partial.stat().st_size <= 0:
                 raise RuntimeError("فایل MP4 خروجی معتبر ساخته نشد.")
+            validate_rendered_mp4(
+                partial, ffmpeg,
+                expected_width=int(project.width),
+                expected_height=int(project.height),
+                expected_fps=int(project.fps),
+                expected_duration_seconds=_seconds(project.duration_frames, project.fps),
+                expect_audio=has_audio,
+                timeout_seconds=min(timeout_seconds, 900),
+            )
             os.replace(partial, target)
         finally:
             partial.unlink(missing_ok=True)
