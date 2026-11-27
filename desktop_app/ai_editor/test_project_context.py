@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from ai_editor.project_context import build_project_context
+from ai_editor.project_context import build_project_context, media_inventory_fingerprint
 from timeline_model import TimelineProject
 
 
