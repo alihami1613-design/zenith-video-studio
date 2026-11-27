@@ -47,6 +47,9 @@ class RenderValidationTests(unittest.TestCase):
             self.assertTrue(report.has_video)
             self.assertTrue(report.has_audio)
             self.assertTrue(report.decode_succeeded)
+            self.assertIsNotNone(report.visual_quality)
+            self.assertTrue(report.visual_quality.scanned)
+            self.assertIsNone(report.visual_scan_error)
             self.assertEqual((report.width, report.height, report.fps), (96, 64, 25.0))
 
     def test_missing_expected_audio_is_rejected(self):
@@ -88,6 +91,7 @@ class RenderValidationTests(unittest.TestCase):
             )
             self.assertTrue(report.valid)
             self.assertTrue(report.decode_succeeded)
+            self.assertTrue(report.visual_quality.scanned)
 
     def test_corrupt_or_empty_output_is_rejected(self):
         with tempfile.TemporaryDirectory() as folder:
