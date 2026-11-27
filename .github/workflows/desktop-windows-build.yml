@@ -107,8 +107,8 @@ jobs:
         shell: pwsh
         run: |
           $installer = Resolve-Path "dist-installer/ZENITH-Desktop-Setup.exe"
-          $installDir = Join-Path $env:RUNNER_TEMP "ZENITH Desktop Smoke"
-          $install = Start-Process -FilePath $installer -ArgumentList @("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/DIR=$installDir") -Wait -PassThru
+          $installDir = Join-Path $env:RUNNER_TEMP "ZENITH-Desktop-Smoke"
+          $install = Start-Process -FilePath $installer -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /DIR=$installDir" -Wait -PassThru
           if ($install.ExitCode -ne 0) { throw "Silent installer exited with code $($install.ExitCode)." }
           $installedExe = Join-Path $installDir "ZENITH Desktop.exe"
           if (-not (Test-Path $installedExe -PathType Leaf)) { throw "Installed application executable is missing." }
