@@ -48,6 +48,7 @@ from ai_editor.director_review import (
     review_edit, build_gap_repair_plan, build_music_alignment_plan, build_scene_split_plan,
 )
 from ai_editor.credential_store import store_api_key, delete_api_key
+from final_review_report import build_final_review_report
 
 APP_NAME = "ZENITH Desktop"
 PROJECT_VERSION = 2
@@ -666,6 +667,9 @@ class ZenithEditor(QMainWindow):
         self.ai_apply_plan_button.clicked.connect(self.apply_ai_edit_draft)
         self.ai_director_review_button = QPushButton("بازبینی کارگردان هوشمند")
         self.ai_director_review_button.clicked.connect(self.run_ai_director_review)
+        self.ai_export_final_report_button = QPushButton("ذخیره گزارش نهایی تدوین")
+        self.ai_export_final_report_button.setToolTip("گزارش کارگردان و کنترل پس از رندر را به Markdown یا JSON ذخیره می‌کند؛ تأیید انتشار خودکار نیست.")
+        self.ai_export_final_report_button.clicked.connect(self.export_final_review_report)
         self.ai_director_fix_button = QPushButton("آماده‌سازی اصلاح فاصله‌های V1")
         self.ai_director_fix_button.setToolTip("فقط فاصله‌های اندازه‌گیری‌شده در ترک اصلی را به طرح قابل پیش‌نمایش تبدیل می‌کند.")
         self.ai_director_fix_button.clicked.connect(self.prepare_ai_director_fixes)
@@ -684,6 +688,7 @@ class ZenithEditor(QMainWindow):
         plan_actions.addWidget(self.ai_preview_plan_button)
         plan_actions.addWidget(self.ai_apply_plan_button)
         plan_actions.addWidget(self.ai_director_review_button)
+        plan_actions.addWidget(self.ai_export_final_report_button)
         plan_actions.addWidget(self.ai_director_fix_button)
         plan_actions.addWidget(self.ai_music_align_button)
         plan_actions.addWidget(self.ai_scene_split_button)
@@ -1961,6 +1966,43 @@ class ZenithEditor(QMainWindow):
             self.ai_analysis_output.appendPlainText("\n".join(lines))
         self.statusBar().showMessage(
             "بازبینی کارگردان تمام شد؛ تایم‌لاین بدون تغییر باقی ماند."
+        )
+
+    def export_final_review_report(self) -> None:
+        """Save a consolidated review report without granting publication approval."""
+        try:
+            project_name = self.project_path.stem if self.project_path else "Untitled"
+            report = build_final_review_report(
+                project_name,
+                director_report=getattr(self, "_ai_director_review_report", None),
+                render_report=getattr(self, "_video_render_validation_report", None),
+            )
+        except Exception as exc:
+            QMessageBox.warning(self, "گزارش نهایی تدوین", str(exc))
+            return
+        filename, selected_filter = QFileDialog.getSaveFileName(
+            self, "ذخیره گزارش نهایی تدوین", f"{project_name}_Final_Review.md",
+            "Markdown (*.md);;JSON (*.json)",
+        )
+        if not filename:
+            return
+        output = Path(filename)
+        if selected_filter.startswith("JSON") or output.suffix.lower() == ".json":
+            output = output.with_suffix(".json")
+            payload = report.to_json()
+        else:
+            output = output.with_suffix(".md")
+            payload = report.to_markdown()
+        try:
+            output.write_text(payload, encoding="utf-8")
+        except OSError as exc:
+            QMessageBox.warning(self, "ذخیره گزارش نهایی تدوین", str(exc))
+            return
+        QMessageBox.information(
+            self, "گزارش ذخیره شد",
+            f"گزارش نهایی ذخیره شد.\n\nوضعیت: {report.status}\n"
+            f"خطا: {report.error_count} | هشدار: {report.warning_count} | پیشنهاد: {report.advisory_count}\n"
+            "این گزارش تأیید انتشار محسوب نمی‌شود.",
         )
 
     def prepare_ai_director_fixes(self) -> None:
