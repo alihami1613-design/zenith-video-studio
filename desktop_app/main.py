@@ -3620,8 +3620,16 @@ class ZenithEditor(QMainWindow):
         self.statusBar().showMessage("درخواست لغو ثبت شد؛ در حال توقف امن FFmpeg و پاک‌سازی فایل موقت...")
 
     def _video_render_progress_changed(self, percent: int, stage: str) -> None:
-        self.video_render_progress.setValue(max(0, min(100, int(percent))))
-        self.statusBar().showMessage(f"{stage} | {max(0, min(100, int(percent)))}٪")
+        value = max(0, min(100, int(percent)))
+        self.video_render_progress.setValue(value)
+        validating = stage == "اعتبارسنجی و کنترل کیفیت"
+        self.video_render_cancel_button.setEnabled(not validating)
+        if validating:
+            self.statusBar().showMessage(
+                f"{stage} | {value}٪ | برای جلوگیری از قطع بررسی یکپارچگی فایل، لغو در این مرحله غیرفعال است."
+            )
+        else:
+            self.statusBar().showMessage(f"{stage} | {value}٪")
 
     def _video_render_validation_ready(self, report: dict) -> None:
         self._video_render_validation_report = report
