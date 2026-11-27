@@ -103,21 +103,45 @@ jobs:
           & $compiler ZENITH_Desktop.iss
           if ($LASTEXITCODE -ne 0) { throw "Windows installer compilation failed." }
           if (-not (Test-Path "dist-installer/ZENITH-Desktop-Setup.exe")) { throw "Installer output is missing." }
-      - name: Smoke-test Windows installer install and uninstall
+      - name: Smoke-test Windows installer install, launch and uninstall
         shell: pwsh
         run: |
           $installer = Resolve-Path "dist-installer/ZENITH-Desktop-Setup.exe"
-          $installDir = Join-Path $env:RUNNER_TEMP "ZENITH-Desktop-Smoke"
-          $install = Start-Process -FilePath $installer -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /DIR=$installDir" -Wait -PassThru
+          $installDir = Join-Path $env:ProgramFiles "ZENITH Desktop"
+          $install = Start-Process -FilePath $installer -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART" -Wait -PassThru
           if ($install.ExitCode -ne 0) { throw "Silent installer exited with code $($install.ExitCode)." }
           $installedExe = Join-Path $installDir "ZENITH Desktop.exe"
-          if (-not (Test-Path $installedExe -PathType Leaf)) { throw "Installed application executable is missing." }
+          if (-not (Test-Path $installedExe -PathType Leaf)) { throw "Installed application executable is missing from Program Files." }
           $uninstaller = Join-Path $installDir "unins000.exe"
           if (-not (Test-Path $uninstaller -PathType Leaf)) { throw "Application uninstaller is missing." }
-          $uninstall = Start-Process -FilePath $uninstaller -ArgumentList @("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART") -Wait -PassThru
+          $stdout = Join-Path $env:RUNNER_TEMP "zenith-installed.stdout.log"
+          $stderr = Join-Path $env:RUNNER_TEMP "zenith-installed.stderr.log"
+          $app = Start-Process -FilePath $installedExe -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+          try {
+            $windowReady = $false
+            for ($attempt = 0; $attempt -lt 20; $attempt++) {
+              Start-Sleep -Seconds 1
+              $app.Refresh()
+              if ($app.HasExited) {
+                if (Test-Path $stdout) { Get-Content $stdout }
+                if (Test-Path $stderr) { Get-Content $stderr }
+                throw "Installed application exited during startup with code $($app.ExitCode)."
+              }
+              if ($app.MainWindowHandle -ne 0 -and $app.MainWindowTitle -like "*ZENITH Desktop*") {
+                $windowReady = $true
+                break
+              }
+            }
+            if (-not $windowReady) { throw "Installed application did not expose its expected main window." }
+            Write-Host "Installed application window detected: $($app.MainWindowTitle)"
+          }
+          finally {
+            if (-not $app.HasExited) { Stop-Process -Id $app.Id -Force }
+          }
+          $uninstall = Start-Process -FilePath $uninstaller -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART" -Wait -PassThru
           if ($uninstall.ExitCode -ne 0) { throw "Silent uninstaller exited with code $($uninstall.ExitCode)." }
           if (Test-Path $installDir) { throw "Application install directory remains after uninstall." }
-          Write-Host "Windows installer install/uninstall smoke test passed."
+          Write-Host "Windows installer Program Files install, launch and uninstall smoke test passed."
       - name: Upload Windows installer
         uses: actions/upload-artifact@v4
         with:
