@@ -391,6 +391,7 @@ class ZenithEditor(QMainWindow):
         self.ai_music_combo = QComboBox()
         self.ai_music_combo.setMinimumWidth(240)
         self.ai_music_combo.addItem("پس از تحلیل، موسیقی را انتخاب کنید", None)
+        self.ai_music_combo.currentIndexChanged.connect(self._ai_approval_changed)
         self.ai_pace_combo = QComboBox()
         for label, value in (("متعادل", "balanced"), ("آرام", "calm"), ("پرانرژی", "energetic"), ("تریلر", "trailer")):
             self.ai_pace_combo.addItem(label, value)
@@ -1216,7 +1217,7 @@ class ZenithEditor(QMainWindow):
         )
         self.ai_build_plan_button.setEnabled(ready)
         if not ready:
-            self.ai_edit_draft = None
+            self._ai_edit_draft = None
             self._ai_execution_preview = None
             self.ai_preview_plan_button.setEnabled(False)
             self.ai_apply_plan_button.setEnabled(False)
@@ -1251,7 +1252,7 @@ class ZenithEditor(QMainWindow):
         for operation in plan.operations:
             operation_counts[operation.kind] = operation_counts.get(operation.kind, 0) + 1
         lines = [
-            "\nپیش‌نویس تدوین ساخته شد — هنوز روی پروژه اصلی اعمال نشده است.",
+            "\nپیش‌نویس تدوین ساخته شد — هنوز روی پروژه اصلی اعمال نشده است.\nموسیقی انتخابی فقط مرجع تحلیل ریتم است و به‌عنوان ترک صوتی به تایم‌لاین اضافه نمی‌شود.",
             plan.summary,
             f"عملیات: {len(plan.operations)} | کلیپ‌ها: {operation_counts.get('add_clip', 0)} | انتقال‌ها: {operation_counts.get('set_transition', 0)}",
             *[f"هشدار: {warning}" for warning in self._ai_edit_draft.warnings],
@@ -1270,11 +1271,30 @@ class ZenithEditor(QMainWindow):
             return
         self._ai_execution_preview = preview
         self._ai_preview_base_project_data = self.timeline_project.to_dict()
-        self.ai_apply_plan_button.setEnabled(True)
+        created_ids = set(preview.created_clip_ids)
+        existing_clips = list(self.timeline_project.clips)
+        conflicts = []
+        for created in preview.project.clips:
+            if created.clip_id not in created_ids:
+                continue
+            for existing in existing_clips:
+                if (created.track == existing.track
+                        and created.start_frame < existing.end_frame
+                        and existing.start_frame < created.end_frame):
+                    conflicts.append(
+                        f"{created.name} با کلیپ {existing.name} در ترک {created.track} هم‌پوشانی دارد"
+                    )
+        self.ai_apply_plan_button.setEnabled(not conflicts)
+        conflict_note = (
+            "\n" + "\n".join(f"تداخل تایم‌لاین: {item}" for item in conflicts)
+            + "\nبرای جلوگیری از روی‌هم‌افتادن ناخواسته، اعمال نهایی غیرفعال شد؛ ابتدا باید تخصیص ترک‌ها طراحی شود."
+            if conflicts else ""
+        )
         self.ai_analysis_output.appendPlainText(
             f"\nپیش‌نمایش ایمن موفق: {preview.operation_count} عملیات، {len(preview.created_clip_ids)} کلیپ جدید. "
             f"مدت نسخه پیش‌نمایش: {preview.project.duration_frames / preview.project.fps:.2f}s. "
             "این پیش‌نمایش روی نسخه جداگانه اجرا شد؛ پروژه اصلی هنوز تغییر نکرده است."
+            + conflict_note
         )
         self.statusBar().showMessage("پیش‌نمایش روی نسخه جداگانه موفق شد؛ اعمال نهایی همچنان منتظر تأیید است.")
 
