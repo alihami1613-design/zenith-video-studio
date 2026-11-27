@@ -503,6 +503,8 @@ class ZenithEditor(QMainWindow):
         self.ai_provider_endpoint.setPlaceholderText("نشانی HTTPS ارائه‌دهنده سازگار با OpenAI")
         self.ai_provider_model = QLineEdit()
         self.ai_provider_model.setPlaceholderText("نام دقیق مدل")
+        self.ai_provider_model.textChanged.connect(self._ai_cloud_story_consent_changed)
+        self.ai_provider_endpoint.textChanged.connect(self._ai_cloud_story_consent_changed)
         provider_row.addWidget(QLabel("Endpoint:"))
         provider_row.addWidget(self.ai_provider_endpoint, 3)
         provider_row.addWidget(QLabel("Model:"))
@@ -551,6 +553,7 @@ class ZenithEditor(QMainWindow):
         )
         self.ai_story_prompt.setMaximumHeight(72)
         self.ai_story_prompt.textChanged.connect(self._invalidate_ai_story)
+        self.ai_story_prompt.textChanged.connect(self._ai_cloud_story_consent_changed)
         workflow_layout.addWidget(QLabel("۱) شرح پروژه و خواسته کارگردانی"))
         workflow_layout.addWidget(self.ai_story_prompt)
         self.ai_story_request_button = QPushButton("ساخت و ذخیره بسته درخواست داستان")
@@ -1330,6 +1333,7 @@ class ZenithEditor(QMainWindow):
         self._ai_shot_selection_report = None
         self._ai_edit_draft = None
         self._ai_execution_preview = None
+        self.ai_cloud_story_consent.setChecked(False)
         self._ai_story_approval.setChecked(False)
         self._ai_shot_approval.setChecked(False)
         self.ai_select_shots_button.setEnabled(False)
@@ -1448,6 +1452,7 @@ class ZenithEditor(QMainWindow):
 
     def _ai_story_generation_finished(self, story_data: object, error: str) -> None:
         self._story_generation_task = None
+        self.ai_cloud_story_consent.setChecked(False)
         self.ai_generate_story_button.setText("تولید داستان با هوش مصنوعی")
         self._ai_cloud_story_consent_changed(self.ai_cloud_story_consent.isChecked())
         if error:
@@ -1519,6 +1524,8 @@ class ZenithEditor(QMainWindow):
             QMessageBox.warning(self, "بارگذاری طرح", f"خواندن فایل ناموفق بود: {exc}")
 
     def _invalidate_ai_story(self) -> None:
+        if self.ai_cloud_story_consent.isChecked():
+            self.ai_cloud_story_consent.setChecked(False)
         self._ai_story_blueprint = None
         self._ai_shot_selection_report = None
         self._ai_edit_draft = None
