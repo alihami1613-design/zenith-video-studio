@@ -11,6 +11,7 @@ import subprocess
 from pathlib import Path
 
 from render_quality import RenderVisualQualityReport, inspect_rendered_video
+from render_audio_quality import AudioRenderQualityReport, inspect_rendered_audio
 
 
 @dataclass(frozen=True)
@@ -27,6 +28,8 @@ class RenderValidationReport:
     decode_succeeded: bool
     visual_quality: RenderVisualQualityReport | None
     visual_scan_error: str | None
+    audio_quality: AudioRenderQualityReport | None
+    audio_scan_error: str | None
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -117,6 +120,8 @@ def validate_rendered_mp4(
     # discard an otherwise structurally valid, fully decoded export.
     visual_quality = None
     visual_scan_error = None
+    audio_quality = None
+    audio_scan_error = None
     try:
         visual_quality = inspect_rendered_video(
             path, ffmpeg, timeout_seconds=timeout_seconds
@@ -124,7 +129,17 @@ def validate_rendered_mp4(
     except (RuntimeError, ValueError):
         visual_scan_error = "اسکن بصری کامل نشد؛ بازبینی چشمی خروجی لازم است."
 
+    if has_audio:
+        try:
+            audio_quality = inspect_rendered_audio(
+                path, ffmpeg, expected_video_duration_seconds=duration,
+                fps=expected_fps, timeout_seconds=timeout_seconds,
+            )
+        except (RuntimeError, ValueError):
+            audio_scan_error = "اسکن کیفیت صوت کامل نشد؛ بازبینی شنیداری خروجی لازم است."
+
     return RenderValidationReport(
         True, path.stat().st_size, duration, width, height, fps,
         True, has_audio, codec, True, visual_quality, visual_scan_error,
+        audio_quality, audio_scan_error,
     )
