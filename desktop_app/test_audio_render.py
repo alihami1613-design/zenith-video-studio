@@ -137,6 +137,44 @@ class AudioRenderCommandTests(unittest.TestCase):
         self.assertIn("[track1][duckcontrol]sidechaincompress", joined)
         self.assertIn("[musicducked]", joined)
 
+    def test_ducking_threshold_is_configurable_in_db(self):
+        with tempfile.TemporaryDirectory() as folder:
+            voice = Path(folder) / "voice.wav"
+            music = Path(folder) / "music.wav"
+            voice.touch()
+            music.touch()
+            clips = [
+                self.make_clip(voice, clip_id="voice", track="A1"),
+                self.make_clip(music, clip_id="music", track="A2"),
+            ]
+            command = build_audio_mix_command(
+                "ffmpeg", clips, 30, "mix.wav",
+                audio_ducking={
+                    "enabled": True, "voice_track": "A1", "music_track": "A2",
+                    "threshold_db": -24,
+                },
+            )
+        self.assertIn("sidechaincompress=threshold=0.063096", " ".join(command))
+
+    def test_ducking_threshold_rejects_out_of_range_values(self):
+        with tempfile.TemporaryDirectory() as folder:
+            voice = Path(folder) / "voice.wav"
+            music = Path(folder) / "music.wav"
+            voice.touch()
+            music.touch()
+            clips = [
+                self.make_clip(voice, clip_id="voice", track="A1"),
+                self.make_clip(music, clip_id="music", track="A2"),
+            ]
+            with self.assertRaises(ValueError):
+                build_audio_mix_command(
+                    "ffmpeg", clips, 30, "mix.wav",
+                    audio_ducking={
+                        "enabled": True, "voice_track": "A1", "music_track": "A2",
+                        "threshold_db": -3,
+                    },
+                )
+
     def test_ducking_rejects_same_or_unavailable_track(self):
         with tempfile.TemporaryDirectory() as folder:
             voice = Path(folder) / "voice.wav"
