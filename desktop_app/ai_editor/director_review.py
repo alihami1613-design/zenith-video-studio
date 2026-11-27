@@ -54,11 +54,13 @@ class DirectorReviewReport:
 
 
 def _fingerprint(project: TimelineProject) -> tuple[tuple[Any, ...], ...]:
-    return tuple(sorted((
-        clip.clip_id, clip.path, clip.track, clip.start_frame,
-        clip.source_in, clip.duration_frames, clip.playback_rate,
-        clip.transition_in_frames, clip.transition_in_type,
+    clip_state = tuple(sorted((
+        clip.clip_id, clip.path, clip.track, clip.media_type, clip.has_audio,
+        clip.start_frame, clip.source_in, clip.duration_frames, clip.playback_rate,
+        clip.volume, clip.transition_in_frames, clip.transition_in_type,
     ) for clip in project.clips))
+    project_state = (("__project__", project.fps, project.width, project.height),)
+    return project_state + clip_state
 
 
 def review_is_current(report: DirectorReviewReport, project: TimelineProject) -> bool:
