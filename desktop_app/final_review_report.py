@@ -153,8 +153,8 @@ def build_final_review_report(
             notes.append(str(_read(render_report, "visual_scan_error")))
         audio = _read(render_report, "audio_quality")
         if audio is not None:
-            transient_count = _read(audio, "transient_candidate_count", None)
-            clipping_count = _read(audio, "clipping_interval_count", None)
+            transient_count = len(_sequence(_read(audio, "transient_candidates", ())))
+            clipping_count = len(_sequence(_read(audio, "clipped_intervals_seconds", ())))
             if transient_count:
                 items.append(FinalReviewItem(
                     "audio_quality", "advisory", "Possible abrupt audio transients",
@@ -167,7 +167,7 @@ def build_final_review_report(
                     (f"{clipping_count} interval(s) detected near full scale.",),
                     "Listen and inspect peak levels; reduce gain if distortion is audible.",
                 ))
-            if _read(audio, "duration_mismatch", False):
+            if _read(audio, "duration_matches_video", True) is False:
                 items.append(FinalReviewItem(
                     "audio_quality", "warning", "Audio duration differs from video duration",
                     ("Decoded audio duration is outside the configured tolerance.",),
