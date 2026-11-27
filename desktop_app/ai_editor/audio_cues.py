@@ -106,7 +106,7 @@ def build_audio_cue_map(
         for timestamp in energy_analysis.transient_candidates_seconds:
             if (isinstance(timestamp, bool) or not isinstance(timestamp, (int, float))
                     or not math.isfinite(timestamp) or timestamp < 0
-                    or timestamp > media_duration_seconds):
+                    or timestamp >= media_duration_seconds):
                 warnings.append("An invalid transient candidate was ignored.")
                 continue
             frame = min(total_frames, max(0, round(timestamp * fps)))
