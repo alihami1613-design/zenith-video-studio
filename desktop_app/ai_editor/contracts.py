@@ -150,7 +150,7 @@ class EditPlan:
             p = dict(operation.parameters)
             if operation.kind == "add_clip":
                 _only_keys(p, {"asset_id", "track", "start_frame", "source_in",
-                               "duration_frames", "audio_track"})
+                               "duration_frames", "audio_track", "clip_id"})
                 asset_id = p.get("asset_id")
                 if asset_id not in asset_map:
                     raise EditPlanError(f"Unknown media asset: {asset_id}")
@@ -166,6 +166,13 @@ class EditPlan:
                     raise EditPlanError(f"Operation {operation.operation_id} exceeds source duration.")
                 if asset.media_type == "audio" and "audio_track" in p and p["audio_track"] not in AUDIO_TRACKS:
                     raise EditPlanError("Audio clips must route to A1-A4.")
+                if "clip_id" in p:
+                    planned_clip_id = p["clip_id"]
+                    if not isinstance(planned_clip_id, str) or not PLAN_ID_RE.fullmatch(planned_clip_id):
+                        raise EditPlanError("Planned clip IDs must be 3-80 safe characters.")
+                    if planned_clip_id in clip_ids:
+                        raise EditPlanError(f"Duplicate planned clip ID: {planned_clip_id}")
+                    clip_ids.add(planned_clip_id)
             elif operation.kind in {"move_clip", "trim_clip", "set_clip_grade",
                                     "set_clip_volume", "set_transition"}:
                 clip_id = p.get("clip_id")
