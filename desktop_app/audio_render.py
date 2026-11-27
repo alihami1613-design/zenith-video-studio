@@ -71,18 +71,46 @@ def build_audio_mix_command(
     if not audio_clips:
         raise ValueError("همه ترک‌های صوتی Mute هستند یا از حالت Solo خارج شده‌اند.")
 
+    # A video clip's embedded audio follows the picture transition: its
+    # incoming audio starts transition_in_frames early, using the matching
+    # pre-roll from source media. The preceding video clip fades out over the
+    # same interval. This mirrors video_render's clip_start/source trim logic.
+    visual_fade_in: dict[str, int] = {}
+    visual_fade_out: dict[str, int] = {}
+    video_by_track: dict[str, list[object]] = {}
+    for clip in audio_clips:
+        if getattr(clip, "media_type", "") == "video":
+            video_by_track.setdefault(str(clip.track), []).append(clip)
+    for track_clips in video_by_track.values():
+        ordered = sorted(track_clips, key=lambda item: (item.start_frame, item.clip_id))
+        for outgoing, incoming in zip(ordered, ordered[1:]):
+            transition = int(getattr(incoming, "transition_in_frames", 0) or 0)
+            if transition > 0 and outgoing.end_frame == incoming.start_frame:
+                visual_fade_out[outgoing.clip_id] = max(
+                    visual_fade_out.get(outgoing.clip_id, 0), transition
+                )
+                visual_fade_in[incoming.clip_id] = max(
+                    visual_fade_in.get(incoming.clip_id, 0), transition
+                )
+
     # Overlapping adjacent clips on the same audio track become an equal-power
     # crossfade. Clips on different tracks remain independently mixed.
     crossfade_in: dict[str, int] = {}
     crossfade_out: dict[str, int] = {}
+    effective_start: dict[str, int] = {}
+    effective_end: dict[str, int] = {}
+    for clip in audio_clips:
+        pre_roll = visual_fade_in.get(clip.clip_id, 0)
+        effective_start[clip.clip_id] = int(clip.start_frame) - pre_roll
+        effective_end[clip.clip_id] = int(clip.end_frame)
     by_track: dict[str, list[object]] = {}
     for clip in audio_clips:
         route = getattr(clip, "audio_track", clip.track)
         by_track.setdefault(route, []).append(clip)
     for track_clips in by_track.values():
-        ordered = sorted(track_clips, key=lambda item: (item.start_frame, item.clip_id))
+        ordered = sorted(track_clips, key=lambda item: (effective_start[item.clip_id], item.clip_id))
         for outgoing, incoming in zip(ordered, ordered[1:]):
-            overlap = min(outgoing.end_frame, incoming.end_frame) - incoming.start_frame
+            overlap = min(effective_end[outgoing.clip_id], effective_end[incoming.clip_id]) - effective_start[incoming.clip_id]
             if overlap > 0:
                 crossfade_out[outgoing.clip_id] = max(crossfade_out.get(outgoing.clip_id, 0), overlap)
                 crossfade_in[incoming.clip_id] = max(crossfade_in.get(incoming.clip_id, 0), overlap)
@@ -106,8 +134,14 @@ def build_audio_mix_command(
         command.extend(["-i", str(source)])
         is_embedded_video_audio = getattr(clip, "media_type", "") == "video"
         playback_rate = float(getattr(clip, "playback_rate", 1.0)) if is_embedded_video_audio else 1.0
-        duration = _seconds(clip.duration_frames, fps)
-        source_start = _seconds(clip.source_in, fps)
+        transition_pre_roll = visual_fade_in.get(clip.clip_id, 0) if is_embedded_video_audio else 0
+        effective_duration_frames = int(clip.duration_frames) + transition_pre_roll
+        effective_source_in = int(clip.source_in) - round(transition_pre_roll * playback_rate)
+        if effective_source_in < 0:
+            raise ValueError(f"برای صدای ترنزیشن کلیپ {clip.name} فریم منبع کافی پیش از نقطه ورود وجود ندارد.")
+        effective_start_frame = int(clip.start_frame) - transition_pre_roll
+        duration = _seconds(effective_duration_frames, fps)
+        source_start = _seconds(effective_source_in, fps)
         ramp_points = list(getattr(clip, "speed_ramp", []) or []) if is_embedded_video_audio else []
         speed_segments = build_speed_segments(clip.duration_frames, fps, ramp_points) if ramp_points else []
         if speed_segments:
@@ -142,8 +176,14 @@ def build_audio_mix_command(
                 *(["areverse"] if bool(getattr(clip, "reverse_playback", False)) and is_embedded_video_audio else []),
                 f"volume={clip.volume:.4f}",
             ]
-        automatic_fade_in = crossfade_in.get(clip.clip_id, 0)
-        automatic_fade_out = crossfade_out.get(clip.clip_id, 0)
+        automatic_fade_in = max(
+            crossfade_in.get(clip.clip_id, 0),
+            visual_fade_in.get(clip.clip_id, 0),
+        )
+        automatic_fade_out = max(
+            crossfade_out.get(clip.clip_id, 0),
+            visual_fade_out.get(clip.clip_id, 0),
+        )
         fade_in_frames = max(int(clip.fade_in_frames), automatic_fade_in)
         fade_out_frames = max(int(clip.fade_out_frames), automatic_fade_out)
         if fade_in_frames:
@@ -155,7 +195,7 @@ def build_audio_mix_command(
             fade_start = max(0.0, duration - fade_out)
             curve = ":curve=iqsin" if automatic_fade_out else ""
             chain.append(f"afade=t=out:st={fade_start:.6f}:d={fade_out:.6f}{curve}")
-        delay_ms = round(_seconds(clip.start_frame, fps) * 1000)
+        delay_ms = round(_seconds(effective_start_frame, fps) * 1000)
         chain.append(f"adelay={delay_ms}:all=1")
         label = f"a{index}"
         filters.append(f"{audio_source_label}{','.join(chain)}[{label}]")
