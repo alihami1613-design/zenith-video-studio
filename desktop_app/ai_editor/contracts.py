@@ -180,9 +180,11 @@ class EditPlan:
                         raise EditPlanError("Move operation targets an unknown track.")
                 elif operation.kind == "trim_clip":
                     _only_keys(p, {"clip_id", "new_start_frame", "new_end_frame"})
-                    start = _int(p, "new_start_frame", minimum=0)
-                    end = _int(p, "new_end_frame", minimum=1)
-                    if end <= start:
+                    if "new_start_frame" not in p and "new_end_frame" not in p:
+                        raise EditPlanError("Trim must change at least one edge.")
+                    start = _int(p, "new_start_frame", minimum=0) if "new_start_frame" in p else None
+                    end = _int(p, "new_end_frame", minimum=1) if "new_end_frame" in p else None
+                    if start is not None and end is not None and end <= start:
                         raise EditPlanError("Trim end must be after trim start.")
                 elif operation.kind == "set_clip_grade":
                     _only_keys(p, {"clip_id", "grade"})
