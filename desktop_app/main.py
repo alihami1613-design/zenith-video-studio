@@ -2929,6 +2929,251 @@ class ZenithEditor(QMainWindow):
         self._sync_transform_controls()
         self.statusBar().showMessage("Keyframe ثبت شد؛ منحنی حرکتی انتخاب‌شده در خروجی MP4 اعمال می‌شود.")
 
+    def _commit_edit_snapshot(self, before: dict) -> None:
+        """Append a pre-edit snapshot only when a validated edit changed the project."""
+        if self._history_snapshot() != before:
+            self._append_history_snapshot(self._undo_stack, before)
+            self._redo_stack.clear()
+            self._update_history_buttons()
+
+    def _discard_unchanged_undo_snapshot(self) -> None:
+        current = self._history_snapshot()
+        if self._undo_stack and self._undo_stack[-1] == current:
+            self._undo_stack.pop()
+            self._update_history_buttons()
+
+    def _speed_ramp_changed(self, clip_id: str, points: list) -> None:
+        try:
+            clip = self.timeline_project.set_clip_speed_ramp(clip_id, points)
+        except (KeyError, TypeError, ValueError) as exc:
+            self._discard_unchanged_undo_snapshot()
+            self.statusBar().showMessage(f"تغییر Speed Ramp انجام نشد: {exc}")
+            self.timeline_widget.refresh()
+            return
+        self._sync_transform_controls()
+        self.timeline_widget.refresh()
+        self.statusBar().showMessage("نقاط Speed Ramp به‌روزرسانی شدند؛ با Undo قابل بازگشت‌اند.")
+
+    def _transform_keyframe_selected(self, clip_id: str, frame: int) -> None:
+        try:
+            clip = self.timeline_project.get_clip(clip_id)
+        except KeyError:
+            return
+        self.timeline_widget.canvas.selected_clip_id = clip_id
+        self.timeline_widget.canvas.selected_transform_keyframe_frame = int(frame)
+        self._set_playhead(clip.start_frame + int(frame))
+        self.statusBar().showMessage(f"Transform Keyframe فریم {frame} انتخاب شد.")
+
+    def _transform_keyframe_moved(self, clip_id: str, old_frame: int, new_frame: int) -> None:
+        try:
+            clip = self.timeline_project.get_clip(clip_id)
+            keys = [dict(item) for item in clip.transform_keyframes]
+            key = next(item for item in keys if int(item["frame"]) == int(old_frame))
+            key["frame"] = int(new_frame)
+            keys.sort(key=lambda item: int(item["frame"]))
+            self.timeline_project.set_clip_transform_keyframes(clip_id, keys)
+        except (KeyError, StopIteration, TypeError, ValueError) as exc:
+            self._discard_unchanged_undo_snapshot()
+            self.statusBar().showMessage(f"جابه‌جایی Transform Keyframe انجام نشد: {exc}")
+            self.timeline_widget.refresh()
+            return
+        self.timeline_widget.canvas.selected_transform_keyframe_frame = int(new_frame)
+        self._sync_transform_controls()
+        self.timeline_widget.refresh()
+        self.statusBar().showMessage("Transform Keyframe جابه‌جا شد؛ با Undo قابل بازگشت است.")
+
+    def _mask_keyframe_selected(self, clip_id: str, frame: int) -> None:
+        try:
+            clip = self.timeline_project.get_clip(clip_id)
+        except KeyError:
+            return
+        self.timeline_widget.canvas.selected_clip_id = clip_id
+        self.timeline_widget.canvas.selected_mask_keyframe_frame = int(frame)
+        self._set_playhead(clip.start_frame + int(frame))
+        self.statusBar().showMessage(f"Mask Keyframe فریم {frame} انتخاب شد.")
+
+    def _mask_keyframe_moved(self, clip_id: str, old_frame: int, new_frame: int) -> None:
+        try:
+            clip = self.timeline_project.get_clip(clip_id)
+            keys = [dict(item) for item in clip.mask_keyframes]
+            key = next(item for item in keys if int(item["frame"]) == int(old_frame))
+            key["frame"] = int(new_frame)
+            clip.mask_keyframes = sorted(keys, key=lambda item: int(item["frame"]))
+            clip.validate()
+        except (KeyError, StopIteration, TypeError, ValueError) as exc:
+            self._discard_unchanged_undo_snapshot()
+            self.statusBar().showMessage(f"جابه‌جایی Mask Keyframe انجام نشد: {exc}")
+            self.timeline_widget.refresh()
+            return
+        self.timeline_widget.canvas.selected_mask_keyframe_frame = int(new_frame)
+        self._sync_transform_controls()
+        self.timeline_widget.refresh()
+        self.statusBar().showMessage("Mask Keyframe جابه‌جا شد؛ با Undo قابل بازگشت است.")
+
+    def _sync_bezier_graph_visibility(self, *_args) -> None:
+        visible = self.transform_easing_combo.currentData() == "bezier"
+        self.bezier_curve_widget.setVisible(visible)
+        for control in self.bezier_controls.values():
+            control.setEnabled(visible and self.timeline_widget.canvas.selected_clip_id is not None)
+
+    def _bezier_graph_edit_started(self) -> None:
+        if self._bezier_edit_snapshot_active:
+            return
+        self._bezier_edit_snapshot_active = True
+        if self.timeline_widget.canvas.selected_clip_id:
+            self._push_undo()
+
+    def _bezier_graph_changed(self, y1: float, y2: float) -> None:
+        for key, value in (("bezier_y1", y1), ("bezier_y2", y2)):
+            control = self.bezier_controls.get(key)
+            if control is not None:
+                blocker = QSignalBlocker(control)
+                control.setValue(float(value))
+                del blocker
+        clip_id = self.timeline_widget.canvas.selected_clip_id
+        frame = self.timeline_widget.canvas.selected_transform_keyframe_frame
+        if not clip_id or frame is None:
+            return
+        try:
+            clip = self.timeline_project.get_clip(clip_id)
+            keys = [dict(item) for item in clip.transform_keyframes]
+            key = next(item for item in keys if int(item["frame"]) == int(frame))
+            key.update({"ease": "bezier", "bezier_y1": float(y1), "bezier_y2": float(y2)})
+            self.timeline_project.set_clip_transform_keyframes(clip_id, keys)
+            self.timeline_widget.refresh()
+        except (KeyError, StopIteration, TypeError, ValueError) as exc:
+            self.statusBar().showMessage(f"ویرایش منحنی Bezier انجام نشد: {exc}")
+
+    def _bezier_graph_edit_finished(self) -> None:
+        self._bezier_edit_snapshot_active = False
+        self.statusBar().showMessage("منحنی Bezier به‌روزرسانی شد.")
+
+    def _apply_clip_speed(self) -> None:
+        clip_id = self.timeline_widget.canvas.selected_clip_id
+        if not clip_id:
+            return
+        before = self._history_snapshot()
+        try:
+            self.timeline_project.set_clip_speed(clip_id, float(self.playback_speed_combo.currentData()))
+        except (KeyError, TypeError, ValueError) as exc:
+            self._restore_history_snapshot(before)
+            self.statusBar().showMessage(f"تغییر سرعت انجام نشد: {exc}")
+            return
+        self._commit_edit_snapshot(before)
+        self._refresh_timeline()
+        self._sync_transform_controls()
+        self.statusBar().showMessage("سرعت کلیپ تغییر کرد و مدت آن متناسب‌سازی شد.")
+
+    def _toggle_clip_motion_blur(self, enabled: bool) -> None:
+        clip_id = self.timeline_widget.canvas.selected_clip_id
+        if not clip_id:
+            return
+        before = self._history_snapshot()
+        try:
+            self.timeline_project.set_clip_motion_blur(clip_id, bool(enabled))
+        except (KeyError, ValueError) as exc:
+            self._restore_history_snapshot(before)
+            self.statusBar().showMessage(f"تغییر Motion Blur انجام نشد: {exc}")
+            return
+        self._commit_edit_snapshot(before)
+        self.statusBar().showMessage("Motion Blur به‌روزرسانی شد.")
+
+    def _toggle_clip_reverse(self, enabled: bool) -> None:
+        clip_id = self.timeline_widget.canvas.selected_clip_id
+        if not clip_id:
+            return
+        before = self._history_snapshot()
+        try:
+            self.timeline_project.set_clip_reverse(clip_id, bool(enabled))
+        except (KeyError, ValueError) as exc:
+            self._restore_history_snapshot(before)
+            self.statusBar().showMessage(f"تغییر Reverse انجام نشد: {exc}")
+            return
+        self._commit_edit_snapshot(before)
+        self.statusBar().showMessage("حالت پخش معکوس به‌روزرسانی شد.")
+
+    def _add_speed_ramp_point(self) -> None:
+        clip_id = self.timeline_widget.canvas.selected_clip_id
+        if not clip_id:
+            return
+        before = self._history_snapshot()
+        try:
+            clip = self.timeline_project.get_clip(clip_id)
+            frame = int(self.speed_ramp_frame_spin.value())
+            points = [dict(item) for item in clip.speed_ramp if int(item["frame"]) != frame]
+            points.append({"frame": frame, "rate": float(self.speed_ramp_rate_spin.value())})
+            points.sort(key=lambda item: int(item["frame"]))
+            self.timeline_project.set_clip_speed_ramp(clip_id, points)
+        except (KeyError, TypeError, ValueError) as exc:
+            self._restore_history_snapshot(before)
+            self.statusBar().showMessage(f"ثبت نقطه سرعت انجام نشد: {exc}")
+            return
+        self._commit_edit_snapshot(before)
+        self._sync_transform_controls()
+        self.timeline_widget.refresh()
+        self.statusBar().showMessage(f"نقطه Speed Ramp در فریم {frame} ثبت شد.")
+
+    def _clear_speed_ramp(self) -> None:
+        clip_id = self.timeline_widget.canvas.selected_clip_id
+        if not clip_id:
+            return
+        try:
+            clip = self.timeline_project.get_clip(clip_id)
+        except KeyError:
+            return
+        if not clip.speed_ramp:
+            return
+        before = self._history_snapshot()
+        self.timeline_project.set_clip_speed_ramp(clip_id, [])
+        self._commit_edit_snapshot(before)
+        self._sync_transform_controls()
+        self.timeline_widget.refresh()
+        self.statusBar().showMessage("منحنی Speed Ramp پاک شد؛ با Undo قابل بازگشت است.")
+
+    def preview_speed_ramp(self) -> None:
+        clip_id = self.timeline_widget.canvas.selected_clip_id
+        if not clip_id:
+            return
+        try:
+            clip = self.timeline_project.get_clip(clip_id)
+            if clip.media_type != "video" or not clip.speed_ramp:
+                raise ValueError("ابتدا برای کلیپ ویدیویی نقاط Speed Ramp ثبت کنید.")
+            start = max(0, min(clip.duration_frames - 1,
+                               self.timeline_project.playhead_frame - clip.start_frame))
+            duration = min(5 * self.timeline_project.fps, clip.duration_frames - start)
+            if duration < 1:
+                raise ValueError("محدوده‌ای برای پیش‌نمایش باقی نمانده است.")
+            task = SpeedRampPreviewTask(
+                clip.clip_id, clip.path, clip.source_in, clip.duration_frames,
+                self.timeline_project.fps, clip.speed_ramp, start, duration,
+            )
+            task.signals.finished.connect(self._speed_ramp_preview_finished)
+            self._speed_ramp_preview_tasks.append(task)
+            self._speed_ramp_preview_pending.add(clip_id)
+            self.speed_ramp_preview_button.setEnabled(False)
+            self.speed_ramp_status_label.setText("در حال ساخت پیش‌نمایش سبک…")
+            self._speed_ramp_preview_pool.start(task)
+        except (KeyError, OSError, TypeError, ValueError) as exc:
+            self.statusBar().showMessage(f"پیش‌نمایش Speed Ramp آغاز نشد: {exc}")
+
+    def _speed_ramp_preview_finished(self, clip_id: str, path: str, error: str) -> None:
+        self._speed_ramp_preview_pending.discard(clip_id)
+        self._speed_ramp_preview_tasks = [
+            task for task in self._speed_ramp_preview_tasks if task.clip_id != clip_id
+        ]
+        self.speed_ramp_preview_button.setEnabled(bool(
+            self.timeline_widget.canvas.selected_clip_id
+            and self.timeline_project.get_clip(self.timeline_widget.canvas.selected_clip_id).speed_ramp
+            and not self._speed_ramp_preview_pending
+        ))
+        if error:
+            self.speed_ramp_status_label.setText("ساخت پیش‌نمایش ناموفق بود.")
+            self.statusBar().showMessage(f"پیش‌نمایش Speed Ramp: {error}")
+            return
+        self.player.setSource(QUrl.fromLocalFile(str(path)))
+        self.player.play()
+        self.speed_ramp_status_label.setText("پیش‌نمایش سبک آماده و در مانیتور پخش شد.")
+
     def _sync_color_controls(self) -> None:
         clip_id = self.timeline_widget.canvas.selected_clip_id
         clip = None
