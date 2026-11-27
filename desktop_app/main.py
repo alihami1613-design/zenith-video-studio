@@ -5,6 +5,7 @@ import os
 import sys
 from pathlib import Path
 from typing import Any
+from dataclasses import asdict
 
 from PySide6.QtCore import Qt, QUrl, QSignalBlocker, QObject, Signal, QRunnable, QThreadPool, QEvent, QTimer, QSettings
 from PySide6.QtGui import QAction, QFont
@@ -38,7 +39,7 @@ from polygon_mask_overlay import PolygonMaskOverlay
 from project_recovery import default_recovery_path, write_recovery, read_recovery, clear_recovery
 from ai_editor.project_context import build_project_context, media_inventory_fingerprint
 from ai_editor.media_analysis import analyze_project_media
-from ai_editor.narrative import build_story_request, parse_story_blueprint_json
+from ai_editor.narrative import build_story_request, parse_story_blueprint_json, request_story_blueprint
 from ai_editor.shot_selection import select_shots_for_story
 from ai_editor.music_sync_workflow import build_music_aware_edit_draft
 from ai_editor.executor import preview_edit_plan, apply_edit_plan
@@ -289,6 +290,45 @@ class ProviderTestTask(QRunnable):
             self.signals.finished.emit(False, str(exc))
 
 
+class AIStoryGenerationSignals(QObject):
+    finished = Signal(object, str)
+
+
+class AIStoryGenerationTask(QRunnable):
+    """Generate and locally validate a story blueprint using explicit cloud consent."""
+
+    def __init__(self, prompt: str, project_data: dict[str, Any],
+                 media_paths: list[str], media_analysis: Any,
+                 endpoint: str, model: str, account: str) -> None:
+        super().__init__()
+        self.prompt = prompt
+        self.project_data = project_data
+        self.media_paths = list(media_paths)
+        self.media_analysis = media_analysis
+        self.endpoint = endpoint
+        self.model = model
+        self.account = account
+        self.signals = AIStoryGenerationSignals()
+
+    def run(self) -> None:
+        try:
+            from ai_editor.provider_adapter import OpenAICompatibleConfig, OpenAICompatibleJSONProvider
+            project = TimelineProject.from_dict(self.project_data)
+            context = build_project_context(project, self.media_paths)
+            provider = OpenAICompatibleJSONProvider(OpenAICompatibleConfig(
+                endpoint=self.endpoint, model=self.model,
+                credential_account=self.account,
+            ))
+            story = request_story_blueprint(
+                self.prompt, context, provider,
+                media_analysis=self.media_analysis,
+                allow_cloud_planning=True,
+            )
+            self.signals.finished.emit(asdict(story), "")
+        except Exception as exc:
+            self.signals.finished.emit(None, str(exc))
+
+
 class LocalMediaAnalysisSignals(QObject):
     finished = Signal(object, object, str)
 
@@ -343,6 +383,9 @@ class ZenithEditor(QMainWindow):
         self._provider_test_pool = QThreadPool(self)
         self._provider_test_pool.setMaxThreadCount(1)
         self._provider_test_task: ProviderTestTask | None = None
+        self._story_generation_pool = QThreadPool(self)
+        self._story_generation_pool.setMaxThreadCount(1)
+        self._story_generation_task: AIStoryGenerationTask | None = None
         self._ai_analysis_pool.setMaxThreadCount(1)
         self._ai_analysis_task: LocalMediaAnalysisTask | None = None
         self._ai_project_context = None
@@ -517,6 +560,15 @@ class ZenithEditor(QMainWindow):
         )
         self.ai_story_request_button.clicked.connect(self.export_ai_story_request)
         workflow_layout.addWidget(self.ai_story_request_button)
+        cloud_story_row = QHBoxLayout()
+        self.ai_cloud_story_consent = QCheckBox("اجازه می‌دهم شرح پروژه و فراداده محدود آن برای تولید طرح داستان به سرویس ابری ارسال شود؛ فایل‌های رسانه ارسال نمی‌شوند")
+        self.ai_cloud_story_consent.toggled.connect(self._ai_cloud_story_consent_changed)
+        self.ai_generate_story_button = QPushButton("تولید داستان با هوش مصنوعی")
+        self.ai_generate_story_button.setEnabled(False)
+        self.ai_generate_story_button.clicked.connect(self.generate_ai_story)
+        cloud_story_row.addWidget(self.ai_cloud_story_consent, 1)
+        cloud_story_row.addWidget(self.ai_generate_story_button)
+        workflow_layout.addLayout(cloud_story_row)
         self.ai_story_json = QPlainTextEdit()
         self.ai_story_json.setPlaceholderText("JSON طرح داستانِ تولیدشده توسط سرویس هوش مصنوعیِ مورداعتماد خودت را اینجا وارد یا بارگذاری کن…\nفعلاً هیچ ارائه‌دهنده ابری به برنامه متصل نیست.")
         self.ai_story_json.setMaximumHeight(96)
@@ -1344,6 +1396,75 @@ class ZenithEditor(QMainWindow):
             )
             return False
         return True
+
+    def _ai_cloud_story_consent_changed(self, checked: bool) -> None:
+        ready = bool(
+            checked and self.ai_provider_model.text().strip()
+            and self.ai_provider_endpoint.text().strip()
+            and self.ai_story_prompt.toPlainText().strip()
+            and self._ai_project_context is not None
+        )
+        self.ai_generate_story_button.setEnabled(ready and self._story_generation_task is None)
+
+    def generate_ai_story(self) -> None:
+        if not self.ai_cloud_story_consent.isChecked():
+            QMessageBox.information(self, "اجازه ارسال ابری", "برای ادامه، اجازه ارسال اطلاعات محدود پروژه را فعال کنید.")
+            return
+        if not self._ai_context_is_current():
+            return
+        prompt = self.ai_story_prompt.toPlainText().strip()
+        endpoint = self.ai_provider_endpoint.text().strip()
+        model = self.ai_provider_model.text().strip()
+        account = self.ai_provider_account.text().strip()
+        try:
+            from ai_editor.provider_adapter import OpenAICompatibleConfig
+            OpenAICompatibleConfig(
+                endpoint=endpoint, model=model, credential_account=account
+            ).validate()
+        except Exception as exc:
+            QMessageBox.warning(self, "تنظیمات هوش مصنوعی", str(exc))
+            return
+        answer = QMessageBox.question(
+            self, "تأیید ارسال به سرویس ابری",
+            "شرح پروژه، شناسه‌های رسانه و فراداده فنی محدود برای ساخت طرح داستان به ارائه‌دهنده انتخاب‌شده ارسال شود؟\n"
+            "هیچ فایل ویدئو، صدا، تصویر یا مسیر محلی ارسال نمی‌شود. ممکن است ارائه‌دهنده هزینه مصرف API دریافت کند.",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+        )
+        if answer != QMessageBox.Yes:
+            return
+        paths = [str(item.get("path", "")) for item in self.media_items if item.get("path")]
+        task = AIStoryGenerationTask(
+            prompt, self.timeline_project.to_dict(), paths, self._ai_media_analysis,
+            endpoint, model, account,
+        )
+        self._story_generation_task = task
+        self.ai_generate_story_button.setEnabled(False)
+        self.ai_generate_story_button.setText("در حال تولید داستان…")
+        self.ai_analysis_output.appendPlainText(
+            "\\nدرخواست داستان با اجازه صریح شما ارسال شد؛ رسانه‌های اصلی و مسیرهای محلی ارسال نمی‌شوند."
+        )
+        task.signals.finished.connect(self._ai_story_generation_finished)
+        self._story_generation_pool.start(task)
+
+    def _ai_story_generation_finished(self, story_data: object, error: str) -> None:
+        self._story_generation_task = None
+        self.ai_generate_story_button.setText("تولید داستان با هوش مصنوعی")
+        self._ai_cloud_story_consent_changed(self.ai_cloud_story_consent.isChecked())
+        if error:
+            QMessageBox.warning(self, "تولید داستان", error)
+            self.ai_analysis_output.appendPlainText("تولید داستان ناموفق بود؛ هیچ تغییری در تایم‌لاین اعمال نشد.")
+            return
+        if not self._ai_context_is_current():
+            QMessageBox.warning(self, "طرح قدیمی", "پروژه یا رسانه‌ها هنگام تولید تغییر کرده‌اند؛ طرح دریافتی کنار گذاشته شد. دوباره تحلیل و تولید کنید.")
+            return
+        try:
+            encoded = json.dumps(story_data, ensure_ascii=False, indent=2, allow_nan=False)
+            if len(encoded.encode("utf-8")) > 1_000_000:
+                raise ValueError("طرح دریافتی از حد مجاز ۱ مگابایت بزرگ‌تر است.")
+            self.ai_story_json.setPlainText(encoded)
+            self.validate_ai_story()
+        except Exception as exc:
+            QMessageBox.warning(self, "اعتبارسنجی طرح دریافتی", str(exc))
 
     def export_ai_story_request(self) -> None:
         """Export a privacy-safe story-generation request; no model is invoked."""
