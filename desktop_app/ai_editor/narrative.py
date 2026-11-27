@@ -311,6 +311,78 @@ def story_blueprint_from_dict(data: Mapping[str, Any]) -> StoryBlueprint:
         raise EditPlanError(f"Malformed story blueprint: {exc}") from exc
 
 
+
+MAX_STORY_JSON_BYTES = 1_000_000
+
+
+def _reject_duplicate_json_keys(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise EditPlanError(f"Duplicate JSON key: {key}")
+        result[key] = value
+    return result
+
+
+def _reject_json_constant(value):
+    raise EditPlanError(f"Non-standard JSON numeric constant is not allowed: {value}")
+
+
+def parse_story_blueprint_json(text: str, context: ProjectContext) -> StoryBlueprint:
+    """Parse a bounded, strict JSON blueprint and validate it against local inventory."""
+    if not isinstance(text, str) or not text.strip():
+        raise EditPlanError("Story blueprint JSON is empty.")
+    if len(text.encode("utf-8")) > MAX_STORY_JSON_BYTES:
+        raise EditPlanError("Story blueprint JSON exceeds the 1 MB limit.")
+    try:
+        data = json.loads(
+            text, object_pairs_hook=_reject_duplicate_json_keys,
+            parse_constant=_reject_json_constant,
+        )
+    except EditPlanError:
+        raise
+    except (json.JSONDecodeError, UnicodeError, RecursionError) as exc:
+        raise EditPlanError(f"Invalid story blueprint JSON: {exc}") from exc
+    if not isinstance(data, Mapping):
+        raise EditPlanError("Story blueprint must be a JSON object.")
+    allowed_top = {
+        "story_id", "original_prompt", "logline", "audience_promise",
+        "emotional_arc", "estimated_duration_seconds", "acts", "assumptions",
+        "warnings", "format_version", "requires_user_approval",
+    }
+    extra = set(data) - allowed_top
+    if extra:
+        raise EditPlanError(f"Unexpected story fields: {', '.join(sorted(extra))}")
+    if not isinstance(data.get("acts"), list):
+        raise EditPlanError("Story acts must be a JSON array.")
+    allowed_act = {"act_id", "act_type", "title", "dramatic_question", "beats"}
+    allowed_beat = {
+        "beat_id", "sequence", "beat_type", "title", "purpose",
+        "target_duration_seconds", "asset_id", "source_in_seconds",
+        "source_out_seconds", "visual_intent", "narration_intent",
+        "sound_intent", "transition_intent",
+    }
+    for index, act in enumerate(data["acts"]):
+        if not isinstance(act, Mapping):
+            raise EditPlanError(f"Story act {index + 1} must be an object.")
+        extra = set(act) - allowed_act
+        if extra:
+            raise EditPlanError(f"Unexpected fields in story act {index + 1}: {', '.join(sorted(extra))}")
+        if not isinstance(act.get("beats"), list):
+            raise EditPlanError(f"Beats in story act {index + 1} must be an array.")
+        for beat_index, beat in enumerate(act["beats"]):
+            if not isinstance(beat, Mapping):
+                raise EditPlanError(f"Beat {beat_index + 1} in act {index + 1} must be an object.")
+            extra = set(beat) - allowed_beat
+            if extra:
+                raise EditPlanError(f"Unexpected fields in beat {beat_index + 1}: {', '.join(sorted(extra))}")
+    for field in ("assumptions", "warnings"):
+        if field in data and (not isinstance(data[field], list) or any(not isinstance(v, str) for v in data[field])):
+            raise EditPlanError(f"{field} must be an array of text values.")
+    blueprint = story_blueprint_from_dict(data)
+    blueprint.validate(context)
+    return blueprint
+
 def request_story_blueprint(
     prompt: str,
     context: ProjectContext,
