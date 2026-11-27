@@ -290,6 +290,45 @@ class ProviderTestTask(QRunnable):
             self.signals.finished.emit(False, str(exc))
 
 
+class AIEditPlanSignals(QObject):
+    finished = Signal(object, str)
+
+
+class AIEditPlanTask(QRunnable):
+    """Request a model-generated edit plan and validate it locally before UI use."""
+
+    def __init__(self, brief: str, project_data: dict[str, Any],
+                 media_paths: list[str], media_analysis: Any,
+                 endpoint: str, model: str, account: str) -> None:
+        super().__init__()
+        self.brief = brief
+        self.project_data = project_data
+        self.media_paths = list(media_paths)
+        self.media_analysis = media_analysis
+        self.endpoint = endpoint
+        self.model = model
+        self.account = account
+        self.signals = AIEditPlanSignals()
+
+    def run(self) -> None:
+        try:
+            from ai_editor.provider_adapter import OpenAICompatibleConfig, OpenAICompatibleJSONProvider
+            from ai_editor.planner import request_edit_plan
+            provider = OpenAICompatibleJSONProvider(OpenAICompatibleConfig(
+                endpoint=self.endpoint, model=self.model,
+                credential_account=self.account,
+            ))
+            project = TimelineProject.from_dict(self.project_data)
+            plan = request_edit_plan(
+                self.brief, project, provider, self.media_paths,
+                media_analysis=self.media_analysis,
+                allow_cloud_planning=True,
+            )
+            self.signals.finished.emit(plan, "")
+        except Exception as exc:
+            self.signals.finished.emit(None, str(exc))
+
+
 class AIStoryGenerationSignals(QObject):
     finished = Signal(object, str)
 
@@ -386,6 +425,9 @@ class ZenithEditor(QMainWindow):
         self._story_generation_pool = QThreadPool(self)
         self._story_generation_pool.setMaxThreadCount(1)
         self._story_generation_task: AIStoryGenerationTask | None = None
+        self._ai_edit_plan_pool = QThreadPool(self)
+        self._ai_edit_plan_pool.setMaxThreadCount(1)
+        self._ai_edit_plan_task: AIEditPlanTask | None = None
         self._ai_analysis_pool.setMaxThreadCount(1)
         self._ai_analysis_task: LocalMediaAnalysisTask | None = None
         self._ai_project_context = None
@@ -609,7 +651,11 @@ class ZenithEditor(QMainWindow):
         self.ai_apply_plan_button = QPushButton("اعمال نهایی طرح تأییدشده")
         self.ai_apply_plan_button.setEnabled(False)
         self.ai_apply_plan_button.clicked.connect(self.apply_ai_edit_draft)
+        self.ai_model_plan_button = QPushButton("تولید طرح تدوین با مدل هوش مصنوعی")
+        self.ai_model_plan_button.setEnabled(False)
+        self.ai_model_plan_button.clicked.connect(self.generate_ai_edit_plan)
         plan_actions.addWidget(self.ai_build_plan_button)
+        plan_actions.addWidget(self.ai_model_plan_button)
         plan_actions.addWidget(self.ai_preview_plan_button)
         plan_actions.addWidget(self.ai_apply_plan_button)
         workflow_layout.addLayout(plan_actions)
@@ -1616,6 +1662,104 @@ class ZenithEditor(QMainWindow):
             and self.ai_music_combo.currentData()
         )
         self.ai_build_plan_button.setEnabled(ready)
+
+    def generate_ai_edit_plan(self) -> None:
+        if not self._ai_context_is_current():
+            return
+        if not self.ai_story_approval.isChecked() or not self.ai_shot_approval.isChecked():
+            QMessageBox.information(self, "تأییدهای لازم", "داستان و انتخاب نماها باید جداگانه تأیید شده باشند.")
+            return
+        if self._ai_edit_plan_task is not None:
+            return
+        endpoint = self.ai_provider_endpoint.text().strip()
+        model = self.ai_provider_model.text().strip()
+        account = self.ai_provider_account.text().strip()
+        try:
+            from ai_editor.provider_adapter import OpenAICompatibleConfig
+            OpenAICompatibleConfig(
+                endpoint=endpoint, model=model, credential_account=account
+            ).validate()
+        except Exception as exc:
+            QMessageBox.warning(self, "تنظیمات ارائه‌دهنده", str(exc))
+            return
+        story_payload = asdict(self._ai_story_blueprint)
+        shot_payload = asdict(self._ai_shot_selection_report)
+        brief = (
+            self.ai_story_prompt.toPlainText().strip()
+            + "\\n\\nAPPROVED STORY BLUEPRINT (authoritative narrative):\\n"
+            + json.dumps(story_payload, ensure_ascii=False, allow_nan=False)
+            + "\\n\\nAPPROVED SHOT SELECTION (technical candidates; do not claim semantic verification):\\n"
+            + json.dumps(shot_payload, ensure_ascii=False, allow_nan=False)
+            + "\\n\\nCreate a frame-accurate, non-destructive edit plan using only the supplied asset IDs. "
+              "Preserve story order, avoid overlaps with existing timeline clips, use supported operations only, "
+              "and include clear assumptions and warnings. Require human approval."
+        )
+        if len(brief.encode("utf-8")) > 20_000:
+            QMessageBox.warning(self, "حجم درخواست", "شرح تدوین و اطلاعات داستان از حد مجاز ۲۰ هزار نویسه بیشتر است.")
+            return
+        answer = QMessageBox.question(
+            self, "اجازه تولید طرح تدوین ابری",
+            "شرح تدوین، داستان تأییدشده، پیشنهاد نماها و فراداده محدود پروژه به سرویس انتخاب‌شده ارسال شود؟\\n"
+            "هیچ فایل رسانه‌ای یا مسیر محلی ارسال نمی‌شود. هزینه احتمالی API بر عهده حساب ارائه‌دهنده است.",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+        )
+        if answer != QMessageBox.Yes:
+            return
+        paths = [str(item.get("path", "")) for item in self.media_items if item.get("path")]
+        task = AIEditPlanTask(
+            brief, self.timeline_project.to_dict(), paths, self._ai_media_analysis,
+            endpoint, model, account,
+        )
+        self._ai_edit_plan_task = task
+        self.ai_model_plan_button.setEnabled(False)
+        self.ai_model_plan_button.setText("مدل در حال طراحی تدوین…")
+        self.ai_build_plan_button.setEnabled(False)
+        self.ai_analysis_output.appendPlainText(
+            "\\nدرخواست طراحی تدوین با اجازه صریح شما ارسال شد؛ هنوز هیچ تغییری در تایم‌لاین اعمال نشده است."
+        )
+        task.signals.finished.connect(self._ai_edit_plan_finished)
+        self._ai_edit_plan_pool.start(task)
+
+    def _ai_edit_plan_finished(self, plan: object, error: str) -> None:
+        self._ai_edit_plan_task = None
+        self.ai_model_plan_button.setText("تولید طرح تدوین با مدل هوش مصنوعی")
+        self._ai_approval_changed()
+        if error:
+            QMessageBox.warning(self, "تولید طرح تدوین", error)
+            self.ai_analysis_output.appendPlainText("مدل نتوانست طرح معتبر تولید کند؛ تایم‌لاین بدون تغییر باقی ماند.")
+            return
+        if not self._ai_context_is_current():
+            QMessageBox.warning(self, "طرح منقضی‌شده", "پروژه یا رسانه‌ها تغییر کرده‌اند؛ طرح دریافتی کنار گذاشته شد.")
+            return
+        try:
+            from types import SimpleNamespace
+            from ai_editor.contracts import EditPlan
+            if not isinstance(plan, EditPlan) or not plan.requires_user_approval:
+                raise ValueError("مدل یک طرح تدوین معتبر و نیازمند تأیید ارائه نکرد.")
+            assets = [item.asset for item in self._ai_project_context.assets if item.exists]
+            plan.validate(assets, {clip.clip_id for clip in self.timeline_project.clips})
+            self._ai_edit_draft = SimpleNamespace(
+                edit_plan=plan, warnings=list(plan.warnings) + list(plan.assumptions)
+            )
+            self._ai_execution_preview = None
+            self.ai_preview_plan_button.setEnabled(True)
+            self.ai_apply_plan_button.setEnabled(False)
+            counts: dict[str, int] = {}
+            for operation in plan.operations:
+                counts[operation.kind] = counts.get(operation.kind, 0) + 1
+            self.ai_analysis_output.appendPlainText(
+                "\\nطرح تدوین مدل دریافت و در برنامه اعتبارسنجی شد؛ هنوز اجرا نشده است.\\n"
+                + plan.summary
+                + f"\\nعملیات: {len(plan.operations)} | افزودن کلیپ: {counts.get('add_clip', 0)}"
+                + f" | اصلاح رنگ: {counts.get('set_clip_grade', 0)} | انتقال: {counts.get('set_transition', 0)}"
+                + "".join(f"\\nهشدار/فرض: {item}" for item in self._ai_edit_draft.warnings)
+                + "\\nاکنون می‌توانی پیش‌نمایش ایمن را اجرا کنی؛ تأیید نهایی همچنان جداگانه است."
+            )
+            self.statusBar().showMessage("طرح مدل اعتبارسنجی شد؛ منتظر پیش‌نمایش و تأیید نهایی است.")
+        except Exception as exc:
+            self._ai_edit_draft = None
+            self.ai_preview_plan_button.setEnabled(False)
+            QMessageBox.warning(self, "اعتبارسنجی طرح", str(exc))
 
     def build_ai_edit_draft(self) -> None:
         if not self._ai_context_is_current():
