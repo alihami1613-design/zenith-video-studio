@@ -5,6 +5,7 @@ from ai_editor.audio_cues import build_audio_cue_map
 from ai_editor.contracts import EditPlanError
 from ai_editor.media_analysis import AudioSummary
 from ai_editor.audio_energy import AudioEnergyAnalysis, AudioEnergyPoint
+from ai_editor.rhythm_analysis import RhythmAnalysis
 
 
 class AudioCueTests(unittest.TestCase):
@@ -77,6 +78,33 @@ class AudioCueTests(unittest.TestCase):
             build_audio_cue_map(
                 audio, media_duration_seconds=5.0, fps=30,
                 energy_analysis={"transient_candidates_seconds": [1.0]},
+            )
+
+
+    def test_maps_estimated_music_pulses_to_review_only_frames(self):
+        audio = AudioSummary((), peak_db=-1.0, mean_db=-18.0)
+        rhythm = RhythmAnalysis(
+            estimated_bpm=120.0, confidence=0.82,
+            pulse_period_seconds=0.5,
+            pulse_candidates_seconds=(0.0, 0.5, 1.0, 5.0),
+            analyzed_duration_seconds=5.0,
+            warnings=("RMS pulse estimate only.",),
+        )
+        result = build_audio_cue_map(
+            audio, media_duration_seconds=5.0, fps=30,
+            rhythm_analysis=rhythm,
+        )
+        markers = [cue for cue in result.cues if cue.cue_type == "music_pulse_candidate"]
+        self.assertEqual([cue.start_frame for cue in markers], [0, 15, 30])
+        self.assertTrue(all("estimated_periodicity_0.82" == cue.confidence for cue in markers))
+        self.assertTrue(any("not an automatic music synchronization" in w for w in result.warnings))
+
+    def test_rejects_wrong_rhythm_analysis_type(self):
+        audio = AudioSummary((), peak_db=-1.0, mean_db=-18.0)
+        with self.assertRaises(EditPlanError):
+            build_audio_cue_map(
+                audio, media_duration_seconds=5.0, fps=30,
+                rhythm_analysis={"estimated_bpm": 120},
             )
 
     def test_rejects_wrong_audio_input_type(self):
