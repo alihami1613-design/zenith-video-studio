@@ -15,7 +15,7 @@ from typing import Any, Mapping
 PLAN_FORMAT_VERSION = 1
 PLAN_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{2,79}$")
 OPERATION_KINDS = frozenset({
-    "add_clip", "move_clip", "trim_clip", "set_clip_grade",
+    "add_clip", "move_clip", "trim_clip", "split_clip", "set_clip_grade",
     "set_clip_volume", "set_transition",
 })
 VIDEO_TRACKS = frozenset({"V1", "V2", "V3", "V4"})
@@ -173,7 +173,7 @@ class EditPlan:
                     if planned_clip_id in clip_ids:
                         raise EditPlanError(f"Duplicate planned clip ID: {planned_clip_id}")
                     clip_ids.add(planned_clip_id)
-            elif operation.kind in {"move_clip", "trim_clip", "set_clip_grade",
+            elif operation.kind in {"move_clip", "trim_clip", "split_clip", "set_clip_grade",
                                     "set_clip_volume", "set_transition"}:
                 clip_id = p.get("clip_id")
                 if not isinstance(clip_id, str) or not clip_id:
@@ -185,6 +185,9 @@ class EditPlan:
                     _int(p, "start_frame", minimum=0)
                     if "track" in p and p["track"] not in VIDEO_TRACKS | AUDIO_TRACKS:
                         raise EditPlanError("Move operation targets an unknown track.")
+                elif operation.kind == "split_clip":
+                    _only_keys(p, {"clip_id", "at_frame"})
+                    _int(p, "at_frame", minimum=1)
                 elif operation.kind == "trim_clip":
                     _only_keys(p, {"clip_id", "new_start_frame", "new_end_frame"})
                     if "new_start_frame" not in p and "new_end_frame" not in p:
