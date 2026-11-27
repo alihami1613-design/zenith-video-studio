@@ -65,6 +65,13 @@ class EditPlanContractTests(unittest.TestCase):
         with self.assertRaises(EditPlanError):
             plan.validate(ASSETS)
 
+    def test_split_requires_an_interior_frame_parameter(self):
+        plan = valid_plan([EditOperation("op-split", "split_clip", {
+            "clip_id": "clip-1", "at_frame": 0,
+        })])
+        with self.assertRaises(EditPlanError):
+            plan.validate(ASSETS, {"clip-1"})
+
     def test_existing_clip_must_be_known(self):
         plan = valid_plan([EditOperation("op-001", "move_clip", {
             "clip_id": "missing-clip", "start_frame": 60,
