@@ -50,6 +50,8 @@ on:
       - "desktop_app/main.py"
       - "desktop_app/polygon_mask_overlay.py"
       - "desktop_app/video_render.py"
+      - "desktop_app/render_validation.py"
+      - "desktop_app/test_render_validation.py"
       - "desktop_app/speed_ramp.py"
       - "desktop_app/test_speed_ramp.py"
       - "desktop_app/speed_ramp_preview.py"
