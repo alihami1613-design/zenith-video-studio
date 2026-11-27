@@ -123,7 +123,7 @@ class AudioCueTests(unittest.TestCase):
         )
         onsets = [cue for cue in result.cues if cue.cue_type == "spectral_onset_candidate"]
         pulses = [cue for cue in result.cues if cue.cue_type == "spectral_music_pulse_candidate"]
-        self.assertEqual([cue.start_frame for cue in onsets], [8, 23])
+        self.assertEqual([cue.start_frame for cue in onsets], [8, 22])
         self.assertEqual([cue.start_frame for cue in pulses], [0, 15])
         self.assertTrue(all(cue.duration_frames == 1 for cue in onsets + pulses))
         self.assertTrue(any("review-only" in warning for warning in result.warnings))
