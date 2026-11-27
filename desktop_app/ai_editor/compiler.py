@@ -11,6 +11,7 @@ from ai_editor.contracts import (
     EditOperation, EditPlan, EditPlanError, ProjectBrief,
 )
 from ai_editor.cinematic_edit import CinematicEditDesign
+from ai_editor.music_sync import MusicSyncDesign
 from ai_editor.narrative import StoryBlueprint
 from ai_editor.project_context import ProjectContext
 
@@ -20,6 +21,7 @@ def compile_story_to_edit_plan(
     context: ProjectContext,
     *,
     cinematic_design: CinematicEditDesign | None = None,
+    music_sync_design: MusicSyncDesign | None = None,
 ) -> EditPlan:
     """Turn asset-backed story beats into a reviewable timeline plan.
 
@@ -59,6 +61,31 @@ def compile_story_to_edit_plan(
         if cinematic_design.total_frames != expected_start:
             raise EditPlanError("Cinematic design total duration does not match the story.")
 
+    if music_sync_design is not None:
+        if cinematic_design is None:
+            raise EditPlanError("Music sync compilation requires its source cinematic design.")
+        if not isinstance(music_sync_design, MusicSyncDesign) or not music_sync_design.requires_user_approval:
+            raise EditPlanError("A valid approval-gated music sync design is required.")
+        if music_sync_design.fps != fps or music_sync_design.total_frames != cinematic_design.total_frames:
+            raise EditPlanError("Music sync frame rate or total duration does not match the cinematic design.")
+        if len(music_sync_design.decisions) != len(story.beats):
+            raise EditPlanError("Music sync design does not cover every story beat.")
+        expected_start = 0
+        for beat, cinematic_decision, sync_decision in zip(
+            story.beats, cinematic_design.decisions, music_sync_design.decisions
+        ):
+            if (sync_decision.beat_id != beat.beat_id
+                    or sync_decision.sequence != beat.sequence
+                    or sync_decision.original_duration_frames != cinematic_decision.duration_frames
+                    or sync_decision.start_frame != expected_start
+                    or isinstance(sync_decision.duration_frames, bool)
+                    or not isinstance(sync_decision.duration_frames, int)
+                    or sync_decision.duration_frames < 1):
+                raise EditPlanError("Music sync decisions do not match story order or valid frame timing.")
+            expected_start += sync_decision.duration_frames
+        if expected_start != music_sync_design.total_frames:
+            raise EditPlanError("Music sync decisions do not preserve the approved total duration.")
+
     assets = {
         item.asset.asset_id: item
         for item in context.assets if item.exists
@@ -70,9 +97,15 @@ def compile_story_to_edit_plan(
     story_digest = hashlib.sha256(story.story_id.encode("utf-8")).hexdigest()[:10]
 
     for beat_index, beat in enumerate(story.beats):
-        target_frames = max(1, round(beat.target_duration_seconds * fps))
+        original_target_frames = max(1, round(beat.target_duration_seconds * fps))
+        target_frames = (music_sync_design.decisions[beat_index].duration_frames
+                         if music_sync_design is not None else original_target_frames)
         decision = cinematic_design.decisions[beat_index] if cinematic_design is not None else None
-        if decision is not None and decision.start_frame != cursor_frame:
+        if music_sync_design is not None and music_sync_design.decisions[beat_index].start_frame != cursor_frame:
+            raise EditPlanError("Music sync timeline position is inconsistent.")
+        if decision is not None and decision.start_frame != sum(
+            max(1, round(item.target_duration_seconds * fps)) for item in story.beats[:beat_index]
+        ):
             raise EditPlanError("Cinematic design timeline position is inconsistent.")
         if beat.asset_id is None:
             warnings.append(
@@ -110,7 +143,21 @@ def compile_story_to_edit_plan(
             duration_frames = source_out - source_in
             if duration_frames < 1:
                 raise EditPlanError(f"{beat.beat_id}: source range is shorter than one frame.")
-            if abs(duration_frames - target_frames) > 1:
+            if music_sync_design is not None and duration_frames != target_frames:
+                if media_type == "audio":
+                    raise EditPlanError(
+                        f"{beat.beat_id}: music sync cannot retime a source audio clip."
+                    )
+                if source_in + target_frames > item.asset.duration_frames:
+                    raise EditPlanError(
+                        f"{beat.beat_id}: music sync would exceed the available source media."
+                    )
+                if target_frames > duration_frames:
+                    warnings.append(
+                        f"{beat.beat_id}: music sync extends the selected source range; inspect the added footage for a scene change."
+                    )
+                duration_frames = target_frames
+            elif abs(duration_frames - target_frames) > 1:
                 raise EditPlanError(
                     f"{beat.beat_id}: source range and target beat duration differ; "
                     "time-remapping must be designed before compilation."
