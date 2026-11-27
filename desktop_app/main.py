@@ -1907,6 +1907,7 @@ class ZenithEditor(QMainWindow):
                 self._ai_project_context,
                 story=self._ai_story_blueprint,
                 shot_selection=self._ai_shot_selection_report,
+                media_analysis=self._ai_media_analysis,
                 pace_profile=self.ai_pace_combo.currentData() or "balanced",
             )
         except Exception as exc:
