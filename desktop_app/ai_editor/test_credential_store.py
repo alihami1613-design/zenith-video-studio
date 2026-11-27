@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-import pytest
+import sys
+import unittest
+from unittest.mock import patch
 
 from ai_editor import credential_store
 from ai_editor.contracts import EditPlanError
@@ -30,25 +32,34 @@ class FakeKeyring:
         del self.values[key]
 
 
-def test_secret_roundtrip_uses_os_keyring_not_project_config(monkeypatch):
-    backend = FakeKeyring()
-    monkeypatch.setitem(__import__("sys").modules, "keyring", backend)
-    credential_store.store_api_key("openai-compatible", "default", "secret-value")
-    assert credential_store.load_api_key("openai-compatible", "default") == "secret-value"
-    assert list(backend.values) == [("ZENITH_DESKTOP_AI:openai-compatible", "default")]
+class CredentialStoreTests(unittest.TestCase):
+    def test_secret_roundtrip_uses_os_keyring(self):
+        backend = FakeKeyring()
+        with patch.dict(sys.modules, {"keyring": backend}):
+            credential_store.store_api_key("openai-compatible", "default", "secret-value")
+            self.assertEqual(
+                credential_store.load_api_key("openai-compatible", "default"),
+                "secret-value",
+            )
+        self.assertEqual(
+            list(backend.values),
+            [("ZENITH_DESKTOP_AI:openai-compatible", "default")],
+        )
+
+    def test_delete_missing_secret_is_safe(self):
+        with patch.dict(sys.modules, {"keyring": FakeKeyring()}):
+            credential_store.delete_api_key("provider", "default")
+
+    def test_rejects_invalid_secrets(self):
+        for secret in ("", "  ", "x\\ny", "x\\ry", "x" * 8193):
+            with self.subTest(secret_length=len(secret)):
+                with self.assertRaises(EditPlanError):
+                    credential_store.store_api_key("provider", "default", secret)
+
+    def test_rejects_invalid_identity(self):
+        with self.assertRaises(EditPlanError):
+            credential_store.load_api_key("../bad", "default")
 
 
-def test_delete_missing_secret_is_safe(monkeypatch):
-    monkeypatch.setitem(__import__("sys").modules, "keyring", FakeKeyring())
-    credential_store.delete_api_key("provider", "default")
-
-
-@pytest.mark.parametrize("secret", ["", "  ", "x\ny", "x\ry", "x" * 8193])
-def test_rejects_invalid_secret(secret):
-    with pytest.raises(EditPlanError):
-        credential_store.store_api_key("provider", "default", secret)
-
-
-def test_rejects_invalid_identity():
-    with pytest.raises(EditPlanError):
-        credential_store.load_api_key("../bad", "default")
+if __name__ == "__main__":
+    unittest.main()
