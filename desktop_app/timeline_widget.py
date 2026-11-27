@@ -176,10 +176,20 @@ class TimelineCanvas(QWidget):
                         painter.drawText(badge_rect, Qt.AlignCenter, badge_text)
                         badge_x += badge_width + 3
                     painter.restore()
-                waveform = self.waveforms.get(clip.path) if clip.media_type == "audio" else None
+                has_audio = clip.media_type == "audio" or (
+                    clip.media_type == "video" and bool(getattr(clip, "has_audio", False))
+                )
+                waveform = self.waveforms.get(clip.path) if has_audio else None
                 if waveform:
-                    center_y = rect_y + rect_h // 2
-                    half_height = max(2, rect_h // 2 - 4)
+                    # Keep embedded-video waveforms in the lower half so the
+                    # clip title remains readable; audio-only clips use the
+                    # full center band for a larger, clearer envelope.
+                    if clip.media_type == "video":
+                        center_y = rect_y + rect_h * 3 // 4
+                        half_height = max(2, rect_h // 4 - 2)
+                    else:
+                        center_y = rect_y + rect_h // 2
+                        half_height = max(2, rect_h // 2 - 4)
                     samples_per_second = 20.0
                     first_sample = max(0, int((clip.source_in / max(1, self.project.fps)) * samples_per_second))
                     visible_width = max(0, x2 - x1 - 8)
