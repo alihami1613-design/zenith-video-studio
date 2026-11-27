@@ -36,7 +36,7 @@ from speed_ramp_preview import create_speed_ramp_preview
 from video_render import render_timeline_mp4
 from polygon_mask_overlay import PolygonMaskOverlay
 from project_recovery import default_recovery_path, write_recovery, read_recovery, clear_recovery
-from ai_editor.project_context import build_project_context
+from ai_editor.project_context import build_project_context, media_inventory_fingerprint
 from ai_editor.media_analysis import analyze_project_media
 from ai_editor.narrative import story_blueprint_from_dict
 from ai_editor.shot_selection import select_shots_for_story
@@ -310,7 +310,7 @@ class ZenithEditor(QMainWindow):
         self._ai_analysis_task: LocalMediaAnalysisTask | None = None
         self._ai_project_context = None
         self._ai_media_analysis = None
-        self._ai_analysis_project_data: dict[str, Any] | None = None
+        self._ai_analysis_project_data: dict[str, Any] | None = None\n        self._ai_analysis_media_fingerprint = None
         self._ai_story_blueprint = None
         self._ai_shot_selection_report = None
         self._ai_edit_draft = None
@@ -1077,7 +1077,7 @@ class ZenithEditor(QMainWindow):
             return
         self.ai_analyze_button.setEnabled(False)
         self.ai_analysis_output.setPlainText("تحلیل محلی آغاز شد…\nتشخیص مرز صحنه، نمونه‌برداری تصویری و بررسی صوت در پس‌زمینه انجام می‌شود.")
-        self._ai_analysis_project_data = self.timeline_project.to_dict()
+        self._ai_analysis_project_data = self.timeline_project.to_dict()\n        self._ai_analysis_media_fingerprint = media_inventory_fingerprint(\n            self.timeline_project, paths\n        )
         self._ai_story_blueprint = None
         self._ai_shot_selection_report = None
         self._ai_edit_draft = None
