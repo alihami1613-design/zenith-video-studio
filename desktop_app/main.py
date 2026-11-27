@@ -243,6 +243,7 @@ class AudioRenderTask(QRunnable):
 class VideoRenderSignals(QObject):
     finished = Signal(str, str)
     validation = Signal(object)
+    progress = Signal(int, str)
 
 
 class VideoRenderTask(QRunnable):
@@ -253,6 +254,10 @@ class VideoRenderTask(QRunnable):
         self.project_data = project_data
         self.output_path = output_path
         self.signals = VideoRenderSignals()
+        self.cancel_event = threading.Event()
+
+    def cancel(self) -> None:
+        self.cancel_event.set()
 
     def run(self) -> None:
         try:
@@ -260,6 +265,8 @@ class VideoRenderTask(QRunnable):
             result = render_timeline_mp4(
                 project, self.output_path,
                 validation_callback=lambda report: self.signals.validation.emit(report.to_dict()),
+                cancel_event=self.cancel_event,
+                progress_callback=lambda percent, stage: self.signals.progress.emit(percent, stage),
             )
             self.signals.finished.emit(str(result), "")
         except Exception as exc:
@@ -1241,6 +1248,15 @@ class ZenithEditor(QMainWindow):
         self.video_render_button = QPushButton("خروجی نهایی MP4 (1080p)")
         self.video_render_button.setToolTip("رندر H.264 چندلایه V1 تا V4، عکس ثابت، اصلاح رنگ و میکس صدا")
         self.video_render_button.clicked.connect(self.export_video_mp4)
+        self.video_render_progress = QProgressBar()
+        self.video_render_progress.setRange(0, 100)
+        self.video_render_progress.setValue(0)
+        self.video_render_progress.setFormat("%p%")
+        self.video_render_progress.setMinimumWidth(130)
+        self.video_render_progress.setVisible(False)
+        self.video_render_cancel_button = QPushButton("لغو رندر")
+        self.video_render_cancel_button.setEnabled(False)
+        self.video_render_cancel_button.clicked.connect(self.cancel_video_render)
         self.audio_mix_button = QPushButton("خروجی میکس صدا (WAV)")
         self.audio_mix_button.setToolTip("ترکیب ترک‌های صوتی با Gain و Fade واقعی؛ فایل اصلی تغییر نمی‌کند")
         self.audio_mix_button.clicked.connect(self.export_audio_mix)
@@ -1254,6 +1270,8 @@ class ZenithEditor(QMainWindow):
         controls.addWidget(self.remove_button)
         controls.addWidget(self.audio_mix_button)
         controls.addWidget(self.video_render_button)
+        controls.addWidget(self.video_render_progress)
+        controls.addWidget(self.video_render_cancel_button)
         timeline_layout.addLayout(controls)
 
         self.timeline_widget = TimelineWidget(self.timeline_project)
@@ -3581,14 +3599,29 @@ class ZenithEditor(QMainWindow):
             output = output.with_suffix(".mp4")
         task = VideoRenderTask(self.timeline_project.to_dict(), str(output))
         task.signals.validation.connect(self._video_render_validation_ready)
+        task.signals.progress.connect(self._video_render_progress_changed)
         task.signals.finished.connect(self._video_render_finished)
         self._video_render_validation_report = None
         self._video_render_task = task
         self.video_render_button.setEnabled(False)
+        self.video_render_cancel_button.setEnabled(True)
+        self.video_render_progress.setValue(0)
+        self.video_render_progress.setVisible(True)
         self.statusBar().showMessage(
-            "رندر MP4 در پس‌زمینه آغاز شد؛ رابط آزاد می‌ماند. لطفاً تا پایان رندر برنامه را نبندید."
+            "رندر MP4 آغاز شد؛ پیشرفت قابل مشاهده است و می‌توانید عملیات را امن لغو کنید."
         )
         self._video_render_pool.start(task)
+
+    def cancel_video_render(self) -> None:
+        if self._video_render_task is None:
+            return
+        self._video_render_task.cancel()
+        self.video_render_cancel_button.setEnabled(False)
+        self.statusBar().showMessage("درخواست لغو ثبت شد؛ در حال توقف امن FFmpeg و پاک‌سازی فایل موقت...")
+
+    def _video_render_progress_changed(self, percent: int, stage: str) -> None:
+        self.video_render_progress.setValue(max(0, min(100, int(percent))))
+        self.statusBar().showMessage(f"{stage} | {max(0, min(100, int(percent)))}٪")
 
     def _video_render_validation_ready(self, report: dict) -> None:
         self._video_render_validation_report = report
@@ -3596,10 +3629,16 @@ class ZenithEditor(QMainWindow):
     def _video_render_finished(self, output_path: str, error: str) -> None:
         self._video_render_task = None
         self.video_render_button.setEnabled(True)
+        self.video_render_cancel_button.setEnabled(False)
         if error:
-            QMessageBox.critical(self, "خطای خروجی MP4", error)
-            self.statusBar().showMessage("ساخت خروجی MP4 ناموفق بود")
+            if "لغو شد" in error or "لغو" in error:
+                self.statusBar().showMessage("رندر لغو شد؛ فایل خروجی نهایی قبلی دست‌نخورده باقی ماند.")
+                QMessageBox.information(self, "رندر لغو شد", "عملیات متوقف شد. فایل اصلی خروجی جایگزین نشد و فایل‌های موقت پاک‌سازی شدند.")
+            else:
+                QMessageBox.critical(self, "خطای خروجی MP4", error)
+                self.statusBar().showMessage("ساخت خروجی MP4 ناموفق بود")
             return
+        self.video_render_progress.setValue(100)
         self.statusBar().showMessage(f"ویدیوی نهایی آماده شد: {Path(output_path).name}")
         report = self._video_render_validation_report or {}
         visual = report.get("visual_quality") or {}
