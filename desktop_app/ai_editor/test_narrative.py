@@ -170,7 +170,7 @@ class NarrativeBlueprintTests(unittest.TestCase):
 
     def test_json_import_enforces_size_limit(self):
         with self.assertRaisesRegex(EditPlanError, "1 MB limit"):
-            parse_story_blueprint_json(" " * 1_000_001, context_with_video())
+            parse_story_blueprint_json("x" * 1_000_001, context_with_video())
 
     def test_json_import_validates_and_returns_blueprint(self):
         import json
