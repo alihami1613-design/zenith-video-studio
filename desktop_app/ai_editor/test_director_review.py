@@ -9,6 +9,9 @@ from ai_editor.executor import preview_edit_plan
 from ai_editor.project_context import build_project_context
 from ai_editor.narrative import StoryBeat, StoryAct, StoryBlueprint
 from ai_editor.shot_selection import ShotSelectionReport, BeatShotDecision
+from ai_editor.media_analysis import (
+    AssetAnalysis, MediaAnalysisReport, SpectralAudioSummary,
+)
 
 
 class DirectorReviewTests(unittest.TestCase):
@@ -120,6 +123,76 @@ class DirectorReviewTests(unittest.TestCase):
             ), 1, ())
             report = review_edit(project, context, story=story, shot_selection=selection)
             self.assertIn("shot-confidence-beat-1", {item.finding_id for item in report.findings})
+
+    def test_review_uses_scene_boundaries_and_estimated_music_pulses(self):
+        with tempfile.TemporaryDirectory() as folder:
+            project = self._project(folder)
+            music = Path(folder) / "music.wav"
+            music.write_bytes(b"music")
+            project.add_clip(
+                str(music), "Music", track="A1", start_frame=0,
+                duration_frames=180, media_type="audio",
+            )
+
+            def probe(path):
+                if Path(path).suffix == ".wav":
+                    return {
+                        "duration_seconds": 10.0, "width": None, "height": None,
+                        "fps": None, "has_video": False, "has_audio": True,
+                        "probe_method": "test",
+                    }
+                return {
+                    "duration_seconds": 20.0, "width": 1920, "height": 1080,
+                    "fps": 30.0, "has_video": True, "has_audio": False,
+                    "probe_method": "test",
+                }
+
+            context = build_project_context(project, probe_fn=probe)
+            video_asset = next(
+                item.asset.asset_id for item in context.assets
+                if item.asset.path == str(Path(folder) / "a.mp4")
+            )
+            audio_asset = next(
+                item.asset.asset_id for item in context.assets
+                if item.asset.path == str(music)
+            )
+            media = MediaAnalysisReport(
+                1,
+                (
+                    AssetAnalysis(
+                        video_asset, "video",
+                        scene_boundaries_seconds=(0.2,),
+                    ),
+                    AssetAnalysis(
+                        audio_asset, "audio",
+                        spectral_audio=SpectralAudioSummary(
+                            8000, 512, 128, 120.0, 0.9,
+                            (1.5,), (1.5,),
+                            ("Estimated pulse candidates; not verified beats.",),
+                        ),
+                    ),
+                ),
+                (),
+            )
+            report = review_edit(project, context, media_analysis=media)
+            finding_ids = {item.finding_id for item in report.findings}
+            self.assertIn(
+                f"hidden-scene-boundary-{project.clips[0].clip_id}-1",
+                finding_ids,
+            )
+            self.assertTrue(any(
+                item.startswith("possible-music-cut-alignment-")
+                for item in finding_ids
+            ))
+            self.assertTrue(all(
+                finding.requires_user_approval for finding in report.findings
+            ))
+
+    def test_media_analysis_type_is_validated(self):
+        with tempfile.TemporaryDirectory() as folder:
+            project = self._project(folder)
+            with self.assertRaises(TypeError):
+                review_edit(project, media_analysis={"assets": []})
 
     def test_invalid_pace_profile_is_rejected(self):
         with tempfile.TemporaryDirectory() as folder:
