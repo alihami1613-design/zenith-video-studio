@@ -9,7 +9,7 @@ from dataclasses import dataclass
 import math
 
 from ai_editor.contracts import EditPlanError
-from ai_editor.media_analysis import AudioSummary
+from ai_editor.media_analysis import AudioSummary, SpectralAudioSummary
 from ai_editor.audio_energy import AudioEnergyAnalysis
 from ai_editor.rhythm_analysis import RhythmAnalysis
 
@@ -42,6 +42,7 @@ def build_audio_cue_map(
     edge_window_seconds: float = 1.0,
     energy_analysis: AudioEnergyAnalysis | None = None,
     rhythm_analysis: RhythmAnalysis | None = None,
+    spectral_audio: SpectralAudioSummary | None = None,
 ) -> AudioCueMap:
     """Convert measured silence intervals into timeline review markers."""
     if not isinstance(audio, AudioSummary):
@@ -62,6 +63,8 @@ def build_audio_cue_map(
         raise EditPlanError("Energy analysis must be a measured AudioEnergyAnalysis.")
     if rhythm_analysis is not None and not isinstance(rhythm_analysis, RhythmAnalysis):
         raise EditPlanError("Rhythm analysis must be a measured RhythmAnalysis.")
+    if spectral_audio is not None and not isinstance(spectral_audio, SpectralAudioSummary):
+        raise EditPlanError("Spectral audio data must be a measured SpectralAudioSummary.")
     total_frames = round(media_duration_seconds * fps)
     cues: list[AudioCue] = []
     warnings: list[str] = []
@@ -144,6 +147,37 @@ def build_audio_cue_map(
             ))
         warnings.extend(rhythm_analysis.warnings)
         warnings.append("Estimated pulse markers are not an automatic music synchronization instruction.")
+
+    if spectral_audio is not None:
+        for timestamp in spectral_audio.onset_candidates_seconds:
+            if (isinstance(timestamp, bool) or not isinstance(timestamp, (int, float))
+                    or not math.isfinite(timestamp) or timestamp < 0
+                    or timestamp >= media_duration_seconds):
+                warnings.append("An invalid spectral onset candidate was ignored.")
+                continue
+            frame = min(total_frames - 1, max(0, round(timestamp * fps)))
+            cues.append(AudioCue(
+                start_frame=frame, end_frame=frame + 1, duration_frames=1,
+                cue_type="spectral_onset_candidate",
+                confidence="spectral_flux_candidate",
+                reason="Frequency-energy change detected; verify whether it is a musical onset or another sound.",
+            ))
+        for timestamp in spectral_audio.pulse_candidates_seconds:
+            if (isinstance(timestamp, bool) or not isinstance(timestamp, (int, float))
+                    or not math.isfinite(timestamp) or timestamp < 0
+                    or timestamp >= media_duration_seconds):
+                warnings.append("An invalid spectral pulse candidate was ignored.")
+                continue
+            frame = min(total_frames - 1, max(0, round(timestamp * fps)))
+            cues.append(AudioCue(
+                start_frame=frame, end_frame=frame + 1, duration_frames=1,
+                cue_type="spectral_music_pulse_candidate",
+                confidence=f"spectral_periodicity_{spectral_audio.tempo_confidence:.2f}",
+                reason=(f"Spectral-flux tempo estimate near {spectral_audio.estimated_bpm} BPM; "
+                        "review against the soundtrack before syncing."),
+            ))
+        warnings.extend(spectral_audio.warnings)
+        warnings.append("Spectral onset and pulse markers are review-only; no automatic cuts or sync were applied.")
 
     cues.sort(key=lambda cue: (cue.start_frame, cue.end_frame, cue.cue_type))
 
