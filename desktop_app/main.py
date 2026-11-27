@@ -799,9 +799,11 @@ class ZenithEditor(QMainWindow):
         inspector_layout.addWidget(self.audio_pan_slider)
 
         self.audio_mute_checkbox = QCheckBox("Mute فقط این کلیپ")
+        self.audio_mute_checkbox.pressed.connect(self._push_undo)
         self.audio_mute_checkbox.toggled.connect(self._audio_controls_changed)
         inspector_layout.addWidget(self.audio_mute_checkbox)
         self.audio_solo_checkbox = QCheckBox("Solo فقط این کلیپ")
+        self.audio_solo_checkbox.pressed.connect(self._push_undo)
         self.audio_solo_checkbox.toggled.connect(self._audio_controls_changed)
         inspector_layout.addWidget(self.audio_solo_checkbox)
 
@@ -830,6 +832,7 @@ class ZenithEditor(QMainWindow):
         self.audio_fade_curve_combo.addItem("Linear", "linear")
         self.audio_fade_curve_combo.addItem("Half-sine", "hsin")
         self.audio_fade_curve_combo.addItem("Exponential", "exp")
+        self.audio_fade_curve_combo.activated.connect(self._push_undo)
         self.audio_fade_curve_combo.currentIndexChanged.connect(self._audio_controls_changed)
         inspector_layout.addWidget(self.audio_fade_curve_combo)
 
@@ -866,6 +869,7 @@ class ZenithEditor(QMainWindow):
         self.transition_type_combo.addItem('Cross Dissolve', 'dissolve')
         self.transition_type_combo.addItem('Wipe از چپ', 'wipe_left')
         self.transition_type_combo.addItem('Push از چپ', 'push_left')
+        self.transition_type_combo.activated.connect(self._push_undo)
         self.transition_type_combo.currentIndexChanged.connect(self._cross_dissolve_changed)
         inspector_layout.addWidget(self.transition_type_combo)
         inspector_layout.addWidget(QLabel("Blend Mode — ترکیب لایه"))
