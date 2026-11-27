@@ -273,6 +273,64 @@ class AudioRenderCommandTests(unittest.TestCase):
         self.assertIn("afade=t=out:st=3.000000:d=1.000000:curve=iqsin", joined)
         self.assertIn("afade=t=in:st=0:d=1.000000:curve=qsin", joined)
 
+    def test_embedded_video_audio_matches_picture_transition_timing(self):
+        with tempfile.TemporaryDirectory() as folder:
+            first = Path(folder) / "outgoing.mp4"
+            second = Path(folder) / "incoming.mp4"
+            first.touch()
+            second.touch()
+            outgoing = self.make_clip(
+                first, clip_id="video-out", track="V1", media_type="video",
+                has_audio=True, audio_track="A1", start_frame=0,
+                source_in=30, duration_frames=90, end_frame=90,
+                playback_rate=1.0, transition_in_frames=0,
+                fade_in_frames=0, fade_out_frames=0,
+            )
+            incoming = self.make_clip(
+                second, clip_id="video-in", track="V1", media_type="video",
+                has_audio=True, audio_track="A1", start_frame=90,
+                source_in=30, duration_frames=90, end_frame=180,
+                playback_rate=1.0, transition_in_frames=15,
+                fade_in_frames=0, fade_out_frames=0,
+            )
+            command = build_audio_mix_command(
+                "ffmpeg", [outgoing, incoming], 30, "mix.wav", 180
+            )
+        joined = " ".join(command)
+        # Picture transition starts 15 frames before the incoming clip's cut.
+        self.assertIn("atrim=start=0.500000:duration=3.500000", joined)
+        self.assertIn("adelay=2500:all=1", joined)
+        self.assertIn("afade=t=in:st=0:d=0.500000:curve=qsin", joined)
+        self.assertIn("afade=t=out:st=2.500000:d=0.500000:curve=iqsin", joined)
+
+    def test_embedded_video_transition_audio_fades_even_on_separate_buses(self):
+        with tempfile.TemporaryDirectory() as folder:
+            first = Path(folder) / "outgoing.mp4"
+            second = Path(folder) / "incoming.mp4"
+            first.touch()
+            second.touch()
+            outgoing = self.make_clip(
+                first, clip_id="video-out", track="V1", media_type="video",
+                has_audio=True, audio_track="A1", start_frame=0,
+                source_in=30, duration_frames=90, end_frame=90,
+                playback_rate=1.0, transition_in_frames=0,
+                fade_in_frames=0, fade_out_frames=0,
+            )
+            incoming = self.make_clip(
+                second, clip_id="video-in", track="V1", media_type="video",
+                has_audio=True, audio_track="A2", start_frame=90,
+                source_in=30, duration_frames=90, end_frame=180,
+                playback_rate=1.0, transition_in_frames=15,
+                fade_in_frames=0, fade_out_frames=0,
+            )
+            command = build_audio_mix_command(
+                "ffmpeg", [outgoing, incoming], 30, "mix.wav", 180
+            )
+        joined = " ".join(command)
+        self.assertIn("adelay=2500:all=1", joined)
+        self.assertIn("afade=t=in:st=0:d=0.500000:curve=qsin", joined)
+        self.assertIn("afade=t=out:st=2.500000:d=0.500000:curve=iqsin", joined)
+
     def test_non_overlapping_clips_do_not_get_automatic_crossfade(self):
         with tempfile.TemporaryDirectory() as folder:
             first = Path(folder) / "first.wav"
