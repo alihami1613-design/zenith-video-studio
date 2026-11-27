@@ -89,7 +89,7 @@ def _read_manifest(folder: Path, registry: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(api_version, int) or isinstance(api_version, bool):
             raise ValueError("api_version must be an integer.")
         entrypoint = str(raw.get("entrypoint", "")).strip()
-        relative = PurePosixPath(entrypoint.replace("\\\\", "/"))
+        relative = PurePosixPath(entrypoint.replace("\\", "/"))
         if (not entrypoint or relative.is_absolute()
                 or any(part in {"", ".", ".."} for part in relative.parts)):
             raise ValueError("Entrypoint must be a safe relative path.")
