@@ -99,7 +99,7 @@ def compile_story_to_edit_plan(
             parameters=params,
             rationale=f"{beat.title}: {beat.purpose}",
         ))
-        if media_type in {"video", "image"}:
+        if media_type == "video":
             transition_frames = min(round(0.5 * fps), duration_frames)
             if beat.transition_intent in {"dissolve", "fade", "motivated_transition"} and last_visual_clip is not None:
                 previous_id, previous_end, previous_duration, previous_type, _previous_source_in = last_visual_clip
@@ -127,10 +127,16 @@ def compile_story_to_edit_plan(
             last_visual_clip = (planned_clip_id, cursor_frame + duration_frames,
                                 duration_frames, media_type, source_in)
         else:
+            if media_type == "image" and beat.transition_intent in {"dissolve", "fade", "motivated_transition"}:
+                warnings.append(
+                    f"{beat.beat_id}: image transition intent retained for review; this compiler only emits video cross-dissolves."
+                )
             last_visual_clip = None
         cursor_frame += target_frames
 
     digest = hashlib.sha256(story.story_id.encode("utf-8")).hexdigest()[:12]
+    clip_operation_count = sum(operation.kind == "add_clip" for operation in operations)
+    transition_operation_count = sum(operation.kind == "set_transition" for operation in operations)
     plan = EditPlan(
         plan_id=f"story-plan-{digest}",
         brief=ProjectBrief(
@@ -142,7 +148,8 @@ def compile_story_to_edit_plan(
         ),
         summary=(
             f"{story.logline} Narrative: {story.emotional_arc} "
-            f"Generated {len(operations)} source-backed clip operation(s); "
+            f"Generated {clip_operation_count} source-backed clip(s) and "
+            f"{transition_operation_count} supported transition(s); "
             "unassigned beats remain placeholders."
         ),
         operations=tuple(operations),
