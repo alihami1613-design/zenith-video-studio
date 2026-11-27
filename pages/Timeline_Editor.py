@@ -132,7 +132,7 @@ if len(st.session_state.timeline_video)>=2 and st.button("رندر ویدئوی 
                 aud=td/("music"+Path(st.session_state.timeline_audio[selected_audio_idx]["name"]).suffix)
                 aud.write_bytes(st.session_state.timeline_audio[selected_audio_idx]["source"].getvalue())
                 mixed=td/"ZENITH_mixed.mp4"
-                filt=f"[0:a]volume={video_gain}[va];[1:a]volume={audio_gain}[ma];[va][ma]amix=inputs=2:duration=first:dropout_transition=2[a]"
+                filt=f"[0:a]asetpts=PTS-STARTPTS,volume={video_gain}[va];[1:a]asetpts=PTS-STARTPTS,volume={audio_gain}[ma];[va][ma]amix=inputs=2:duration=first:dropout_transition=0[a]"
                 rr=subprocess.run([ffmpeg,"-y","-i",str(joined),"-i",str(aud),"-filter_complex",filt,"-map","0:v","-map","[a]","-c:v","copy","-c:a","aac","-b:a","192k","-shortest","-movflags","+faststart",str(mixed)],capture_output=True,text=True,timeout=300)
                 if rr.returncode or not mixed.exists():
                     detail=(rr.stderr or "نامشخص")[-1600:]
