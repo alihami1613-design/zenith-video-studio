@@ -5,6 +5,7 @@ on:
     branches:
       - desktop-editor-foundation
     paths:
+      - "desktop_app/ai_editor/**"
       - "desktop_app/asset_library.py"
       - "desktop_app/test_asset_library.py"
       - "desktop_app/plugin_registry.py"
@@ -58,6 +59,7 @@ on:
       - ".github/workflows/desktop-model-tests.yml"
   pull_request:
     paths:
+      - "desktop_app/ai_editor/**"
       - "desktop_app/proxy_manager.py"
       - "desktop_app/test_proxy_manager.py"
       - "desktop_app/waveform_manager.py"
