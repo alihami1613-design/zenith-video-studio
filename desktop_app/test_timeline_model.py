@@ -399,7 +399,48 @@ class TimelineModelTests(unittest.TestCase):
         restored = TimelineProject.from_dict(project.to_dict())
         self.assertTrue(restored.get_clip(clip.clip_id).audio_muted)
         self.assertTrue(restored.get_clip(clip.clip_id).audio_solo)
-        self.assertEqual(project.to_dict()["schema_version"], 25)
+        project.set_clip_audio(clip.clip_id, audio_volume_keyframes=[
+            {"frame": 0, "volume": 1.0},
+            {"frame": 120, "volume": 0.25},
+            {"frame": 240, "volume": 0.8},
+        ])
+        restored = TimelineProject.from_dict(project.to_dict())
+        self.assertEqual(
+            restored.get_clip(clip.clip_id).audio_volume_keyframes,
+            [{"frame": 0, "volume": 1.0}, {"frame": 120, "volume": 0.25},
+             {"frame": 240, "volume": 0.8}],
+        )
+        self.assertEqual(project.to_dict()["schema_version"], 26)
+
+    def test_audio_volume_keyframes_reject_invalid_values_and_order(self):
+        project = TimelineProject()
+        clip = project.add_clip("voice.wav", "voice.wav", track="A1",
+                                duration_frames=100, media_type="audio")
+        with self.assertRaisesRegex(ValueError, "ordered"):
+            project.set_clip_audio(clip.clip_id, audio_volume_keyframes=[
+                {"frame": 20, "volume": 0.5}, {"frame": 10, "volume": 0.8}
+            ])
+        with self.assertRaisesRegex(ValueError, "between 0 and 2"):
+            project.set_clip_audio(clip.clip_id, audio_volume_keyframes=[
+                {"frame": 10, "volume": 2.5}
+            ])
+        with self.assertRaisesRegex(ValueError, "inside clip duration"):
+            project.set_clip_audio(clip.clip_id, audio_volume_keyframes=[
+                {"frame": 100, "volume": 1.0}
+            ])
+
+    def test_audio_volume_keyframes_are_split_at_interpolated_gain(self):
+        project = TimelineProject()
+        clip = project.add_clip("voice.wav", "voice.wav", track="A1",
+                                duration_frames=100, media_type="audio")
+        project.set_clip_audio(clip.clip_id, audio_volume_keyframes=[
+            {"frame": 0, "volume": 1.0}, {"frame": 80, "volume": 0.2}
+        ])
+        left, right = project.split_clip(clip.clip_id, 40)
+        self.assertEqual(left.audio_volume_keyframes, [{"frame": 0, "volume": 1.0}])
+        self.assertEqual(right.audio_volume_keyframes, [
+            {"frame": 0, "volume": 0.6}, {"frame": 40, "volume": 0.2}
+        ])
 
     def test_audio_track_mixer_round_trip(self):
         project = TimelineProject()
