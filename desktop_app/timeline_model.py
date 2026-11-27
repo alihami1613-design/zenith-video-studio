@@ -126,6 +126,8 @@ class Clip:
     audio_track: str = "A1"
     volume: float = 1.0
     audio_pan: float = 0.0
+    audio_muted: bool = False
+    audio_solo: bool = False
     fade_in_frames: int = 0
     fade_out_frames: int = 0
     audio_fade_curve: str = "qsin"
@@ -626,7 +628,9 @@ class TimelineProject:
                         fade_in_frames: int | None = None,
                         fade_out_frames: int | None = None,
                         audio_fade_curve: str | None = None,
-                        audio_pan: float | None = None) -> Clip:
+                        audio_pan: float | None = None,
+                        audio_muted: bool | None = None,
+                        audio_solo: bool | None = None) -> Clip:
         """Set non-destructive clip gain and frame-accurate audio fades."""
         clip = self.get_clip(clip_id)
         if volume is not None:
@@ -639,6 +643,10 @@ class TimelineProject:
             clip.audio_fade_curve = str(audio_fade_curve)
         if audio_pan is not None:
             clip.audio_pan = float(audio_pan)
+        if audio_muted is not None:
+            clip.audio_muted = bool(audio_muted)
+        if audio_solo is not None:
+            clip.audio_solo = bool(audio_solo)
         clip.validate()
         return clip
 
