@@ -123,6 +123,7 @@ def design_music_aware_timing(
     max_adjust = round(maximum_adjustment_seconds * fps)
     adjusted_boundaries: list[tuple[int, float | None, int]] = []
     original_boundary = 0
+    current_start = 0
     for left, right in zip(original, original[1:]):
         original_boundary += left.duration_frames
         chosen = original_boundary
@@ -144,6 +145,7 @@ def design_music_aware_timing(
                 _, chosen, matched = min(candidates, key=lambda item: (item[0], item[1]))
                 delta = chosen - original_boundary
         adjusted_boundaries.append((chosen, matched, delta))
+        current_start = chosen
 
     decisions: list[MusicSyncDecision] = []
     current_start = 0
