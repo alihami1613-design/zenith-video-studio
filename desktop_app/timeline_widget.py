@@ -219,6 +219,19 @@ class TimelineCanvas(QWidget):
                         px = x1 + 4 + pixel_offset
                         painter.setPen(QPen(QColor("#B7D8E5"), 1))
                         painter.drawLine(px, center_y - bar_height, px, center_y + bar_height)
+                audio_keys = getattr(clip, "audio_volume_keyframes", []) if has_audio else []
+                if audio_keys:
+                    painter.save()
+                    painter.setPen(QPen(QColor("#F3D58F"), 1))
+                    painter.setBrush(QBrush(QColor("#F3D58F")))
+                    for point in audio_keys:
+                        marker_x = x1 + 4 + int(
+                            (int(point["frame"]) / max(1, self.project.fps))
+                            * self.pixels_per_second
+                        )
+                        if x1 + 2 <= marker_x <= x2 - 2:
+                            painter.drawEllipse(marker_x - 3, rect_y + 2, 6, 6)
+                    painter.restore()
                 ramp_source = (
                     self._preview_ramp_points
                     if self._drag_clip_id == clip.clip_id and self._preview_ramp_points is not None
