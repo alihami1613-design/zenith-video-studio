@@ -48,8 +48,9 @@ def build_audio_mix_command(
     """
     if fps < 1:
         raise ValueError("FPS must be positive")
+    all_clips = list(clips)
     audio_clips = sorted(
-        (clip for clip in clips
+        (clip for clip in all_clips
          if getattr(clip, "media_type", "") == "audio"
          or (getattr(clip, "media_type", "") == "video" and getattr(clip, "has_audio", False))),
         key=lambda clip: (clip.start_frame, getattr(clip, "audio_track", clip.track), clip.clip_id),
@@ -78,7 +79,7 @@ def build_audio_mix_command(
     visual_fade_in: dict[str, int] = {}
     visual_fade_out: dict[str, int] = {}
     video_by_track: dict[str, list[object]] = {}
-    for clip in audio_clips:
+    for clip in all_clips:
         if getattr(clip, "media_type", "") == "video":
             video_by_track.setdefault(str(clip.track), []).append(clip)
     for track_clips in video_by_track.values():
