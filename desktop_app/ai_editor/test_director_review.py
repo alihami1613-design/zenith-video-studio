@@ -6,7 +6,7 @@ from pathlib import Path
 from timeline_model import TimelineProject
 from ai_editor.director_review import (
     review_edit, review_is_current, build_gap_repair_plan,
-    build_music_alignment_plan,
+    build_music_alignment_plan, build_scene_split_plan,
 )
 from ai_editor.executor import preview_edit_plan
 from ai_editor.project_context import build_project_context
@@ -183,6 +183,21 @@ class DirectorReviewTests(unittest.TestCase):
                 f"hidden-scene-boundary-{project.clips[0].clip_id}-1",
                 finding_ids,
             )
+            scene_finding = next(
+                item for item in report.findings
+                if item.finding_id.startswith("hidden-scene-boundary-")
+            )
+            self.assertEqual(scene_finding.target_frame, 6)
+            split_draft = build_scene_split_plan(report, project, [item.asset for item in context.assets])
+            self.assertEqual([item.kind for item in split_draft.edit_plan.operations], ["split_clip"])
+            split_preview = preview_edit_plan(project, split_draft.edit_plan, [item.asset for item in context.assets])
+            split_shots = sorted(
+                (item for item in split_preview.project.clips if item.track == "V1"),
+                key=lambda item: item.start_frame,
+            )
+            self.assertEqual([(item.start_frame, item.end_frame) for item in split_shots[:2]], [(0, 6), (6, 12)])
+            self.assertEqual(len(project.clips), 3)
+            self.assertTrue(split_draft.edit_plan.requires_user_approval)
             self.assertTrue(any(
                 item.startswith("possible-music-cut-alignment-")
                 for item in finding_ids
