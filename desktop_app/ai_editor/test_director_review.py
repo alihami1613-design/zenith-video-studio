@@ -79,6 +79,9 @@ class DirectorReviewTests(unittest.TestCase):
             project = self._project(folder)
             report = review_edit(project)
             self.assertTrue(review_is_current(report, project))
+            project.fps = 24
+            self.assertFalse(review_is_current(report, project))
+            project.fps = 30
             project.clips[0].start_frame += 1
             self.assertFalse(review_is_current(report, project))
 
