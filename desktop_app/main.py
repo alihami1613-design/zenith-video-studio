@@ -1049,10 +1049,12 @@ class ZenithEditor(QMainWindow):
         inspector_layout.addWidget(self.apply_speed_button)
         self.motion_blur_checkbox = QCheckBox("Motion Blur سبک (۳ فریم)")
         self.motion_blur_checkbox.setEnabled(False)
+        self.motion_blur_checkbox.pressed.connect(self._push_undo)
         self.motion_blur_checkbox.toggled.connect(self._toggle_clip_motion_blur)
         inspector_layout.addWidget(self.motion_blur_checkbox)
         self.reverse_checkbox = QCheckBox("Reverse — پخش معکوس")
         self.reverse_checkbox.setEnabled(False)
+        self.reverse_checkbox.pressed.connect(self._push_undo)
         self.reverse_checkbox.toggled.connect(self._toggle_clip_reverse)
         inspector_layout.addWidget(self.reverse_checkbox)
         inspector_layout.addWidget(QLabel("Speed Ramp — تنظیم سرعت در فریم کلیپ"))
@@ -3068,28 +3070,24 @@ class ZenithEditor(QMainWindow):
         clip_id = self.timeline_widget.canvas.selected_clip_id
         if not clip_id:
             return
-        before = self._history_snapshot()
         try:
             self.timeline_project.set_clip_motion_blur(clip_id, bool(enabled))
         except (KeyError, ValueError) as exc:
-            self._restore_history_snapshot(before)
+            self._discard_unchanged_undo_snapshot()
             self.statusBar().showMessage(f"تغییر Motion Blur انجام نشد: {exc}")
             return
-        self._commit_edit_snapshot(before)
         self.statusBar().showMessage("Motion Blur به‌روزرسانی شد.")
 
     def _toggle_clip_reverse(self, enabled: bool) -> None:
         clip_id = self.timeline_widget.canvas.selected_clip_id
         if not clip_id:
             return
-        before = self._history_snapshot()
         try:
             self.timeline_project.set_clip_reverse(clip_id, bool(enabled))
         except (KeyError, ValueError) as exc:
-            self._restore_history_snapshot(before)
+            self._discard_unchanged_undo_snapshot()
             self.statusBar().showMessage(f"تغییر Reverse انجام نشد: {exc}")
             return
-        self._commit_edit_snapshot(before)
         self.statusBar().showMessage("حالت پخش معکوس به‌روزرسانی شد.")
 
     def _add_speed_ramp_point(self) -> None:
@@ -3161,11 +3159,14 @@ class ZenithEditor(QMainWindow):
         self._speed_ramp_preview_tasks = [
             task for task in self._speed_ramp_preview_tasks if task.clip_id != clip_id
         ]
-        self.speed_ramp_preview_button.setEnabled(bool(
-            self.timeline_widget.canvas.selected_clip_id
-            and self.timeline_project.get_clip(self.timeline_widget.canvas.selected_clip_id).speed_ramp
-            and not self._speed_ramp_preview_pending
-        ))
+        try:
+            selected = self.timeline_project.get_clip(self.timeline_widget.canvas.selected_clip_id)
+            can_preview = bool(selected.speed_ramp)
+        except (KeyError, TypeError):
+            can_preview = False
+        self.speed_ramp_preview_button.setEnabled(
+            can_preview and not self._speed_ramp_preview_pending
+        )
         if error:
             self.speed_ramp_status_label.setText("ساخت پیش‌نمایش ناموفق بود.")
             self.statusBar().showMessage(f"پیش‌نمایش Speed Ramp: {error}")
