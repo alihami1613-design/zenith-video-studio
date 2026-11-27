@@ -18,6 +18,32 @@ def _seconds(frames: int, fps: int) -> float:
     return frames / fps
 
 
+def _audio_volume_filter(clip: object, fps: int) -> str:
+    """Build a frame-evaluated FFmpeg gain curve from clip-local keyframes."""
+    points = list(getattr(clip, "audio_volume_keyframes", []) or [])
+    if not points:
+        return f"volume={float(clip.volume):.4f}"
+    if fps < 1:
+        raise ValueError("FPS must be positive")
+    expression = f"{float(points[-1]['volume']):.6f}"
+    for left, right in reversed(list(zip(points, points[1:]))):
+        left_time = int(left["frame"]) / fps
+        right_time = int(right["frame"]) / fps
+        duration = right_time - left_time
+        if duration <= 0:
+            raise ValueError("Audio volume keyframes must be strictly ordered")
+        left_gain = float(left["volume"])
+        delta = float(right["volume"]) - left_gain
+        segment = (
+            f"{left_gain:.6f}+({delta:.6f})*(t-{left_time:.6f})/{duration:.6f}"
+        )
+        expression = f"if(lt(t,{right_time:.6f}),{segment},{expression})"
+    first_time = int(points[0]["frame"]) / fps
+    if first_time > 0:
+        expression = f"if(lt(t,{first_time:.6f}),{float(points[0]['volume']):.6f},{expression})"
+    return f"volume='{expression}':eval=frame"
+
+
 def _atempo_chain(rate: float) -> list[str]:
     """Build FFmpeg atempo stages, each within the supported 0.5x-2x range."""
     stages = []
@@ -178,7 +204,7 @@ def build_audio_mix_command(
                 f"{''.join(segment_outputs)}concat=n={len(speed_segments)}:v=0:a=1[{ramp_label}]"
             )
             audio_source_label = f"[{ramp_label}]"
-            chain = [f"volume={clip.volume:.4f}"]
+            chain = [_audio_volume_filter(clip, fps)]
         else:
             source_duration = duration * playback_rate
             audio_source_label = f"[{index}:a:0]"
@@ -187,7 +213,7 @@ def build_audio_mix_command(
                 "asetpts=PTS-STARTPTS",
                 *_atempo_chain(playback_rate),
                 *(["areverse"] if bool(getattr(clip, "reverse_playback", False)) and is_embedded_video_audio else []),
-                f"volume={clip.volume:.4f}",
+                _audio_volume_filter(clip, fps),
             ]
         pan = float(getattr(clip, "audio_pan", 0.0))
         if not math.isfinite(pan) or not -1.0 <= pan <= 1.0:
