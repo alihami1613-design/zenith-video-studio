@@ -2,6 +2,7 @@
 import unittest
 
 from ai_editor.compiler import compile_story_to_edit_plan
+from ai_editor.cinematic_edit import design_cinematic_rhythm
 from ai_editor.contracts import EditPlanError, MediaAsset
 from ai_editor.narrative import StoryAct, StoryBeat, StoryBlueprint
 from ai_editor.project_context import MediaInventoryItem, ProjectContext
@@ -53,6 +54,40 @@ class StoryCompilerTests(unittest.TestCase):
         preview = preview_edit_plan(TimelineProject(), plan, [item.asset for item in make_context().assets])
         self.assertEqual(len(preview.project.clips), 2)
         self.assertEqual(preview.project.clips[1].transition_in_frames, 15)
+
+    def test_compiler_uses_the_exact_approved_cinematic_transition_duration(self):
+        story = make_story()
+        context = make_context()
+        design = design_cinematic_rhythm(
+            story, context, transition_duration_seconds=1.0
+        )
+        plan = compile_story_to_edit_plan(
+            story, context, cinematic_design=design
+        )
+        transition = next(op for op in plan.operations if op.kind == "set_transition")
+        self.assertEqual(transition.parameters["duration_frames"], 30)
+
+    def test_compiler_rejects_cinematic_design_from_a_different_frame_rate(self):
+        from dataclasses import replace
+        story = make_story()
+        context = make_context()
+        design = design_cinematic_rhythm(story, context)
+        with self.assertRaisesRegex(EditPlanError, "frame rate"):
+            compile_story_to_edit_plan(
+                story, context, cinematic_design=replace(design, fps=24)
+            )
+
+    def test_compiler_rejects_cinematic_design_with_changed_beat_order(self):
+        from dataclasses import replace
+        story = make_story()
+        context = make_context()
+        design = design_cinematic_rhythm(story, context)
+        first, second = design.decisions
+        changed = replace(design, decisions=(second, first))
+        with self.assertRaisesRegex(EditPlanError, "beat order or timing"):
+            compile_story_to_edit_plan(
+                story, context, cinematic_design=changed
+            )
 
     def test_unassigned_beats_become_explicit_placeholders(self):
         story = make_story()
