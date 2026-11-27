@@ -4,7 +4,8 @@ import unittest
 from pathlib import Path
 
 from timeline_model import TimelineProject
-from ai_editor.director_review import review_edit, review_is_current
+from ai_editor.director_review import review_edit, review_is_current, build_gap_repair_plan
+from ai_editor.executor import preview_edit_plan
 from ai_editor.project_context import build_project_context
 from ai_editor.narrative import StoryBeat, StoryAct, StoryBlueprint
 from ai_editor.shot_selection import ShotSelectionReport, BeatShotDecision
@@ -32,6 +33,30 @@ class DirectorReviewTests(unittest.TestCase):
             self.assertTrue(any(value.startswith("long-shot-") for value in ids))
             self.assertEqual(before, [(c.clip_id, c.start_frame, c.duration_frames) for c in project.clips])
             self.assertTrue(report.requires_user_review)
+
+    def test_gap_repair_is_a_previewable_move_plan_and_does_not_mutate_source(self):
+        with tempfile.TemporaryDirectory() as folder:
+            project = self._project(folder)
+            report = review_edit(project)
+            draft = build_gap_repair_plan(report, project, [])
+            self.assertEqual(len(draft.edit_plan.operations), 1)
+            operation = draft.edit_plan.operations[0]
+            self.assertEqual(operation.kind, "move_clip")
+            target_clip = next(c for c in project.clips if c.clip_id == operation.parameters["clip_id"])
+            self.assertEqual(target_clip.start_frame, 45)
+            preview = preview_edit_plan(project, draft.edit_plan, [])
+            moved = preview.project.get_clip(target_clip.clip_id)
+            self.assertEqual(moved.start_frame, 12)
+            self.assertEqual(target_clip.start_frame, 45)
+            self.assertTrue(draft.edit_plan.requires_user_approval)
+
+    def test_gap_repair_rejects_stale_review_and_non_gap_findings(self):
+        with tempfile.TemporaryDirectory() as folder:
+            project = self._project(folder)
+            report = review_edit(project)
+            project.clips[0].start_frame += 1
+            with self.assertRaises(ValueError):
+                build_gap_repair_plan(report, project, [])
 
     def test_report_becomes_stale_after_timeline_change(self):
         with tempfile.TemporaryDirectory() as folder:
