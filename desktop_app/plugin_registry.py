@@ -13,7 +13,7 @@ from typing import Any
 PLUGIN_MANIFEST = "zenith-plugin.json"
 PLUGIN_API_VERSION = 1
 PLUGIN_ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{2,79}$")
-VERSION_RE = re.compile(r"^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:[-+][0-9A-Za-z.-]+)?$")
+VERSION_RE = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:[-+][0-9A-Za-z.-]+)?$")
 ALLOWED_CAPABILITIES = frozenset({
     "video_effect", "audio_effect", "transition", "title_generator",
     "media_importer", "exporter", "workflow",
@@ -62,7 +62,7 @@ def save_registry(path: str | Path, data: dict[str, Any]) -> Path:
     target.parent.mkdir(parents=True, exist_ok=True)
     temporary = target.with_name(target.name + ".tmp")
     try:
-        with temporary.open("w", encoding="utf-8", newline="\\n") as stream:
+        with temporary.open("w", encoding="utf-8", newline="\n") as stream:
             json.dump(registry, stream, ensure_ascii=False, indent=2)
             stream.flush()
             os.fsync(stream.fileno())
