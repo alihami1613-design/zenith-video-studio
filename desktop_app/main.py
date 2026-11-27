@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 import os
 import sys
@@ -3289,8 +3290,42 @@ class ZenithEditor(QMainWindow):
         self._sync_transform_controls()
         self.timeline_widget.refresh()
 
+    def _history_snapshot(self) -> dict[str, Any]:
+        """Capture all authored state needed to undo timeline and media-library edits."""
+        return {
+            "timeline_project": self.timeline_project.to_dict(),
+            "media_items": copy.deepcopy(self.media_items),
+        }
+
+    def _restore_history_snapshot(self, snapshot: dict[str, Any]) -> None:
+        self.timeline_project = TimelineProject.from_dict(snapshot["timeline_project"])
+        self.media_items = copy.deepcopy(snapshot.get("media_items", self.media_items))
+        self.media_list.clear()
+        for item in self.media_items:
+            path = str(item.get("path", ""))
+            if item.get("missing_path") or not Path(path).is_file():
+                item["missing_path"] = True
+                self.media_list.addItem(item.get("name") or Path(path).name)
+                continue
+            metadata = item.get("metadata")
+            if isinstance(metadata, dict):
+                seconds = metadata.get("duration_seconds")
+                details = [format_time(round(seconds * 1000))] if seconds else []
+                if metadata.get("width") and metadata.get("height"):
+                    details.append(f"{metadata['width']}×{metadata['height']}")
+                label = item.get("name") or Path(path).name
+                self.media_list.addItem(label + ("  •  " + " | ".join(details) if details else ""))
+            else:
+                item["probe_state"] = "pending"
+                self.media_list.addItem((item.get("name") or Path(path).name) + "  •  در حال بررسی")
+                task = MediaProbeTask(path)
+                task.signals.finished.connect(self._media_probe_finished)
+                self._probe_tasks.append(task)
+                self._probe_pool.start(task)
+        self._refresh_timeline()
+
     def _push_undo(self) -> None:
-        self._undo_stack.append(self.timeline_project.to_dict())
+        self._undo_stack.append(self._history_snapshot())
         if len(self._undo_stack) > self._history_limit:
             self._undo_stack.pop(0)
         self._redo_stack.clear()
@@ -3304,18 +3339,16 @@ class ZenithEditor(QMainWindow):
     def undo(self) -> None:
         if not self._undo_stack:
             return
-        self._redo_stack.append(self.timeline_project.to_dict())
-        self.timeline_project = TimelineProject.from_dict(self._undo_stack.pop())
-        self._refresh_timeline()
+        self._redo_stack.append(self._history_snapshot())
+        self._restore_history_snapshot(self._undo_stack.pop())
         self._update_history_buttons()
         self.statusBar().showMessage("آخرین تغییر برگشت داده شد")
 
     def redo(self) -> None:
         if not self._redo_stack:
             return
-        self._undo_stack.append(self.timeline_project.to_dict())
-        self.timeline_project = TimelineProject.from_dict(self._redo_stack.pop())
-        self._refresh_timeline()
+        self._undo_stack.append(self._history_snapshot())
+        self._restore_history_snapshot(self._redo_stack.pop())
         self._update_history_buttons()
         self.statusBar().showMessage("تغییر دوباره اعمال شد")
 
@@ -3970,6 +4003,7 @@ class ZenithEditor(QMainWindow):
             QMessageBox.warning(self, "اتصال مجدد", "این فایل از قبل در فهرست رسانه‌های پروژه وجود دارد.")
             return
         old_path = item["path"]
+        self._push_undo()
         item["path"] = new_path
         item["name"] = Path(new_path).name
         item["metadata"] = None
