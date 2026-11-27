@@ -4038,11 +4038,13 @@ class ZenithEditor(QMainWindow):
             return
         if not self._confirm_project_switch("باز کردن پروژه دیگر"):
             return
-        clear_recovery(self._recovery_path)
         try:
             self._apply_project_data(data, Path(filename))
         except (OSError, ValueError, TypeError, KeyError) as exc:
             QMessageBox.critical(self, "خطای باز کردن", f"پروژه بارگذاری نشد؛ پروژه فعلی حفظ شد.\n{exc}")
+            return
+        # Keep the previous recovery snapshot until the new project is fully applied.
+        clear_recovery(self._recovery_path)
 
 
 def main() -> None:
