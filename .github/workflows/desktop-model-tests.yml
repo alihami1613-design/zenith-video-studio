@@ -5,6 +5,10 @@ on:
     branches:
       - desktop-editor-foundation
     paths:
+      - "desktop_app/asset_library.py"
+      - "desktop_app/test_asset_library.py"
+      - "desktop_app/plugin_registry.py"
+      - "desktop_app/test_plugin_registry.py"
       - "desktop_app/timeline_model.py"
       - "desktop_app/ROADMAP_FA.md"
       - "desktop_app/main.py"
