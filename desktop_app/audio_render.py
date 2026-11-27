@@ -71,6 +71,22 @@ def build_audio_mix_command(
     if not audio_clips:
         raise ValueError("همه ترک‌های صوتی Mute هستند یا از حالت Solo خارج شده‌اند.")
 
+    # Overlapping adjacent clips on the same audio track become an equal-power
+    # crossfade. Clips on different tracks remain independently mixed.
+    crossfade_in: dict[str, int] = {}
+    crossfade_out: dict[str, int] = {}
+    by_track: dict[str, list[object]] = {}
+    for clip in audio_clips:
+        route = getattr(clip, "audio_track", clip.track)
+        by_track.setdefault(route, []).append(clip)
+    for track_clips in by_track.values():
+        ordered = sorted(track_clips, key=lambda item: (item.start_frame, item.clip_id))
+        for outgoing, incoming in zip(ordered, ordered[1:]):
+            overlap = min(outgoing.end_frame, incoming.end_frame) - incoming.start_frame
+            if overlap > 0:
+                crossfade_out[outgoing.clip_id] = max(crossfade_out.get(outgoing.clip_id, 0), overlap)
+                crossfade_in[incoming.clip_id] = max(crossfade_in.get(incoming.clip_id, 0), overlap)
+
     command = [str(ffmpeg), "-y", "-hide_banner", "-loglevel", "error"]
     filters: list[str] = []
     clip_labels: dict[str, list[str]] = {}
@@ -126,13 +142,19 @@ def build_audio_mix_command(
                 *(["areverse"] if bool(getattr(clip, "reverse_playback", False)) and is_embedded_video_audio else []),
                 f"volume={clip.volume:.4f}",
             ]
-        if clip.fade_in_frames:
-            fade_in = _seconds(clip.fade_in_frames, fps)
-            chain.append(f"afade=t=in:st=0:d={fade_in:.6f}")
-        if clip.fade_out_frames:
-            fade_out = _seconds(clip.fade_out_frames, fps)
+        automatic_fade_in = crossfade_in.get(clip.clip_id, 0)
+        automatic_fade_out = crossfade_out.get(clip.clip_id, 0)
+        fade_in_frames = max(int(clip.fade_in_frames), automatic_fade_in)
+        fade_out_frames = max(int(clip.fade_out_frames), automatic_fade_out)
+        if fade_in_frames:
+            fade_in = _seconds(fade_in_frames, fps)
+            curve = ":curve=qsin" if automatic_fade_in else ""
+            chain.append(f"afade=t=in:st=0:d={fade_in:.6f}{curve}")
+        if fade_out_frames:
+            fade_out = _seconds(fade_out_frames, fps)
             fade_start = max(0.0, duration - fade_out)
-            chain.append(f"afade=t=out:st={fade_start:.6f}:d={fade_out:.6f}")
+            curve = ":curve=iqsin" if automatic_fade_out else ""
+            chain.append(f"afade=t=out:st={fade_start:.6f}:d={fade_out:.6f}{curve}")
         delay_ms = round(_seconds(clip.start_frame, fps) * 1000)
         chain.append(f"adelay={delay_ms}:all=1")
         label = f"a{index}"
