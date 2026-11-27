@@ -3563,18 +3563,31 @@ class ZenithEditor(QMainWindow):
         visual = report.get("visual_quality") or {}
         black_count = len(visual.get("black_intervals") or [])
         freeze_count = len(visual.get("freeze_intervals") or [])
+        audio = report.get("audio_quality") or {}
+        transient_count = len(audio.get("transient_candidates") or [])
+        clipped_count = len(audio.get("clipped_intervals_seconds") or [])
+        notes = []
         if report.get("visual_scan_error"):
-            quality_note = "\n\nاسکن بصری کامل نشد؛ لطفاً خروجی را چشمی بررسی کنید."
+            notes.append("اسکن بصری کامل نشد؛ خروجی را چشمی بررسی کنید.")
         elif black_count or freeze_count:
-            quality_note = (
-                f"\n\nبازبینی بصری: {black_count} بازه سیاه و {freeze_count} بازه فریز شناسایی شد. "
-                "این موارد ممکن است عمدی باشند؛ پیش از انتشار آن‌ها را بررسی کنید."
+            notes.append(
+                f"{black_count} بازه سیاه و {freeze_count} بازه فریز؛ ممکن است عمدی باشند."
             )
         else:
-            quality_note = "\n\nاسکن بصری مورد مشکوکِ ممتدِ سیاهی یا فریز ثبت نکرد."
+            notes.append("اسکن بصری سیاهی یا فریز ممتد مشکوکی ثبت نکرد.")
+        if report.get("audio_scan_error"):
+            notes.append("اسکن صوت کامل نشد؛ خروجی را شنیداری بررسی کنید.")
+        elif report.get("has_audio"):
+            notes.append(
+                f"صوت: {transient_count} نامزد جهش ناگهانی و {clipped_count} بازه احتمال کلیپ‌شدن."
+            )
+            if not audio.get("duration_matches_video", False):
+                notes.append("مدت صوت با مدت ویدیو اختلاف دارد.")
+            if not audio.get("duration_scan_complete", False):
+                notes.append("بررسی مدت صوت به سقف منابع رسید و کامل نیست.")
         QMessageBox.information(
             self, "خروجی MP4 آماده شد",
-            f"ویدیوی H.264 ساخته و رمزگشایی کامل آن بررسی شد.\n\n{output_path}{quality_note}"
+            f"ویدیوی H.264 ساخته و رمزگشایی کامل آن بررسی شد.\n\n{output_path}\n\n" + "\n".join(notes)
         )
 
     def _audio_mix_finished(self, output_path: str, error: str) -> None:
