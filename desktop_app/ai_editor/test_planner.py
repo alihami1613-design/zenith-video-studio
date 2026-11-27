@@ -3,6 +3,7 @@ import unittest
 
 from ai_editor.contracts import EditPlanError
 from ai_editor.planner import build_planning_request, request_edit_plan
+from ai_editor.media_analysis import MediaAnalysisReport, AssetAnalysis
 from ai_editor.project_context import MediaInventoryItem, ProjectContext
 from ai_editor.contracts import MediaAsset
 from timeline_model import TimelineProject
@@ -51,6 +52,18 @@ class AIPlannerTests(unittest.TestCase):
         self.assertEqual(request["assets"][0]["asset_id"], "asset-001")
         self.assertFalse(request["privacy"]["local_paths_included"])
         self.assertFalse(request["privacy"]["media_bytes_included"])
+
+    def test_local_media_analysis_summary_is_included_in_plan_request(self):
+        context = ProjectContext(1, {}, (), (), ())
+        analysis = MediaAnalysisReport(
+            1, (AssetAnalysis("asset-1", "video",
+                              scene_boundaries_seconds=(2.0, 4.5)),), ()
+        )
+        request = build_planning_request("Make a film", context, analysis)
+        self.assertEqual(
+            request["media_analysis"]["assets"][0]["scene_boundaries_seconds"],
+            (2.0, 4.5),
+        )
 
     def test_provider_result_is_parsed_and_validated(self):
         prompt = "Create a short documentary"
