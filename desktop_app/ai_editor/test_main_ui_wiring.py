@@ -67,6 +67,11 @@ class MainAIWorkflowWiringTests(unittest.TestCase):
         self.assertIn("self.timeline_project", method)
         self.assertNotIn("apply_edit_plan(", method)
 
+    def test_director_review_receives_local_media_analysis(self):
+        method = ast.get_source_segment(self.source, self.methods["run_ai_director_review"])
+        self.assertIn("media_analysis=self._ai_media_analysis", method)
+        self.assertIn("review_edit(", method)
+
     def test_director_gap_fixes_use_existing_preview_and_approval_path(self):
         self.assertIn("build_gap_repair_plan", self.source)
         self.assertIn('self.ai_director_fix_button.clicked.connect(self.prepare_ai_director_fixes)', self.source)
