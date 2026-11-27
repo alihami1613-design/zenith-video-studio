@@ -127,6 +127,7 @@ class Clip:
     volume: float = 1.0
     fade_in_frames: int = 0
     fade_out_frames: int = 0
+    audio_fade_curve: str = "qsin"
     video_fade_in_frames: int = 0
     video_fade_out_frames: int = 0
     transition_in_frames: int = 0
@@ -178,6 +179,8 @@ class Clip:
             raise ValueError("Clip audio route must be A1-A4")
         if not math.isfinite(float(self.volume)) or not 0.0 <= float(self.volume) <= 2.0:
             raise ValueError("Clip volume must be between 0.0 and 2.0")
+        if self.audio_fade_curve not in {"linear", "qsin", "hsin", "exp"}:
+            raise ValueError("Unsupported audio fade curve")
         if min(self.fade_in_frames, self.fade_out_frames, self.video_fade_in_frames, self.video_fade_out_frames, self.transition_in_frames) < 0:
             raise ValueError("Fade durations cannot be negative")
         rate = float(self.playback_rate)
