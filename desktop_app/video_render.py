@@ -5,13 +5,13 @@ import os
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Iterable
+from typing import Callable, Iterable
 
 from audio_render import render_audio_mix
 from proxy_manager import find_ffmpeg
 from video_color import build_color_filter
 from speed_ramp import build_speed_segments
-from render_validation import validate_rendered_mp4
+from render_validation import RenderValidationReport, validate_rendered_mp4
 
 RENDER_VERSION = "timeline-h264-v17-mask-invert"
 STILL_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".webp", ".tif", ".tiff"}
@@ -491,8 +491,12 @@ def _run(command: list[str], timeout_seconds: int, description: str) -> None:
         raise RuntimeError(f"{description}: {(detail[-1400:] or 'خطای ناشناخته FFmpeg')}") from exc
 
 
-def render_timeline_mp4(project: object, output_path: str | Path,
-                        timeout_seconds: int = 14400) -> Path:
+def render_timeline_mp4(
+    project: object,
+    output_path: str | Path,
+    timeout_seconds: int = 14400,
+    validation_callback: Callable[[RenderValidationReport], None] | None = None,
+) -> Path:
     """Render multi-layer picture timeline and optional mixed audio atomically."""
     validate_render_project(project)
     target = Path(output_path).expanduser().resolve()
@@ -540,7 +544,7 @@ def render_timeline_mp4(project: object, output_path: str | Path,
                 os.replace(silent_video, partial)
             if not partial.is_file() or partial.stat().st_size <= 0:
                 raise RuntimeError("فایل MP4 خروجی معتبر ساخته نشد.")
-            validate_rendered_mp4(
+            validation_report = validate_rendered_mp4(
                 partial, ffmpeg,
                 expected_width=int(project.width),
                 expected_height=int(project.height),
@@ -549,6 +553,8 @@ def render_timeline_mp4(project: object, output_path: str | Path,
                 expect_audio=has_audio,
                 timeout_seconds=min(timeout_seconds, 900),
             )
+            if validation_callback is not None:
+                validation_callback(validation_report)
             os.replace(partial, target)
         finally:
             partial.unlink(missing_ok=True)
