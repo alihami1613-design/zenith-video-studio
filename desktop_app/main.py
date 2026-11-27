@@ -393,6 +393,7 @@ class ZenithEditor(QMainWindow):
         self.ai_music_combo.addItem("پس از تحلیل، موسیقی را انتخاب کنید", None)
         self.ai_music_combo.currentIndexChanged.connect(self._ai_approval_changed)
         self.ai_pace_combo = QComboBox()
+        self.ai_pace_combo.currentIndexChanged.connect(self._ai_approval_changed)
         for label, value in (("متعادل", "balanced"), ("آرام", "calm"), ("پرانرژی", "energetic"), ("تریلر", "trailer")):
             self.ai_pace_combo.addItem(label, value)
         ai_controls.addWidget(self.ai_analyze_button)
@@ -413,6 +414,7 @@ class ZenithEditor(QMainWindow):
         self.ai_story_json = QPlainTextEdit()
         self.ai_story_json.setPlaceholderText("JSON طرح داستانِ تولیدشده توسط سرویس هوش مصنوعیِ مورداعتماد خودت را اینجا وارد یا بارگذاری کن…\nفعلاً هیچ ارائه‌دهنده ابری به برنامه متصل نیست.")
         self.ai_story_json.setMaximumHeight(96)
+        self.ai_story_json.textChanged.connect(self._invalidate_ai_story)
         ai_layout.addWidget(self.ai_story_json)
         story_actions = QHBoxLayout()
         self.ai_load_story_button = QPushButton("بارگذاری طرح JSON")
@@ -1143,6 +1145,20 @@ class ZenithEditor(QMainWindow):
             self.statusBar().showMessage("طرح داستان بارگذاری شد؛ برای بررسی ساختار، اعتبارسنجی را اجرا کنید.")
         except (OSError, UnicodeError) as exc:
             QMessageBox.warning(self, "بارگذاری طرح", f"خواندن فایل ناموفق بود: {exc}")
+
+    def _invalidate_ai_story(self) -> None:
+        self._ai_story_blueprint = None
+        self._ai_shot_selection_report = None
+        self._ai_edit_draft = None
+        self._ai_execution_preview = None
+        self.ai_story_approval.setChecked(False)
+        self.ai_shot_approval.setChecked(False)
+        self.ai_story_approval.setEnabled(False)
+        self.ai_shot_approval.setEnabled(False)
+        self.ai_select_shots_button.setEnabled(False)
+        self.ai_build_plan_button.setEnabled(False)
+        self.ai_preview_plan_button.setEnabled(False)
+        self.ai_apply_plan_button.setEnabled(False)
 
     def validate_ai_story(self) -> None:
         if not self._ai_context_is_current():
