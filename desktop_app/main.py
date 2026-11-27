@@ -2379,17 +2379,19 @@ class ZenithEditor(QMainWindow):
         if not clip_id:
             return
         mode = str(self.blend_mode_combo.currentData() or "normal")
+        history_before = self._history_snapshot()
         try:
-            self._push_undo()
             clip = self.timeline_project.get_clip(clip_id)
             clip.blend_mode = mode
             clip.validate()
         except (KeyError, ValueError) as exc:
-            if self._undo_stack:
-                self._undo_stack.pop()
-            self._update_history_buttons()
+            self._restore_history_snapshot(history_before)
             self.statusBar().showMessage(f"Blend Mode اعمال نشد: {exc}")
             return
+        if self._history_snapshot() != history_before:
+            self._append_history_snapshot(self._undo_stack, history_before)
+            self._redo_stack.clear()
+            self._update_history_buttons()
         self.timeline_widget.refresh()
         self.statusBar().showMessage(
             f"Blend Mode: {mode} — هنگام رندر نهایی اعمال می‌شود؛ پیش‌نمایش زنده نیست."
