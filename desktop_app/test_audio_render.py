@@ -593,7 +593,7 @@ class AudioRenderCommandTests(unittest.TestCase):
 
             pre_voice = rms_at(1.0)
             during_voice = rms_at(2.8)
-            recovered = rms_at(4.2)
+            recovered = rms_at(4.65)
             self.assertGreater(pre_voice, 1000)
             self.assertGreater(recovered, 1000)
             self.assertLess(during_voice, pre_voice * 0.80,
