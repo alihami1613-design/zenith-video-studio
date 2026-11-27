@@ -2,9 +2,13 @@
 from __future__ import annotations
 
 import math
+import os
 import subprocess
+import tempfile
+import threading
+import time
 from pathlib import Path
-from typing import Iterable
+from typing import Callable, Iterable
 
 from proxy_manager import find_ffmpeg
 from speed_ramp import build_speed_segments
@@ -35,6 +39,7 @@ def build_audio_mix_command(
     timeline_duration_frames: int | None = None,
     audio_track_settings: dict[str, dict] | None = None,
     audio_ducking: dict | None = None,
+    progress_path: str | Path | None = None,
 ) -> list[str]:
     """Build an audio-only WAV mix from timeline audio clips.
 
@@ -204,8 +209,10 @@ def build_audio_mix_command(
         "-c:a", "pcm_s16le",
         "-t", f"{output_duration:.6f}",
         "-rf64", "auto",
-        str(Path(output_path)),
     ])
+    if progress_path is not None:
+        command.extend(["-progress", str(progress_path), "-nostats"])
+    command.append(str(Path(output_path)))
     return command
 
 
@@ -217,28 +224,69 @@ def render_audio_mix(
     timeout_seconds: int = 7200,
     audio_track_settings: dict[str, dict] | None = None,
     audio_ducking: dict | None = None,
+    cancel_event: threading.Event | None = None,
+    progress_callback: Callable[[float], None] | None = None,
 ) -> Path:
     """Render a stereo 48 kHz WAV mix with one FFmpeg process."""
     target = Path(output_path).expanduser().resolve()
     target.parent.mkdir(parents=True, exist_ok=True)
     partial = target.with_name(target.stem + ".partial" + target.suffix)
     partial.unlink(missing_ok=True)
+    progress_path = target.with_name(target.stem + ".audio-progress.txt")
+    duration = (timeline_duration_frames / fps) if timeline_duration_frames else max(
+        (_seconds(clip.end_frame, fps) for clip in clips), default=0.0
+    )
     command = build_audio_mix_command(
         find_ffmpeg(), clips, fps, partial, timeline_duration_frames,
         audio_track_settings=audio_track_settings,
         audio_ducking=audio_ducking,
+        progress_path=progress_path,
     )
+    started = time.monotonic()
     try:
-        subprocess.run(command, capture_output=True, text=True,
-                       timeout=timeout_seconds, check=True)
+        with tempfile.TemporaryFile(mode="w+b") as stderr_file:
+            process = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=stderr_file)
+            while process.poll() is None:
+                if cancel_event is not None and cancel_event.is_set():
+                    process.terminate()
+                    try:
+                        process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.wait()
+                    raise RuntimeError("ساخت میکس صوتی به درخواست کاربر لغو شد.")
+                if time.monotonic() - started > timeout_seconds:
+                    process.kill()
+                    process.wait()
+                    raise RuntimeError("ساخت میکس صوتی بیش از زمان مجاز طول کشید.")
+                if progress_callback is not None and duration > 0 and progress_path.is_file():
+                    try:
+                        progress_values = {}
+                        for line in progress_path.read_text(encoding="utf-8", errors="ignore").splitlines()[-30:]:
+                            if "=" in line:
+                                key, value = line.split("=", 1)
+                                progress_values[key] = value
+                        raw_time = progress_values.get("out_time", "00:00:00")
+                        hours, minutes, seconds = raw_time.split(":")
+                        elapsed = int(hours) * 3600 + int(minutes) * 60 + float(seconds)
+                        progress_callback(min(1.0, max(0.0, elapsed / duration)))
+                    except (OSError, ValueError):
+                        pass
+                time.sleep(0.2)
+            if process.returncode:
+                stderr_file.seek(0, os.SEEK_END)
+                size = stderr_file.tell()
+                stderr_file.seek(max(0, size - 5000))
+                detail = stderr_file.read().decode("utf-8", errors="replace").strip()
+                raise RuntimeError(f"ساخت میکس صوتی ناموفق بود: {detail[-1200:]}")
         if not partial.is_file() or partial.stat().st_size <= 44:
             raise RuntimeError("FFmpeg فایل صوتی خروجی معتبر تولید نکرد.")
+        if cancel_event is not None and cancel_event.is_set():
+            raise RuntimeError("ساخت میکس صوتی به درخواست کاربر لغو شد.")
         partial.replace(target)
-    except subprocess.TimeoutExpired as exc:
-        raise RuntimeError("ساخت میکس صوتی بیش از زمان مجاز طول کشید.") from exc
-    except subprocess.CalledProcessError as exc:
-        detail = (exc.stderr or exc.stdout or "").strip()
-        raise RuntimeError(f"ساخت میکس صوتی ناموفق بود: {detail[-1200:]}") from exc
+        if progress_callback is not None:
+            progress_callback(1.0)
     finally:
         partial.unlink(missing_ok=True)
+        progress_path.unlink(missing_ok=True)
     return target
