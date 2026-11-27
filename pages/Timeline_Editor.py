@@ -107,15 +107,26 @@ if len(st.session_state.timeline_video)>=2 and st.button("رندر ویدئوی 
                 if length<=0: raise ValueError("یک کلیپ نقطه برش نامعتبر دارد.")
                 src=td/f"src_{i}{Path(c['name']).suffix or '.mp4'}"; seg=td/f"seg_{i}.mp4"
                 src.write_bytes(c["source"].getvalue()); status.write(f"پردازش کلیپ {i+1}/{len(ordered)}")
-                cmd=[ffmpeg,"-y","-ss",str(c["trim_in"]),"-i",str(src),"-t",str(length),"-vf","scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,fps=30","-c:v","libx264","-preset","ultrafast","-crf","24","-pix_fmt","yuv420p","-c:a","aac","-b:a","128k","-ar","44100","-ac","2","-movflags","+faststart",str(seg)]
+                probe=subprocess.run([ffmpeg,"-i",str(src)],capture_output=True,text=True,timeout=60)
+                has_audio="Audio:" in (probe.stderr or "")
+                cmd=[ffmpeg,"-y","-ss",str(c["trim_in"]),"-i",str(src)]
+                if not has_audio:
+                    cmd += ["-f","lavfi","-i","anullsrc=channel_layout=stereo:sample_rate=44100"]
+                cmd += ["-t",str(length),"-map","0:v:0"]
+                cmd += (["-map","0:a:0?"] if has_audio else ["-map","1:a:0"])
+                cmd += ["-vf","scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,fps=30","-c:v","libx264","-preset","ultrafast","-crf","24","-pix_fmt","yuv420p","-c:a","aac","-b:a","128k","-ar","44100","-ac","2","-shortest","-movflags","+faststart",str(seg)]
                 rr=subprocess.run(cmd,capture_output=True,text=True,timeout=300)
-                if rr.returncode or not seg.exists(): raise RuntimeError(f"پردازش کلیپ {i+1} ناموفق شد.")
+                if rr.returncode or not seg.exists():
+                    detail=(rr.stderr or "نامشخص")[-1200:]
+                    raise RuntimeError(f"پردازش کلیپ {i+1} ناموفق شد: {detail}")
                 segments.append(seg); progress.progress((i+1)/len(ordered))
             listing=td/"concat.txt"
             listing.write_text("\n".join("file '"+p.as_posix()+"'" for p in segments),encoding="utf-8")
             joined=td/"joined.mp4"
             rr=subprocess.run([ffmpeg,"-y","-f","concat","-safe","0","-i",str(listing),"-c","copy","-movflags","+faststart",str(joined)],capture_output=True,text=True,timeout=300)
-            if rr.returncode or not joined.exists(): raise RuntimeError("اتصال کلیپ‌ها ناموفق شد.")
+            if rr.returncode or not joined.exists():
+                detail=(rr.stderr or "نامشخص")[-1200:]
+                raise RuntimeError(f"اتصال کلیپ‌ها ناموفق شد: {detail}")
             final=joined
             if selected_audio_idx is not None:
                 aud=td/("music"+Path(st.session_state.timeline_audio[selected_audio_idx]["name"]).suffix)
@@ -123,7 +134,9 @@ if len(st.session_state.timeline_video)>=2 and st.button("رندر ویدئوی 
                 mixed=td/"ZENITH_mixed.mp4"
                 filt=f"[0:a]volume={video_gain}[va];[1:a]volume={audio_gain}[ma];[va][ma]amix=inputs=2:duration=first:dropout_transition=2[a]"
                 rr=subprocess.run([ffmpeg,"-y","-i",str(joined),"-i",str(aud),"-filter_complex",filt,"-map","0:v","-map","[a]","-c:v","copy","-c:a","aac","-b:a","192k","-shortest","-movflags","+faststart",str(mixed)],capture_output=True,text=True,timeout=300)
-                if rr.returncode or not mixed.exists(): raise RuntimeError("ترکیب صدا ناموفق شد.")
+                if rr.returncode or not mixed.exists():
+                    detail=(rr.stderr or "نامشخص")[-1600:]
+                    raise RuntimeError(f"ترکیب صدا ناموفق شد: {detail}")
                 final=mixed
             data=final.read_bytes(); status.success("رندر آماده شد.")
             st.video(data); st.download_button("دانلود ویدئوی نهایی",data=data,file_name="ZENITH_combined.mp4",mime="video/mp4")
