@@ -356,7 +356,9 @@ def build_music_alignment_plan(
     clips = {clip.clip_id: clip for clip in project.clips}
     operations = []
     used_cuts = set()
-    for index, finding_id in enumerate(sorted(selected)):
+    for index, finding_id in enumerate(
+        sorted(selected, key=lambda item: (known[item].target_frame, item))
+    ):
         finding = known[finding_id]
         previous = clips.get(finding.related_clip_id)
         current = clips.get(finding.clip_id)
