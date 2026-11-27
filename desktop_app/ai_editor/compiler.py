@@ -1,7 +1,7 @@
 """Compile an approved narrative blueprint into a non-mutating edit-plan draft.
 
-This compiler only creates validated add-clip operations. It never edits a
-TimelineProject, renders media, or applies the resulting plan.
+This compiler creates validated add-clip and supported transition operations.
+It never edits a TimelineProject, renders media, or applies the resulting plan.
 """
 from __future__ import annotations
 
