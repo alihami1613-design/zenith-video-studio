@@ -82,8 +82,14 @@ class RenderValidationTests(unittest.TestCase):
             self._make_mp4(source)
             project = TimelineProject(fps=25, width=96, height=64)
             project.add_clip(str(source), "Test shot", duration_frames=25)
-            result = render_timeline_mp4(project, output, timeout_seconds=90)
+            reports = []
+            result = render_timeline_mp4(
+                project, output, timeout_seconds=90, validation_callback=reports.append
+            )
             self.assertEqual(result, output.resolve())
+            self.assertEqual(len(reports), 1)
+            self.assertTrue(reports[0].valid)
+            self.assertTrue(reports[0].visual_quality.scanned)
             report = validate_rendered_mp4(
                 result, FFMPEG, expected_width=96, expected_height=64,
                 expected_fps=25, expected_duration_seconds=1.0,
