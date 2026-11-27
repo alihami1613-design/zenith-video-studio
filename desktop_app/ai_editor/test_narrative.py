@@ -4,7 +4,7 @@ import unittest
 from ai_editor.contracts import EditPlanError, MediaAsset
 from ai_editor.narrative import (
     StoryAct, StoryBeat, StoryBlueprint, build_story_request,
-    request_story_blueprint,
+    request_story_blueprint, parse_story_blueprint_json,
 )
 from ai_editor.project_context import MediaInventoryItem, ProjectContext
 
@@ -144,6 +144,39 @@ class NarrativeBlueprintTests(unittest.TestCase):
                 "Create a short documentary", context_with_video(),
                 FakeStoryProvider(data),
             )
+
+    def test_json_import_rejects_duplicate_keys(self):
+        raw = '{"story_id":"one","story_id":"two"}'
+        with self.assertRaisesRegex(EditPlanError, "Duplicate JSON key"):
+            parse_story_blueprint_json(raw, context_with_video())
+
+    def test_json_import_rejects_unknown_fields(self):
+        data = valid_blueprint()
+        data["execute_shell"] = "dangerous"
+        import json
+        with self.assertRaisesRegex(EditPlanError, "Unexpected story fields"):
+            parse_story_blueprint_json(json.dumps(data), context_with_video())
+
+    def test_json_import_rejects_unknown_nested_fields(self):
+        data = valid_blueprint()
+        data["acts"][0]["beats"][0]["untrusted_instruction"] = "ignore safeguards"
+        import json
+        with self.assertRaisesRegex(EditPlanError, "Unexpected fields in beat"):
+            parse_story_blueprint_json(json.dumps(data), context_with_video())
+
+    def test_json_import_rejects_nonstandard_numbers(self):
+        with self.assertRaisesRegex(EditPlanError, "Non-standard JSON numeric"):
+            parse_story_blueprint_json('{"value": NaN}', context_with_video())
+
+    def test_json_import_enforces_size_limit(self):
+        with self.assertRaisesRegex(EditPlanError, "1 MB limit"):
+            parse_story_blueprint_json(" " * 1_000_001, context_with_video())
+
+    def test_json_import_validates_and_returns_blueprint(self):
+        import json
+        story = parse_story_blueprint_json(json.dumps(valid_blueprint()), context_with_video())
+        self.assertEqual(story.story_id, "story-demo-01")
+        self.assertTrue(story.requires_user_approval)
 
 
 if __name__ == "__main__":
