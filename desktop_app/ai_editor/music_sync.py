@@ -123,7 +123,8 @@ def design_music_aware_timing(
         chosen = original_boundary
         matched = None
         delta = 0
-        if usable and tolerance > 0 and max_adjust > 0:
+        if (usable and tolerance > 0 and max_adjust > 0
+                and right.rhythm != "hold"):
             candidates = []
             for pulse in pulses:
                 pulse_frame = round(pulse * fps)
