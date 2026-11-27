@@ -50,6 +50,8 @@ class RenderValidationTests(unittest.TestCase):
             self.assertIsNotNone(report.visual_quality)
             self.assertTrue(report.visual_quality.scanned)
             self.assertIsNone(report.visual_scan_error)
+            self.assertIsNotNone(report.audio_quality)
+            self.assertTrue(report.audio_quality.scanned)
             self.assertEqual((report.width, report.height, report.fps), (96, 64, 25.0))
 
     def test_missing_expected_audio_is_rejected(self):
@@ -90,6 +92,8 @@ class RenderValidationTests(unittest.TestCase):
             self.assertEqual(len(reports), 1)
             self.assertTrue(reports[0].valid)
             self.assertTrue(reports[0].visual_quality.scanned)
+            self.assertIsNotNone(reports[0].audio_quality)
+            self.assertTrue(reports[0].audio_quality.duration_matches_video)
             report = validate_rendered_mp4(
                 result, FFMPEG, expected_width=96, expected_height=64,
                 expected_fps=25, expected_duration_seconds=1.0,
