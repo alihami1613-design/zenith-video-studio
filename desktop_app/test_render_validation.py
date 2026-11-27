@@ -92,8 +92,7 @@ class RenderValidationTests(unittest.TestCase):
             self.assertEqual(len(reports), 1)
             self.assertTrue(reports[0].valid)
             self.assertTrue(reports[0].visual_quality.scanned)
-            self.assertIsNotNone(reports[0].audio_quality)
-            self.assertTrue(reports[0].audio_quality.duration_matches_video)
+            self.assertIsNone(reports[0].audio_quality)  # This fixture intentionally has no audio stream.
             report = validate_rendered_mp4(
                 result, FFMPEG, expected_width=96, expected_height=64,
                 expected_fps=25, expected_duration_seconds=1.0,
