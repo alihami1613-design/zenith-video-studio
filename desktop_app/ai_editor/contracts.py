@@ -237,7 +237,7 @@ def plan_from_dict(data: Mapping[str, Any]) -> EditPlan:
     try:
         brief_data = data["brief"]
         operations_data = data["operations"]
-        if not isinstance(brief_data, Mapping) or not isinstance(operations_data, list):
+        if not isinstance(brief_data, Mapping) or not isinstance(operations_data, (list, tuple)):
             raise EditPlanError("Plan brief and operations have invalid shapes.")
         brief = ProjectBrief(**dict(brief_data))
         operations = tuple(EditOperation(
