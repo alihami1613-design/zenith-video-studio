@@ -2225,6 +2225,7 @@ class ZenithEditor(QMainWindow):
             control.setEnabled(enabled)
         if not enabled:
             self.volume_value_label.setText("حجم صدا: —")
+            self.audio_keyframe_status_label.setText("نقاط کلیدی ولوم: —")
             self.audio_pan_label.setText("Stereo Pan: —")
             self.fade_in_label.setText("Fade In: —")
             self.fade_out_label.setText("Fade Out: —")
