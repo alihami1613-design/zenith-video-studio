@@ -310,7 +310,8 @@ class ZenithEditor(QMainWindow):
         self._ai_analysis_task: LocalMediaAnalysisTask | None = None
         self._ai_project_context = None
         self._ai_media_analysis = None
-        self._ai_analysis_project_data: dict[str, Any] | None = None\n        self._ai_analysis_media_fingerprint = None
+        self._ai_analysis_project_data: dict[str, Any] | None = None
+        self._ai_analysis_media_fingerprint = None
         self._ai_story_blueprint = None
         self._ai_shot_selection_report = None
         self._ai_edit_draft = None
@@ -1077,7 +1078,10 @@ class ZenithEditor(QMainWindow):
             return
         self.ai_analyze_button.setEnabled(False)
         self.ai_analysis_output.setPlainText("تحلیل محلی آغاز شد…\nتشخیص مرز صحنه، نمونه‌برداری تصویری و بررسی صوت در پس‌زمینه انجام می‌شود.")
-        self._ai_analysis_project_data = self.timeline_project.to_dict()\n        self._ai_analysis_media_fingerprint = media_inventory_fingerprint(\n            self.timeline_project, paths\n        )
+        self._ai_analysis_project_data = self.timeline_project.to_dict()
+        self._ai_analysis_media_fingerprint = media_inventory_fingerprint(
+            self.timeline_project, paths
+        )
         self._ai_story_blueprint = None
         self._ai_shot_selection_report = None
         self._ai_edit_draft = None
@@ -1136,7 +1140,16 @@ class ZenithEditor(QMainWindow):
             QMessageBox.information(self, "AI Editing", "ابتدا تحلیل رسانه‌های پروژه را اجرا کنید.")
             return False
         if self.timeline_project.to_dict() != self._ai_analysis_project_data:
-            QMessageBox.warning(self, "AI Editing", "پروژه پس از تحلیل تغییر کرده است. برای جلوگیری از استفاده از داده قدیمی، تحلیل را دوباره اجرا کنید.")
+            QMessageBox.warning(self, "AI Editing", "تایم‌لاین پس از تحلیل تغییر کرده است. برای جلوگیری از استفاده از داده قدیمی، تحلیل را دوباره اجرا کنید.")
+            return False
+        current_paths = [str(item.get("path", "")) for item in self.media_items if item.get("path")]
+        current_fingerprint = media_inventory_fingerprint(self.timeline_project, current_paths)
+        if current_fingerprint != self._ai_analysis_media_fingerprint:
+            QMessageBox.warning(
+                self, "AI Editing",
+                "فهرست رسانه‌ها یا فایل منبع پس از تحلیل تغییر کرده است. "
+                "برای جلوگیری از تدوین با اطلاعات قدیمی، تحلیل رسانه‌ها را دوباره اجرا کنید."
+            )
             return False
         return True
 
