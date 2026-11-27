@@ -438,5 +438,17 @@ class VideoRenderTests(unittest.TestCase):
         self.assertIn("cos(", animated_command)
         self.assertIn("T", animated_command)
 
+    def test_ffmpeg_progress_output_is_wired_when_requested(self):
+        with tempfile.TemporaryDirectory() as folder:
+            project = self.project(folder)
+            progress = Path(folder) / "render.progress"
+            command = build_video_render_command(
+                "ffmpeg", project, "out.mp4", progress_path=progress
+            )
+        self.assertIn("-progress", command)
+        self.assertIn(str(progress), command)
+        self.assertIn("-nostats", command)
+
+
 if __name__ == "__main__":
     unittest.main()
