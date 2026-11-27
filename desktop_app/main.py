@@ -1208,6 +1208,11 @@ class ZenithEditor(QMainWindow):
         self.statusBar().showMessage("پیشنهاد نماها آماده بررسی است؛ هنوز هیچ تغییری در تایم‌لاین انجام نشده.")
 
     def _ai_approval_changed(self, *_: Any) -> None:
+        # Any approval or soundtrack change invalidates downstream drafts/previews.
+        self._ai_edit_draft = None
+        self._ai_execution_preview = None
+        self.ai_preview_plan_button.setEnabled(False)
+        self.ai_apply_plan_button.setEnabled(False)
         ready = bool(
             self._ai_story_blueprint is not None
             and self._ai_shot_selection_report is not None
@@ -1216,11 +1221,6 @@ class ZenithEditor(QMainWindow):
             and self.ai_music_combo.currentData()
         )
         self.ai_build_plan_button.setEnabled(ready)
-        if not ready:
-            self._ai_edit_draft = None
-            self._ai_execution_preview = None
-            self.ai_preview_plan_button.setEnabled(False)
-            self.ai_apply_plan_button.setEnabled(False)
 
     def build_ai_edit_draft(self) -> None:
         if not self._ai_context_is_current():
