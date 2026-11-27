@@ -57,9 +57,21 @@ class MediaAnalysisTests(unittest.TestCase):
                 peak_db=-2.0, mean_db=-18.0,
             )
 
+        def energy(path):
+            return SimpleNamespace(
+                window_seconds=0.1, analyzed_duration_seconds=10.0,
+                energy_envelope=(
+                    SimpleNamespace(time_seconds=0.0, rms_dbfs=-25.0),
+                    SimpleNamespace(time_seconds=0.1, rms_dbfs=-8.0),
+                ),
+                transient_candidates_seconds=(0.1,),
+                warnings=("Transient candidates are not verified beats.",),
+            )
+
         report = analyze_project_media(
             self.context, scene_detector=scenes,
             visual_sampler=samples, audio_analyzer=audio,
+            audio_energy_analyzer=energy,
         )
         self.assertEqual([item.asset_id for item in report.assets],
                          ["asset-video", "asset-audio", "asset-image"])
@@ -67,7 +79,10 @@ class MediaAnalysisTests(unittest.TestCase):
         self.assertEqual(video.scene_boundaries_seconds, (2.5,))
         self.assertEqual(video.visual_samples[0].width, 640)
         self.assertEqual(video.audio.peak_db, -2.0)
+        self.assertEqual(video.audio_energy.transient_candidates_seconds, (0.1,))
+        self.assertEqual(len(video.audio_energy.energy_dbfs), 2)
         self.assertEqual(report.assets[1].audio.mean_db, -18.0)
+        self.assertIsNotNone(report.assets[1].audio_energy)
         self.assertIsNone(report.assets[2].audio)
         serialized = str(report.to_dict())
         self.assertNotIn(str(self.video), serialized)
@@ -85,15 +100,22 @@ class MediaAnalysisTests(unittest.TestCase):
             return SimpleNamespace(silence_intervals=(), peak_db=-1.0,
                                    mean_db=-12.0)
 
+        def broken_energy(path):
+            raise RuntimeError("energy decoder unavailable")
+
         report = analyze_project_media(
             self.context, scene_detector=broken_scenes,
             visual_sampler=samples, audio_analyzer=audio,
+            audio_energy_analyzer=broken_energy,
         )
         video = report.assets[0]
         self.assertFalse(video.scene_boundaries_seconds)
         self.assertEqual(len(video.visual_samples), 1)
         self.assertIsNotNone(video.audio)
+        self.assertIsNone(video.audio_energy)
         self.assertTrue(any("Scene detection failed" in warning
+                            for warning in video.warnings))
+        self.assertTrue(any("Audio energy analysis failed" in warning
                             for warning in video.warnings))
 
     def test_visual_resource_limits_are_validated(self):
