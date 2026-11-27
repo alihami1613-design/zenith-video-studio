@@ -236,5 +236,19 @@ class AudioRenderCommandTests(unittest.TestCase):
         self.assertIn("atempo=2.000000", joined)
         self.assertNotIn("areverse", joined)
 
+    def test_ffmpeg_progress_output_is_wired_when_requested(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / "voice.wav"
+            source.touch()
+            progress = Path(folder) / "audio.progress"
+            command = build_audio_mix_command(
+                "ffmpeg", [self.make_clip(source)], 30, "mix.wav", 450,
+                progress_path=progress,
+            )
+        self.assertIn("-progress", command)
+        self.assertIn(str(progress), command)
+        self.assertIn("-nostats", command)
+
+
 if __name__ == "__main__":
     unittest.main()
