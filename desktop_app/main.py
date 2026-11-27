@@ -547,6 +547,8 @@ class ZenithEditor(QMainWindow):
         self.ai_provider_model.setPlaceholderText("نام دقیق مدل")
         self.ai_provider_model.textChanged.connect(self._ai_cloud_story_consent_changed)
         self.ai_provider_endpoint.textChanged.connect(self._ai_cloud_story_consent_changed)
+        self.ai_provider_model.textChanged.connect(self._ai_approval_changed)
+        self.ai_provider_endpoint.textChanged.connect(self._ai_approval_changed)
         provider_row.addWidget(QLabel("Endpoint:"))
         provider_row.addWidget(self.ai_provider_endpoint, 3)
         provider_row.addWidget(QLabel("Model:"))
@@ -1662,6 +1664,16 @@ class ZenithEditor(QMainWindow):
             and self.ai_music_combo.currentData()
         )
         self.ai_build_plan_button.setEnabled(ready)
+        model_ready = bool(
+            self._ai_story_blueprint is not None
+            and self._ai_shot_selection_report is not None
+            and self.ai_story_approval.isChecked()
+            and self.ai_shot_approval.isChecked()
+            and self.ai_provider_model.text().strip()
+            and self.ai_provider_endpoint.text().strip()
+            and self._ai_edit_plan_task is None
+        )
+        self.ai_model_plan_button.setEnabled(model_ready)
 
     def generate_ai_edit_plan(self) -> None:
         if not self._ai_context_is_current():
