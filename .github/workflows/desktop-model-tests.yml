@@ -64,6 +64,8 @@ on:
       - "desktop_app/test_speed_ramp_preview.py"
       - "desktop_app/test_video_render.py"
       - "desktop_app/test_video_render_integration.py"
+      - "desktop_app/test_render_control.py"
+      - "desktop_app/audio_render.py"
       - ".github/workflows/desktop-model-tests.yml"
   pull_request:
     paths:
@@ -101,6 +103,8 @@ on:
       - "desktop_app/test_final_review_report.py"
       - "desktop_app/test_video_render.py"
       - "desktop_app/test_video_render_integration.py"
+      - "desktop_app/test_render_control.py"
+      - "desktop_app/audio_render.py"
       - ".github/workflows/desktop-model-tests.yml"
 
 jobs:
